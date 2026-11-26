@@ -7243,7 +7243,7 @@ function openAdminDetail(a) {
   const logs = DB.logs.filter(l => l.actor === a.name || l.ownerAdmin === a.name).slice(0, 8);
   openDrawer({
     title: '管理员详情', subtitle: `${a.name} · ${roleLabel(a)}`,
-    body: `${kvList([['管理员 ID', `<span class="mono">${esc(a.id)}</span>`], ['账号', esc(a.account)], ['角色', roleLabel(a)], ['状态', badge(a.status === 'active' ? '正常' : a.status === 'pending' ? '待审核' : '已停用', a.status === 'active' ? 'good' : a.status === 'pending' ? 'warn' : 'bad')], ['后台 VIP', vipActive(a) ? badge('有效 · ' + (isMaster(a) ? '长期' : '剩 ' + vipDays(a) + ' 天'), 'good') : badge('已过期', 'bad')], ['VIP 到期', isMaster(a) ? '长期有效' : fmtDT(a.vipExpire)], ['APP 权限', a.appPerm || a.role === 'master' ? badge('已开通', 'good') : badge('未开通', '')], ['创建时间', fmtDT(a.createdAt)], ['备注', esc(a.note || '—')]])}
+    body: `${kvList([['管理员 ID（免费用户绑定用）', `<span class="mono">${esc(a.id)}</span><div class="muted">提供给星跃 APP 免费用户绑定身份；卡密用户请使用 APP 卡密</div>`], ['账号', esc(a.account)], ['角色', roleLabel(a)], ['状态', badge(a.status === 'active' ? '正常' : a.status === 'pending' ? '待审核' : '已停用', a.status === 'active' ? 'good' : a.status === 'pending' ? 'warn' : 'bad')], ['后台 VIP', vipActive(a) ? badge('有效 · ' + (isMaster(a) ? '长期' : '剩 ' + vipDays(a) + ' 天'), 'good') : badge('已过期', 'bad')], ['VIP 到期', isMaster(a) ? '长期有效' : fmtDT(a.vipExpire)], ['APP 权限', a.appPerm || a.role === 'master' ? badge('已开通', 'good') : badge('未开通', '')], ['创建时间', fmtDT(a.createdAt)], ['备注', esc(a.note || '—')]])}
     <div class="detail-section"><h4>数据概览</h4><div class="kpis" style="grid-template-columns:repeat(2,1fr);margin:0"><div class="kpi"><span>卡密</span><b>${st.cards}</b></div><div class="kpi"><span>关联用户</span><b>${st.users}</b></div><div class="kpi"><span>设备</span><b>${st.devices}</b></div><div class="kpi"><span>分享</span><b>${st.shares}</b></div></div></div>
     <div class="detail-section"><h4>最近操作</h4>${logs.map(l => `<div class="rule-card"><span class="r-ico">${ico('scroll')}</span><div class="r-main"><b>${esc(l.type)} · ${esc(l.target || '')}</b><span>${fmtDT(l.time)} · ${esc(l.result)}</span></div></div>`).join('') || '<div class="empty" style="padding:14px">暂无记录</div>'}</div>
     ${isMaster() && a.role !== 'master' ? `<div class="note warn" style="margin-top:10px">${ico('eye')}<div>进入该管理员后台属于跨管理员操作，需要填写原因并写入审计日志。</div></div>` : ''}`,
@@ -10172,14 +10172,12 @@ function sj51SetGroupType(g,type){
 }
 
 function sj51FreeEligible(userId,adminId,deviceId){
-  // 免费资格来源于该设备曾激活该管理员的正式 APP 卡密；卡密到期不收回资格。
-  // 不允许仅凭同一账号下的其它设备记录扩散免费资格。
-  if(!deviceId) return false;
-  return DB.cards.some(c=>{
-    if(c.userId!==userId || c.adminId!==adminId || !c.activatedAt || c.trialCard) return false;
-    const devices=(c.records||[]).map(r=>r.device).filter(Boolean);
-    return c.activatedDeviceId===deviceId || devices.includes(deviceId);
-  });
+  // 免费分组通过“VIP 管理员 ID”绑定身份，不要求用户先购买/激活 APP 卡密。
+  // 必须是同一设备、同一 APP 用户、同一管理员的明确身份绑定，且管理员 VIP 当前有效。
+  if(!deviceId || !userId) return false;
+  const admin=sj51Admin(adminId);
+  if(!admin || !vipActive(admin)) return false;
+  return DB.appIdentities.some(x=>x.deviceId===deviceId && x.userId===userId && x.adminId===adminId);
 }
 function sj51GetAppIdentities(deviceId,all){
   const rows=DB.appIdentities.filter(x=>x.deviceId===deviceId).slice().sort((a,b)=>Number(!!b.pinned)-Number(!!a.pinned)||new Date(b.lastUsedAt||0)-new Date(a.lastUsedAt||0));
@@ -10225,7 +10223,8 @@ function sj51RenderLifecycle(){
     <div class="card card-pad"><div class="muted">体验卡池可用</div><div class="stat-value">${trial.filter(c=>c.status==='available').length}</div></div>
   </div>
   <div class="card card-pad" style="margin-bottom:16px">
-    <div class="section-head"><div><h3>APP 节点分组授权</h3><p>免费分组每位管理员最多一个；卡密分组可配置到多张卡密。普通网页分享链接不作为 APP 授权来源。</p></div></div>
+    <div class="section-head"><div><h3>APP 节点分组授权</h3><p>两种获取方式必须分开：免费用户在星跃 APP 输入本管理员的「管理员 ID」绑定身份，即可获取本管理员的有效免费分组；卡密用户输入本管理员签发的「APP 卡密」，只获取该卡密已配置且卡密有效的分组。普通网页分享链接不作为 APP 授权来源。</p></div></div>
+  <div class="note" style="margin:10px 0 14px"><b>管理员 ID ≠ APP 卡密：</b>管理员 ID 是公开给免费用户绑定本管理员身份用的；卡密用户不使用管理员 ID 领取付费分组，而是使用单独发放的 APP 卡密。每张卡密可在下方「APP 卡密分组配置」中单独指定可获取的分组。</div>
     <div class="table-wrap"><table class="data-table"><thead><tr><th>分组</th><th>所属管理员</th><th>分组类型</th><th>节点数</th><th>Generation</th><th>状态</th><th>操作</th></tr></thead><tbody>
     ${groups.map(g=>`<tr><td><b>${esc(g.name)}</b><div class="muted">${esc(g.id)}</div></td><td>${fmtAdmin(g.adminId)}</td><td><span class="badge ${g.appType==='normal'?'muted':g.appType==='free'?'success':'info'}">${sj51GroupLabel(g.appType)}</span></td><td>${(g.nodeIds||[]).length}</td><td>${Number(g.generation)||1}</td><td>${g.appType==='normal'?'非 APP 授权':g.appEnabled===false?'<span class="badge warning">已暂停/失效</span>':'<span class="badge success">授权有效</span>'}</td><td><div class="row-actions">
       <button class="btn sm" data-sj51="group-type" data-id="${attr(g.id)}">修改类型</button>
