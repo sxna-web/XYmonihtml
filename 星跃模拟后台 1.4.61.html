@@ -3500,7 +3500,7 @@ const MASTER_ONLY_ROUTES = new Set(['master','permissions','versions','update-co
 function isMenuItemAvailable(item) {
   if (!item) return false;
   const publicItems = ['dashboard','v1-access','v1-help'];
-  const guestBasicItems = ['dashboard','convert','conv-history','recent'];
+  const guestBasicItems = ['convert','conv-history'];
   if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !guestBasicItems.includes(item.id)) return false;
   if (item.masterOnly && (!isMaster() || CFG?.impersonator)) return false;
   if (MASTER_ONLY_ROUTES.has(item.id) && (!isMaster() || CFG?.impersonator)) return false;
@@ -4543,6 +4543,7 @@ function openRuleEditor(rule, onSave, opts) {
 /* ================= 转换工作区页面 ================= */
 function renderConv() {
   const c = ensureConv();
+  const guest = !!currentAdmin()?._guest;
   const counts = { sources: c.inputs.length, recognized: c.parsed.length, errors: c.errors.length };
   const keeps = c.preview ? c.preview.res.kept : [];
   const ex = c.preview ? c.preview.res.excluded : [];
@@ -4589,10 +4590,9 @@ function renderConv() {
       <button class="source-add" data-cv-act="addUrl">${ico('link')}<span>订阅链接<br><span class="faint">支持多个</span></span></button>
       <button class="source-add" data-cv-act="addText">${ico('file-text')}<span>节点链接 / 文本</span></button>
       <button class="source-add" data-cv-act="addBase64">${ico('code')}<span>Base64 导入</span></button>
-      <button class="source-add" data-cv-act="addSource">${ico('rss')}<span>已有订阅源</span></button>
-      <button class="source-add" data-cv-act="addNodes">${ico('server')}<span>已有节点</span></button>
-      <button class="source-add" data-cv-act="addGroup">${ico('folder')}<span>已有分组</span></button>
+      ${guest ? '' : `<button class="source-add" data-cv-act="addSource">${ico('rss')}<span>已有订阅源</span></button><button class="source-add" data-cv-act="addNodes">${ico('server')}<span>已有节点</span></button><button class="source-add" data-cv-act="addGroup">${ico('folder')}<span>已有分组</span></button>`}
     </div>
+    ${guest ? `<div class="notice info" style="margin-top:10px">${ico('info')}<div>体验身份仅能通过粘贴节点、Base64 或输入订阅地址进行基础转换；不能读取管理员订阅源、节点库或其他用户的分组。</div></div>` : ''}
     <div class="conv-summary">
       <div class="cs-item"><span>来源数量</span><b>${c.inputs.length}</b></div>
       <div class="cs-item"><span>识别节点</span><b>${c.parsed.length || '—'}</b></div>
@@ -4632,8 +4632,8 @@ function renderConv() {
     <div class="row" style="margin-top:14px"><button class="btn" data-cv-step="2">${ico('chevron-left')}上一步</button><button class="btn primary" data-cv-step="4">配置过滤条件 ${ico('chevron-right')}</button></div>
   </div></div>`;
   const ruleList = (scheme.rules || []).length ? scheme.rules.map(r => `<div class="rule-card ${r.action === 'exclude' ? 'exclude' : 'keep'}"><span class="r-ico">${ico(RULE_TYPES[r.type]?.icon || 'filter')}</span><div class="r-main"><b>${esc(RULE_TYPES[r.type]?.name || r.type)} · ${r.action === 'exclude' ? '排除' : '保留'}</b><span>${esc(ruleLabel(r))}</span></div>${c.schemeId === '__custom' ? `<div class="r-actions"><button class="btn sm ghost" data-cv-act="editRule" data-id="${r.id}">${ico('edit')}</button><button class="btn sm ghost" data-cv-act="delRule" data-id="${r.id}">${ico('trash')}</button></div>` : ''}</div>`).join('') : `<div class="empty" style="padding:18px">${ico('filter')}<b>没有过滤条件</b><span>${c.schemeId && c.schemeId !== '__custom' ? '该方案没有显式规则，可能只做去重 / 失效过滤。' : '添加条件，或直接预览全部节点。'}</span></div>`;
-  const step4 = currentAdmin()?._guest ? `<div class="card"><div class="card-head"><h3>${ico('filter')} 第四步 · 基础过滤</h3><span class="sub">访客基础模式</span></div><div class="card-body"><div class="notice info">${ico('info')}<div>访客模式使用基础去重、无效节点和输出格式兼容性检查，不开放保存过滤方案、复杂规则组合或模板管理。注册后可根据身份权限逐步使用更多转换功能。</div></div><div class="row" style="margin-top:14px"><button class="btn" data-cv-step="3">${ico('chevron-left')}上一步</button><button class="btn primary" data-cv-act="preview">${ico('eye')}预览转换结果</button></div></div></div>` : `<div class="card"><div class="card-head"><h3>${ico('filter')} 第四步 · 配置过滤条件</h3><span class="sub">${scheme.rules.length} 条规则</span><div class="tools"><button class="btn sm" data-cv-act="saveScheme">${ico('save')}保存为方案</button><button class="btn sm ghost" data-nav="filter-rules">${ico('filter')}方案管理</button></div></div><div class="card-body">
-    <div class="field"><label>选择过滤方案</label><select class="select" data-cv-scheme><option value="__custom" ${!c.schemeId || c.schemeId === '__custom' ? 'selected' : ''}>本次自定义（不保存）</option>${tenantFilterSchemes().map(f => `<option value="${f.id}" ${c.schemeId === f.id ? 'selected' : ''}>${esc(f.name)} · ${f.rules.length} 条规则${f.isDefault ? ' · 默认' : ''}</option>`).join('')}</select></div>
+  const step4 = currentAdmin()?._guest ? `<div class="card"><div class="card-head"><h3>${ico('filter')} 第四步 · 基础过滤</h3><span class="sub">访客基础模式</span></div><div class="card-body"><div class="notice info">${ico('info')}<div>访客模式使用基础去重、无效节点和输出格式兼容性检查，不开放保存过滤方案、复杂规则组合或模板管理。注册后可根据身份权限逐步使用更多转换功能。</div></div><div class="row" style="margin-top:14px"><button class="btn" data-cv-step="3">${ico('chevron-left')}上一步</button><button class="btn primary" data-cv-act="preview">${ico('eye')}预览转换结果</button></div></div></div>` : `<div class="card"><div class="card-head"><h3>${ico('filter')} 第四步 · 配置过滤条件</h3><span class="sub">${scheme.rules.length} 条规则</span><div class="tools">${guest ? '' : `<button class="btn sm" data-cv-act="saveScheme">${ico('save')}保存为方案</button><button class="btn sm ghost" data-nav="filter-rules">${ico('filter')}方案管理</button>`}</div></div><div class="card-body">
+    <div class="field"><label>选择过滤方案</label><select class="select" data-cv-scheme><option value="__custom" ${!c.schemeId || c.schemeId === '__custom' ? 'selected' : ''}>本次自定义（不保存）</option>${guest ? '' : tenantFilterSchemes().map(f => `<option value="${f.id}" ${c.schemeId === f.id ? 'selected' : ''}>${esc(f.name)} · ${f.rules.length} 条规则${f.isDefault ? ' · 默认' : ''}</option>`).join('')}</select></div>
     <div class="scheme-pick">${tenantFilterSchemes().slice(0, 5).map(f => `<button class="chip ${c.schemeId === f.id ? 'accent' : ''}" data-cv-scheme-id="${f.id}">${esc(f.name)}</button>`).join('')}</div>
     <div class="logic-bar"><span>组合方式：</span><button class="badge ${scheme.logic === 'OR' ? '' : 'accent'}" data-cv-act="logic" data-id="AND">保留条件全部满足（AND）</button><button class="badge ${scheme.logic === 'OR' ? 'accent' : ''}" data-cv-act="logic" data-id="OR">任意满足（OR）</button><span class="spacer" style="flex:1"></span><button class="badge ${scheme.excludePriority !== false ? 'warn' : ''}" data-cv-act="excludePriority">${scheme.excludePriority !== false ? '排除优先：开' : '排除优先：关'}</button></div>
     ${schemeSummary(scheme)}
@@ -4683,7 +4683,7 @@ function renderConv() {
   const step6 = c.result ? resultPanel : `<div class="card"><div class="card-head"><h3>${ico('zap')} 第六步 · 生成转换结果</h3><span class="sub">生成后会保存到转换历史</span></div><div class="card-body">${c.preview ? `<div class="notice good">${ico('check-circle')}<div>预览已完成：将输出 <b>${c.preview.res.kept.length}</b> 个节点（${FORMATS[c.format].name}），排除 ${c.preview.res.excluded.length} 个。生成后原始节点保持不变。</div></div><div class="row"><button class="btn primary" data-cv-act="generate">${ico('zap')}确认生成</button><button class="btn" data-cv-step="5">${ico('chevron-left')}返回预览</button><button class="btn" data-cv-act="preview">${ico('refresh')}重新计算</button></div>` : `<div class="empty">${ico('filter')}<b>请先预览过滤结果</b><span>系统会先计算保留和排除数量，再允许生成</span><div style="margin-top:12px"><button class="btn primary" data-cv-act="preview">${ico('eye')}去预览</button></div></div>`}</div></div>`;
   const step7 = c.result ? resultPanel + `<div class="card" style="margin-top:12px"><div class="card-head"><h3>${ico('history')} 转换版本与后续操作</h3></div><div class="card-body"><div class="timeline">${(c.result.versions || []).map(v => `<div class="tl-item"><span class="tl-dot good"></span><div class="tl-top"><b>${esc(v.note || '生成转换')}</b><span class="tl-time">${fromNow(v.time)}</span></div><div class="tl-sub">保留 ${v.kept} 个节点</div></div>`).join('')}</div><div class="row" style="margin-top:10px"><button class="btn" data-cv-act="viewExcluded">${ico('filter')}过滤详情</button><button class="btn" data-cv-act="savePlan">${ico('save')}保存方案</button><button class="btn" data-nav="conv-history">${ico('history')}转换历史</button></div></div></div>` : `<div class="card"><div class="card-body"><div class="empty">${ico('download')}<b>还没有可导出的结果</b><span>请先生成转换结果</span></div></div></div>`;
   return {
-    html: `<div id="converter-page">${pageHead('转换工作区（分步）', '适合需要逐步配置过滤、预览和导出的高级场景。日常转换请用新的单页转换服务。', `<button class="btn primary" data-nav="v1-converter">${ico('shuffle')}单页转换</button><button class="btn" data-cv-act="savePlan">${ico('save')}保存方案</button><button class="btn" data-nav="conv-history">${ico('history')}转换历史</button><button class="btn" data-cv-act="reset">${ico('rotate-ccw')}重置</button>`)}
+    html: `<div id="converter-page">${pageHead(guest ? '基础节点转换' : '转换工作区（分步）', guest ? '未注册体验：仅使用输入内容进行基础转换；不读取管理端订阅源、节点库和其他用户分组。' : '适合需要逐步配置过滤、预览和导出的高级场景。日常转换请用新的单页转换服务。', `${guest ? '' : `<button class="btn primary" data-nav="v1-converter">${ico('shuffle')}单页转换</button><button class="btn" data-cv-act="savePlan">${ico('save')}保存方案</button>`}<button class="btn" data-nav="conv-history">${ico('history')}我的批次</button><button class="btn" data-cv-act="reset">${ico('rotate-ccw')}重置</button>`)}
       ${stepNav}
       <div class="conv-grid"><div class="conv-main">
         ${[step1, step2, step3, step4, step5, step6, step7].map((s, i) => `<div class="step-panel ${c.step === i + 1 ? 'on' : ''}" data-step-panel="${i + 1}">${s}</div>`).join('')}
