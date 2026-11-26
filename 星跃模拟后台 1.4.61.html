@@ -4380,7 +4380,7 @@ function openAddConvInput(kind) {
       title: guest ? '选择默认节点分组' : '从已有节点分组选择', subtitle: guest ? '访客只能查看并使用平台提供的默认分组，不能管理或修改节点。' : '多分组组合转换，不会修改原分组', icon: 'layers',
       items: availableGroups.map(g => ({ id: g.id, label: g.name, sub: `${g.nodeIds.length} 个节点 · ${g.note || ''}` })),
       onSave: refs => {
-        c.inputs.push({ id: uid('inp'), type: 'group', refs, label: refs.map(groupName).join('、') });
+        c.inputs.push({ id: uid('inp'), type: 'group', refs, label: guest ? guestDefaultNodeGroup().name : refs.map(groupName).join('、') });
         c.preview = null; c.result = null; refreshConv(); toast('已添加节点分组', 'success');
       }
     });
