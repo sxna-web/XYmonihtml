@@ -5996,7 +5996,7 @@ function scopedByAdmin(list, key) { const rows = Array.isArray(list) ? list : []
 /* ================= 管理员数据隔离（本地模拟层） ================= */
 function ensureTenantIsolation() {
   if (!DB || !Array.isArray(DB.admins)) return;
-  const activeIds = new Set(DB.admins.map(a => a.id));
+  const activeIds = new Set([...DB.admins.map(a => a.id), '__guest__']);
   const defaultOwners = { s1: 'a2', s2: 'a3', s3: 'a4', s4: 'a2', s5: 'a3', s6: 'a4' };
   (DB.sources || []).forEach(src => {
     if (!src.adminId || !activeIds.has(src.adminId)) src.adminId = defaultOwners[src.id] || 'a1';
