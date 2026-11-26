@@ -328,3 +328,67 @@ HTML 与该 Worker 存在大范围同源接口设计，主要业务路由可在 
 - 该 HTML 中未检索到 `/api/app/redeem`、`/api/app/groups`、`/api/app/nodes`、`/api/app/links`、`/api/app/status` 等 APP 授权 API 路径。
 - 因此 1.4.61 当前应被视为前端模拟/演示版本，不能据此认定已经与正式 Worker、D1 或 APK 联通；其中的本地体验卡池、localStorage device ID 也不能作为正式防重复领取或设备身份方案。
 - 后续正式联调必须明确指定实际要接入的 HTML 版本，并对登录、注册、VIP 状态、卡密激活、APP 分组、分享链接、转换归档逐项接真实 Worker API；演示态需醒目标识，避免误把本地模拟数据当成正式数据。
+
+
+## 16. 第五轮：APP 分组版本、删除撤销与 Cron 维护触发条件
+
+### P1-20 APP 分组缺少版本化生命周期，删除/改型不能可靠通知离线设备
+
+静态证据：
+- `userAppGroupsRoute` 的 PUT 直接更新 `app_groups.name/mode`，没有版本号递增、变更历史、操作者/时间快照或撤销记录。
+- 用户态 DELETE 直接删除 `app_groups`，随后分别删除 `app_group_sources` 和 `app_group_members`。
+- `superAppGroupsRoute` 的 PUT 同样直接覆盖 name/mode/enabled/sort；DELETE 同样物理删除主记录及关联关系。
+- `groupNodeList` 读取当前 `app_group_sources` 关系及来源当前节点，不携带 group generation、节点差异版本或撤销墓碑。
+- `appGroupsForDevice` 只返回当前可见分组及节点，没有设备同步游标、服务端版本号、撤销列表或 cleanup acknowledgement。
+
+影响：
+- 分组改名、改型或删除后，服务端没有可供 APK 比较的单调版本依据。
+- 已删除分组的历史身份和依赖关系被物理移除，无法仅凭当前接口重建设备端应清理哪些旧数据。
+- 设备离线期间，服务端无法确认其本地缓存是否已经删除；当前接口也没有回传清理确认的证据。
+- 这不满足 V2.5 已确认的“变更留版本、回滚创建新版本、删除后设备端 24 小时清理”目标。
+
+处理方向：
+- 先在设计层明确 group_id 稳定不变、generation 单调递增、版本快照/变更记录、删除墓碑、设备同步游标和 cleanup acknowledgement 的语义。
+- 删除先进入回收站/撤销状态并停止新下发；保留历史关系及引用，达到保留期限并满足依赖检查后才允许物理清理。
+- APK 必须校验 generation 不回退；收到删除/改型事件时执行本地清理并回传确认。离线设备不能承诺在离线状态下被远程删除，需定义其下一次联网时的强制清理与超时告警。
+- 不得在当前轮直接增加字段/表或执行迁移；先完成 APK 源码核验和 D1 只读结构确认。
+
+### P1-21 APP 授权维护任务被“是否存在待同步来源”提前返回所门控
+
+静态证据：
+- Worker 的 `scheduled(event, env, ctx)` 先查询已分配、启用且审批通过的订阅源。
+- 查询后若 `sources.length === 0`，立即 `return`。
+- `runVipCardMaintenance`、`runNodeLifecycle` 和 `runEntitlementMaintenance` 均位于该提前返回之后。
+- 因此当某次 Cron 执行时没有任何符合条件的同步来源，VIP 卡密宽限失活/恢复、节点生命周期维护和 APP entitlement expired/purged 状态维护都不会执行。
+- 即使有来源，维护调用也使用 `.catch(() => {})`，失败会被静默吞掉；当前没有从代码证明失败会重试或产生可靠告警。
+
+影响：
+- APP entitlement 到期后，状态从 active 更新为 expired 的时间可能延后；purge_at 到达后转为 purged 也可能延后。
+- VIP 卡密三天宽限的失活/恢复任务同样可能被跳过。
+- 维护是否执行错误地依赖订阅同步业务数据量，而不是独立的定时维护触发器。
+
+处理方向：
+- 把会员/授权/节点维护与“是否有来源需要同步”解耦；维护任务应先独立执行，来源列表为空只应跳过同步部分。
+- 为各维护任务建立可观测执行记录、成功/失败计数、最后成功时间、重试/告警；不能静默吞错。
+- 在确认实际部署 Cron Trigger 配置和运行日志前，不能声称三天宽限或 entitlement 清理按时执行。
+- 本轮仅静态审计；未读取线上 Cron 配置、日志或环境变量。
+
+### P2-12 APP 分组删除由多个独立 D1 操作组成，缺少原子性保证
+
+- 用户态和超管态删除分组均先 DELETE `app_groups`，再分别 DELETE `app_group_sources` 与 `app_group_members`，不是同一个 D1 batch。
+- 如果中间某条语句失败，可能出现主记录已删除、关联记录未清理的部分完成状态；若依赖外键级联，当前代码仍显式执行多次删除，且本轮未读取实际 D1 外键约束，不能假设级联能提供事务保证。
+- 修复方向：未来在明确数据库约束与兼容性后，将生命周期状态变更、版本/墓碑记录和审计写入同一事务性批次；物理清理另走受控维护任务。当前不执行 D1 操作。
+
+### 本轮正向实现与边界
+
+- Cloudflare Worker 确实定义了 `scheduled(event, env, ctx)` Cron 入口。
+- scheduled 中的节点同步仍调用既有 `runSync`，与手动同步共享 lease/fencing/commit 流程；这属于正向实现。
+- 但仓库源码只能证明有 scheduled handler，不能证明 Cloudflare 部署环境已配置 Cron Trigger，也不能证明目标环境的触发频率和运行成功情况。
+- 本轮没有线上请求、D1 查询/写入、迁移、部署或 APK 源码修改。
+
+### 本轮结论
+
+1. APP 分组缺少可供 APK 使用的版本号、撤销墓碑、设备同步游标和清理确认协议，是 V2.5 生命周期目标的直接缺口。
+2. scheduled 维护函数存在，但维护任务在“无可同步来源”时会被提前跳过，且维护错误被吞掉；这是比单纯“尚未核实 Cron 配置”更具体的代码缺陷。
+3. 分组删除的多条 D1 操作未形成显式原子批次，部分失败可能留下不一致状态。
+4. 上述问题只登记为静态审计发现；未授权修改 Worker/D1，也未进行任何生产操作。
