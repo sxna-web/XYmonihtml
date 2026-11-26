@@ -84,7 +84,6 @@ body.right-panel-open #right-sidebar{transform:translateX(0)}body.right-panel-op
 @media(max-width:1180px){body.right-panel-open #main{margin-right:0}#right-sidebar{width:min(340px,88vw)}}
 body.sb-collapsed #sidebar{width:74px}
 body.sb-collapsed #main{margin-left:74px}
-#right-dock-root{position:fixed;inset:0;z-index:85;visibility:hidden;pointer-events:none}#right-dock-root.show{visibility:visible;pointer-events:auto}.right-dock-backdrop{position:absolute;inset:0;background:rgba(8,15,30,.38);opacity:0;transition:opacity .2s}#right-dock-root.show .right-dock-backdrop{opacity:1}.right-dock-panel{position:absolute;right:0;top:0;bottom:0;width:min(370px,92vw);display:flex;flex-direction:column;background:var(--card);border-left:1px solid var(--line);box-shadow:-18px 0 45px rgba(10,20,40,.16);transform:translateX(102%);transition:transform .22s ease}#right-dock-root.show .right-dock-panel{transform:translateX(0)}.right-dock-head{display:flex;align-items:center;gap:10px;padding:17px 16px;border-bottom:1px solid var(--line);flex:none}.right-dock-head>div{flex:1;min-width:0}.right-dock-head b{display:block;font-size:15px}.right-dock-head small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.right-dock-body{flex:1;overflow:auto;padding:13px;display:flex;flex-direction:column;gap:13px;overscroll-behavior:contain}.right-dock-section{border:1px solid var(--line);border-radius:13px;padding:11px;background:var(--surface-2)}.right-dock-section h3{font-size:12px;margin:0 0 8px;display:flex;align-items:center;gap:7px}.right-dock-link{display:flex;align-items:center;gap:9px;width:100%;padding:9px 8px;border:0;border-radius:9px;background:transparent;color:var(--text);text-align:left;font-size:12.5px}.right-dock-link:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}.right-dock-link>span:nth-child(2){flex:1;min-width:0}.right-dock-link small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}.right-dock-foot{padding:12px;border-top:1px solid var(--line);flex:none}
 body.sb-collapsed .sb-brand-text,
 body.sb-collapsed .sb-label,
 body.sb-collapsed .sb-group-title,
@@ -3499,7 +3498,7 @@ const MASTER_ONLY_ROUTES = new Set(['master','permissions','versions','update-co
 function isMenuItemAvailable(item) {
   if (!item) return false;
   const publicItems = ['dashboard','v1-access','v1-help'];
-  const guestBasicItems = ['convert','conv-history'];
+  const guestBasicItems = ['convert','conv-history','recent'];
   if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !guestBasicItems.includes(item.id)) return false;
   if (item.masterOnly && (!isMaster() || CFG?.impersonator)) return false;
   if (MASTER_ONLY_ROUTES.has(item.id) && (!isMaster() || CFG?.impersonator)) return false;
@@ -3622,14 +3621,13 @@ function updateNavActive() {
 function renderRightSidebar() {
   const el = $('#right-sidebar'); if (!el) return;
   const admin = currentAdmin();
-  const favs = (CFG.menu.favorites || []).map(id => MENU_MAP[id]).filter(isMenuItemVisible).slice(0,8);
-  const recent = (CFG.recentPages || []).filter(p => p.path && isMenuItemAvailable(MENU_MAP[p.path])).slice(0,8);
+  const recent = (CFG.recentPages || []).filter(p => p.path && (isMenuItemAvailable(MENU_MAP[p.path]) || ['v1-access','v1-help'].includes(p.path))).slice(0,8);
   const guest = !!admin?._guest;
-  const quick = guest ? [['convert','基础节点转换','shuffle'],['v1-access','注册 / 登录','user-plus']] : [['convert','节点转换工作区','shuffle'],['conv-history','转换历史','history'],['nodes','节点管理','server'],['cards','APP 卡密','key'],['app-shares','APP 授权分享','smartphone'],['settings','系统设置','settings']].filter(x => isMenuItemAvailable(MENU_MAP[x[0]]));
+  const quick = guest ? [['convert','基础节点转换','shuffle'],['conv-history','我的转换记录','history'],['recent','最近操作','clock'],['v1-access','注册 / 登录','user-plus'],['v1-help','使用说明','info']] : [['convert','节点转换工作区','shuffle'],['conv-history','转换历史','history'],['nodes','节点管理','server'],['cards','APP 卡密','key'],['app-shares','APP 授权分享','smartphone'],['settings','系统设置','settings']].filter(x => isMenuItemAvailable(MENU_MAP[x[0]]));
   el.innerHTML = `<div class="rb-head"><b>${ico('panel-right')} 快捷工具</b><button class="icon-btn" data-act="workspace.panel" aria-label="关闭快捷工具侧栏">${ico('x')}</button></div><div class="rb-scroll">
-    ${guest ? `<section class="rb-section"><div class="rb-title">${ico('sparkles')} 注册后可解锁</div><div class="rb-list"><div class="rb-empty">注册账号可使用独立个人空间与更多基础入口；开通有效 VIP 后可管理订阅源、节点、APP 用户、卡密和分享授权。体验期间的本地记录不会自动迁移到新账号。</div><button class="rb-link" data-nav="v1-access">${ico('user-plus')}<span>立即注册 / 登录</span>${ico('chevron-right')}</button></div></section>` : ''}
+    ${guest ? `<section class="rb-section"><div class="rb-title">${ico('sparkles')} 注册与 VIP 权益</div><div class="rb-list"><div class="rb-empty"><b>注册普通账号</b><br>获得独立工作空间，保留自己的转换历史，并使用注册用户开放的功能。<br><br><b>成为有效 VIP</b><br>开放订阅源、节点、分组、过滤方案、模板、分享和相关管理功能。APP 卡密、用户及授权操作还需对应 APP 权限。<br><br>注册不等于 VIP；是否获得 7 天体验取决于体验卡池库存。</div><button class="rb-link" data-nav="v1-access">${ico('user-plus')}<span>立即注册 / 登录</span>${ico('chevron-right')}</button></div></section>` : ''}
     <section class="rb-section"><div class="rb-title">${ico('zap')} 常用入口</div><div class="rb-list">${quick.map(x=>`<button class="rb-link" data-nav="${x[0]}">${ico(x[2])}<span>${esc(x[1])}</span>${ico('chevron-right')}</button>`).join('')}</div></section>
-    <section class="rb-section"><div class="rb-title">${ico('star')} 我的收藏</div><div class="rb-list">${favs.length?favs.map(x=>`<button class="rb-link" data-nav="${attr(x.path)}">${ico(x.icon)}<span>${esc(x.label)}</span>${ico('chevron-right')}</button>`).join(''):'<div class="rb-empty">还没有收藏菜单，可点击左侧菜单旁的星形图标添加。</div>'}</div></section>
+
     <section class="rb-section"><div class="rb-title">${ico('clock')} 最近访问</div><div class="rb-list">${recent.length?recent.map(x=>`<button class="rb-link" data-nav="${attr(x.path)}">${ico('history')}<span>${esc(x.title)}<small>${esc(x.group||'')}</small></span>${ico('chevron-right')}</button>`).join(''):'<div class="rb-empty">访问过的页面会显示在这里。</div>'}</div></section>
     <section class="rb-section"><div class="rb-title">${ico('life-buoy')} 帮助与说明</div><div class="rb-list"><button class="rb-link" data-nav="v1-help">${ico('book-open')}<span>平台使用说明</span>${ico('chevron-right')}</button><button class="rb-link" data-act="search.open">${ico('search')}<span>全局搜索功能</span>${ico('chevron-right')}</button></div></section>
   </div>`;
@@ -3657,7 +3655,7 @@ const VIP_ONLY_ROUTES = new Set([
 function v1RouteDeniedReason(routeId) {
   if (routeId === 'v1-purchase-links') return 'redirect-purchase-settings';
   const publicRoutes = new Set(['dashboard','v1-access','v1-help']);
-  const guestBasicRoutes = new Set(['convert','conv-history']);
+  const guestBasicRoutes = new Set(['convert','conv-history','recent']);
   if (MENU_MAP[routeId] && !publicRoutes.has(routeId) && !guestBasicRoutes.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (V1_REGISTERED_ONLY_ROUTES.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (MASTER_ONLY_ROUTES.has(routeId) && (!isMaster() || CFG?.impersonator)) return 'master';
