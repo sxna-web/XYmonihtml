@@ -4929,9 +4929,9 @@ registerPage('conv-plans', () => {
             el.querySelectorAll('[data-more-plan]').forEach(x => x.addEventListener('click', () => {
               close();
               const a = x.dataset.morePlan;
-              if (a === 'dup') { const np = { ...clone(p), id: uid('p'), adminId: currentAdmin().id, name: p.name + ' 副本', createdAt: new Date().toISOString() }; DB.plans.unshift(np); saveDB(); refreshCurrent(); toast('方案已复制', 'success'); }
-              if (a === 'export') downloadFile('starjump-plan-' + p.id + '.json', JSON.stringify(p, null, 2), 'application/json');
-              if (a === 'delete') confirmDialog({ title: '删除转换方案？', message: `将删除「${esc(p.name)}」，不会删除任何节点或订阅源。`, danger: true, confirmText: '删除' }).then(ok => { if (!ok) return; Repo.remove('plans', p.id); saveDB(); addLog({ module: '节点转换', type: '删除转换方案', target: p.name }); refreshCurrent(); toast('方案已删除', 'success'); });
+              if (a === 'dup') { if (!p || !requireVip('复制转换方案') || !requireOwnRecord(DB.plans.find(x => x.id === p.id))) { toast('当前身份无权复制此方案', 'warn'); return; } const np = { ...clone(p), id: uid('p'), adminId: currentAdmin().id, name: p.name + ' 副本', createdAt: new Date().toISOString() }; DB.plans.unshift(np); saveDB(); refreshCurrent(); toast('方案已复制', 'success'); }
+              if (a === 'export') { if (p && scopeRecordAllowed(p)) downloadFile('starjump-plan-' + p.id + '.json', JSON.stringify(p, null, 2), 'application/json'); else toast('只能导出自己的方案', 'warn'); }
+              if (a === 'delete') confirmDialog({ title: '删除转换方案？', message: `将删除「${esc(p.name)}」，不会删除任何节点或订阅源。`, danger: true, confirmText: '删除' }).then(ok => { if (!ok) return; if (!requireVip('删除转换方案') || !requireOwnRecord(DB.plans.find(x => x.id === p.id))) { toast('权限已变化，未删除方案', 'warn'); return; } Repo.remove('plans', p.id); saveDB(); addLog({ module: '节点转换', type: '删除转换方案', target: p.name }); refreshCurrent(); toast('方案已删除', 'success'); });
             }));
           } });
         }
@@ -4940,6 +4940,8 @@ registerPage('conv-plans', () => {
   };
 });
 function openPlanForm(plan) {
+  if (plan && !requireOwnRecord(plan)) return;
+  if (!requireVip(plan ? '编辑转换方案' : '新建转换方案')) return;
   const isNew = !plan;
   openForm({
     title: isNew ? '新建转换方案' : '编辑转换方案', size: 'lg', icon: 'layout',
@@ -4954,6 +4956,9 @@ function openPlanForm(plan) {
     ],
     submitText: isNew ? '创建方案' : '保存修改',
     onSubmit: v => {
+      if (!requireVip(isNew ? '新建转换方案' : '编辑转换方案') || (plan && !requireOwnRecord(DB.plans.find(x => x.id === plan.id)))) throw new Error('当前身份无权保存此转换方案');
+      if (v.filterSchemeId && !tenantFilterSchemes().some(x => x.id === v.filterSchemeId)) throw new Error('过滤方案不属于当前管理员');
+      if (v.templateId && !tenantTemplates().some(x => x.id === v.templateId)) throw new Error('转换模板不属于当前管理员');
       if (isNew) DB.plans.unshift({ id: uid('p'), adminId: currentAdmin().id, ...v, createdAt: new Date().toISOString() });
       else Object.assign(plan, v);
       addLog({ module: '节点转换', type: isNew ? '新建转换方案' : '编辑转换方案', target: v.name });
@@ -4966,8 +4971,11 @@ function importPlan() {
     title: '导入转换方案', subtitle: '粘贴导出的 JSON。仅导入格式与设置，不会自动添加节点。', size: 'lg', icon: 'upload',
     fields: [{ key: 'json', label: '方案 JSON', type: 'textarea', rows: 8, required: true, full: true }], submitText: '校验并导入',
     onSubmit: v => {
+      if (!requireVip('导入转换方案')) throw new Error('当前身份无权导入转换方案');
       const p = safeJSON(v.json, null);
-      if (!p || !p.name || !p.format) throw new Error('不是有效的转换方案 JSON');
+      if (!p || !p.name || !p.format || !FORMATS[p.format]) throw new Error('不是有效的转换方案 JSON');
+      if (p.filterSchemeId && !tenantFilterSchemes().some(x => x.id === p.filterSchemeId)) p.filterSchemeId = '';
+      if (p.templateId && !tenantTemplates().some(x => x.id === p.templateId)) p.templateId = '';
       DB.plans.unshift({ ...p, id: uid('p'), adminId: currentAdmin().id, createdAt: new Date().toISOString(), name: p.name + '（导入）' });
       saveDB(); addLog({ module: '节点转换', type: '导入转换方案', target: p.name }); refreshCurrent(); toast('方案已导入', 'success');
     }
@@ -4986,44 +4994,52 @@ function frEnsure() {
 }
 function frLoad(id) { FR.selectedId = id; FR.draft = clone(tenantFilterSchemes().find(f => f.id === id)); FR.preview = null; refreshCurrent(); }
 function frNew() {
+  if (!requireVip('新建过滤方案')) return;
   openForm({
     title: '新建过滤方案', size: 'sm', icon: 'filter',
     fields: [{ key: 'name', label: '方案名称', required: true, placeholder: '例如：日本节点 · 仅 VLESS' }, { key: 'desc', label: '说明', type: 'textarea', rows: 2 }],
     submitText: '创建并编辑',
     onSubmit: v => {
+      if (!requireVip('新建过滤方案')) throw new Error('当前身份无权新建过滤方案');
       const s = { id: uid('f'), adminId: currentAdmin().id, name: v.name, desc: v.desc, logic: 'AND', rules: [], dedupe: true, dropInvalid: true, excludePriority: true, isDefault: false, createdAt: new Date().toISOString() };
       DB.filterSchemes.unshift(s); saveDB(); FR.selectedId = s.id; FR.draft = clone(s); FR.preview = null; addLog({ module: '过滤规则', type: '新建方案', target: s.name }); refreshCurrent(); toast('已创建，请添加过滤条件', 'success');
     }
   });
 }
 function frSave() {
+  if (!requireVip('保存过滤方案')) return;
   frEnsure();
   const target = tenantFilterSchemes().find(f => f.id === FR.selectedId);
   if (!target) return;
+  if (!requireOwnRecord(target) || !tenantFilterSchemes().some(x => x.id === target.id)) return;
   const d = FR.draft;
   if (!d.name.trim()) { toast('方案名称不能为空', 'warn'); return; }
   Object.assign(target, { name: d.name, desc: d.desc, logic: d.logic, rules: clone(d.rules), dedupe: d.dedupe, dropInvalid: d.dropInvalid, excludePriority: d.excludePriority });
   saveDB(); FR.draft = clone(target); FR.preview = null; addLog({ module: '过滤规则', type: '保存方案', target: target.name, after: `${target.rules.length} 条规则` }); refreshCurrent(); toast('过滤方案已保存，可在转换工作区使用', 'success');
 }
 function frDelete() {
+  if (!requireVip('删除过滤方案')) return;
   const s = tenantFilterSchemes().find(f => f.id === FR.selectedId);
   if (!s) return;
   confirmDialog({ title: '删除过滤方案？', message: `将删除方案「${esc(s.name)}」。这不会删除任何节点；已生成的转换历史不受影响。`, danger: true, confirmText: '删除方案' }).then(ok => {
     if (!ok) return;
+    if (!requireVip('删除过滤方案') || !requireOwnRecord(DB.filterSchemes.find(x => x.id === s.id))) { toast('权限已变化，未删除过滤方案', 'warn'); return; }
     Repo.remove('filterSchemes', s.id); saveDB(); FR.selectedId = null; FR.draft = null; FR.preview = null; addLog({ module: '过滤规则', type: '删除方案', target: s.name }); refreshCurrent(); toast('方案已删除', 'success');
   });
 }
 function frSetDefault() {
+  if (!requireVip('设置默认过滤方案')) return;
   const s = tenantFilterSchemes().find(f => f.id === FR.selectedId);
-  if (!s) return;
+  if (!s || !requireOwnRecord(s)) return;
   tenantFilterSchemes().forEach(f => f.isDefault = f.id === s.id); saveDB(); addLog({ module: '过滤规则', type: '设为默认方案', target: s.name }); refreshCurrent(); toast('已设为默认过滤方案', 'success');
 }
-function frExportScheme(s) { downloadFile('starjump-filter-' + s.id + '.json', JSON.stringify(s, null, 2), 'application/json'); toast('方案已导出', 'success'); }
+function frExportScheme(s) { if (!s || !scopeRecordAllowed(s)) { toast('只能导出自己的过滤方案', 'warn'); return; } downloadFile('starjump-filter-' + s.id + '.json', JSON.stringify(s, null, 2), 'application/json'); toast('方案已导出', 'success'); }
 function frImportScheme() {
   openForm({
     title: '导入过滤方案', subtitle: '粘贴导出 JSON，或从其它设备复制过来。导入前会校验条件类型。', size: 'lg', icon: 'upload',
     fields: [{ key: 'json', label: '方案 JSON', type: 'textarea', rows: 8, required: true, full: true }], submitText: '校验并导入',
     onSubmit: v => {
+      if (!requireVip('导入过滤方案')) throw new Error('当前身份无权导入过滤方案');
       const s = safeJSON(v.json, null);
       if (!s || !s.name || !Array.isArray(s.rules)) throw new Error('不是有效的过滤方案 JSON（需要 name 和 rules）');
       const validTypes = Object.keys(RULE_TYPES);
@@ -5194,6 +5210,7 @@ function openGroupNodes(g) {
     title: '管理分组节点 · ' + g.name, subtitle: '勾选后保存；只修改分组关系，不会删除节点', size: 'lg', icon: 'server',
     items: tenantNodes().map(n => ({ id: n.id, label: n.name, sub: `${PROTOCOLS[n.protocol]} · ${n.region} · ${subName(n.sourceId)}` })), preselected: g.nodeIds,
     onSave: ids => {
+      if (!requireVip('调整分组节点') || !requireOwnRecord(DB.groups.find(x => x.id === g.id)) || !ids.every(id => tenantNodes().some(n => n.id === id))) { toast('权限已变化或包含其他管理员节点，未保存分组', 'warn'); return; }
       saveGroupMembership(g.id, ids); saveDB(); addLog({ module: '转换分组', type: '调整分组节点', target: g.name, after: ids.length + ' 个节点' }); refreshCurrent(); toast('分组节点已更新，原始节点未删除', 'success');
     }
   });
@@ -5207,10 +5224,12 @@ function splitGroup(g) {
     body: `<div class="field"><label>新分组名称</label><input class="input" data-split-name value="${attr(g.name + ' · 拆分')}"></div><div class="field"><label>选择节点</label><div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:9px;padding:7px">${g.nodeIds.map(id => { const n = tenantNodes().find(x => x.id === id); return n ? `<label class="checkline" style="padding:5px 6px"><input type="checkbox" data-split-node="${id}"><span>${esc(n.name)}<span class="sub">${PROTOCOLS[n.protocol]} · ${n.region}</span></span></label>` : ''; }).join('')}</div></div>`,
     footer: `<button class="btn" data-modal-close>取消</button><button class="btn primary" data-split-do>拆分</button>`,
     onMount: (el, close) => el.querySelector('[data-split-do]').addEventListener('click', () => {
+      if (!requireVip('拆分分组') || !requireOwnRecord(DB.groups.find(x => x.id === g.id))) { toast('权限已变化，未拆分分组', 'warn'); return; }
       const name = el.querySelector('[data-split-name]').value.trim();
       const ids = $$('[data-split-node]:checked', el).map(x => x.dataset.splitNode);
       if (!name) return toast('请输入新分组名称', 'warn');
       if (!ids.length) return toast('请选择至少一个节点', 'warn');
+      if (!ids.every(id => tenantNodes().some(n => n.id === id) && (g.nodeIds || []).includes(id))) return toast('只能拆分当前管理员该分组中的节点', 'warn');
       const ng = { id: uid('g'), adminId: currentAdmin().id, name, note: '由「' + g.name + '」拆分', color: g.color, sort: DB.groups.length + 1, nodeIds: [], createdAt: new Date().toISOString() };
       DB.groups.push(ng); saveGroupMembership(ng.id, ids); saveGroupMembership(g.id, g.nodeIds.filter(id => !ids.includes(id)));
       saveDB(); addLog({ module: '转换分组', type: '拆分分组', target: g.name, after: `${ids.length} 个节点移入 ${name}` }); close(); refreshCurrent(); toast('分组已拆分，原始节点仍在节点库中', 'success');
@@ -5222,7 +5241,9 @@ function deleteGroup(g) {
   if (!requireVip('删除分组')) return;
   confirmDialog({ title: '删除分组？', message: `将删除分组「${esc(g.name)}」。<b>分组内的 ${g.nodeIds.length} 个原始节点不会被删除</b>，只解除分组关系。`, danger: true, confirmText: '删除分组' }).then(ok => {
     if (!ok) return;
-    DB.nodes.forEach(n => n.groupIds = (n.groupIds || []).filter(id => id !== g.id));
+    if (!requireVip('删除分组') || !requireOwnRecord(DB.groups.find(x => x.id === g.id))) { toast('权限已变化，未删除分组', 'warn'); return; }
+    if (g.appType && g.appType !== 'normal') sj51InvalidateGroup(g, '管理员删除分组');
+    scopedByAdmin(DB.nodes).forEach(n => n.groupIds = (n.groupIds || []).filter(id => id !== g.id));
     Repo.remove('groups', g.id); saveDB(); addLog({ module: '转换分组', type: '删除分组', target: g.name, after: '原始节点保留' }); refreshCurrent(); toast('分组已删除，原始节点保留', 'success');
   });
 }
@@ -5234,6 +5255,7 @@ function mergeGroups(list) {
     title: '合并分组', size: 'sm', icon: 'merge', subtitle: '合并后原始分组将被移除，但所有节点都会保留。',
     fields: [{ key: 'name', label: '新分组名称', required: true, value: list[0].name + ' + ' + list[1].name }], submitText: '合并',
     onSubmit: v => {
+      if (!requireVip('合并分组') || !list.every(g => requireOwnRecord(DB.groups.find(x => x.id === g.id)))) throw new Error('权限已变化或分组不属于当前管理员');
       const ids = uniq(list.flatMap(g => g.nodeIds));
       const ng = { id: uid('g'), adminId: currentAdmin().id, name: v.name, note: '由 ' + list.map(g => g.name).join('、') + ' 合并', color: list[0].color, sort: Math.min(...list.map(g => g.sort)), nodeIds: [], createdAt: new Date().toISOString() };
       DB.groups = DB.groups.filter(g => !list.some(x => x.id === g.id));
@@ -5280,6 +5302,8 @@ registerPage('templates', (query) => {
   };
 });
 function openTemplateForm(t) {
+  if (t && !requireOwnRecord(t)) return;
+  if (!requireVip(t ? '编辑转换模板' : '新建转换模板')) return;
   const isNew = !t;
   openForm({
     title: isNew ? '新建转换模板' : '编辑转换模板', size: 'lg', icon: 'file',
@@ -5296,6 +5320,8 @@ function openTemplateForm(t) {
     ],
     submitText: isNew ? '创建模板' : '保存模板',
     onSubmit: v => {
+      if (!requireVip(isNew ? '新建转换模板' : '编辑转换模板') || (t && !requireOwnRecord(DB.templates.find(x => x.id === t.id)))) throw new Error('当前身份无权保存此模板');
+      if (v.filterSchemeId && !tenantFilterSchemes().some(x => x.id === v.filterSchemeId)) throw new Error('过滤方案不属于当前管理员');
       if (isNew) DB.templates.unshift({ id: uid('t'), adminId: currentAdmin().id, ...v, options: {}, isDefault: false, createdAt: new Date().toISOString() });
       else Object.assign(t, v);
       saveDB(); addLog({ module: '转换模板', type: isNew ? '新建模板' : '编辑模板', target: v.name }); refreshCurrent(); toast('模板已保存', 'success');
@@ -5306,6 +5332,7 @@ function importTemplate() {
   openForm({
     title: '导入转换模板', size: 'lg', icon: 'upload', fields: [{ key: 'json', label: '模板 JSON', type: 'textarea', rows: 8, required: true, full: true }], submitText: '导入',
     onSubmit: v => {
+      if (!requireVip('导入转换模板')) throw new Error('当前身份无权导入模板');
       const t = safeJSON(v.json, null);
       if (!t || !t.name || !t.format) throw new Error('不是有效的模板 JSON（需要 name 和 format）');
       if (!FORMATS[t.format]) throw new Error('未知输出格式：' + t.format);
@@ -5564,7 +5591,7 @@ function deleteNodes(list) {
   });
 }
 function toggleNodes(list, enabled) {
-  if (!list.every(n => requireOwnRecord(n))) return;
+  if (!list.length || !list.every(n => requireOwnRecord(n) && scopedByAdmin(DB.nodes).some(x => x.id === n.id))) return;
   if (!requireVip(enabled ? '启用节点' : '停用节点')) return;
   list.forEach(n => { n.enabled = enabled; n.updatedAt = new Date().toISOString(); });
   saveDB(); addLog({ module: '节点管理', type: enabled ? '启用节点' : '停用节点', target: list.map(n => n.name).join('、'), after: list.length + ' 个节点' }); refreshCurrent(); toast(`已${enabled ? '启用' : '停用'} ${list.length} 个节点`, 'success');
@@ -5646,11 +5673,13 @@ function openBatchRename(list) {
   });
 }
 function openNodeSort(list) {
+  if (list && !list.every(n => requireOwnRecord(n) && scopedByAdmin(DB.nodes).some(x => x.id === n.id))) return;
   if (!requireVip('节点排序')) return;
   openForm({
     title: '节点排序', size: 'sm', icon: 'arrow-down', fields: [{ key: 'mode', label: '排序方式', type: 'select', options: [{ value: 'region', label: '按地区' }, { value: 'protocol', label: '按协议' }, { value: 'name', label: '按名称' }, { value: 'port', label: '按端口' }] }], submitText: '应用排序',
     onSubmit: v => {
-      const arr = list ? list.slice() : scopedByAdmin(DB.nodes);
+      if (!requireVip('节点排序') || (list && !list.every(n => requireOwnRecord(DB.nodes.find(x => x.id === n.id))))) throw new Error('当前身份无权排序这些节点');
+      const arr = list ? list.map(n => DB.nodes.find(x => x.id === n.id)).filter(Boolean) : scopedByAdmin(DB.nodes);
       if (v.mode === 'region') arr.sort((a, b) => REGIONS.indexOf(a.region) - REGIONS.indexOf(b.region) || a.name.localeCompare(b.name, 'zh'));
       else if (v.mode === 'protocol') arr.sort((a, b) => Object.keys(PROTOCOLS).indexOf(a.protocol) - Object.keys(PROTOCOLS).indexOf(b.protocol) || a.name.localeCompare(b.name, 'zh'));
       else if (v.mode === 'port') arr.sort((a, b) => a.port - b.port);
@@ -10309,6 +10338,7 @@ function openGroupForm(g) {
     ],
     submitText:isNew?'创建分组':'保存',
     onSubmit:v=>{
+      if (!requireVip(isNew ? '新建分组' : '编辑分组') || (g && !requireOwnRecord(DB.groups.find(x=>x.id===g.id)))) throw new Error('当前身份无权保存此分组');
       const nextType=v.appType||'normal';
       if(isNew){
         const obj={id:uid('g'),adminId:currentAdmin().id,name:v.name,note:v.note,color:v.color,sort:Number(v.sort)||DB.groups.length+1,nodeIds:[],createdAt:sj51Now(),appType:'normal',appEnabled:true,generation:1};
@@ -10327,6 +10357,7 @@ function deleteGroup(g){
   if(!requireVip('删除分组'))return;
   confirmDialog({title:'删除分组？',message:`将删除分组「${esc(g.name)}」。APP 授权立即停止下发，24 小时后清理该分组本地缓存；原始节点实体与其它有效分组保留。`,danger:true,confirmText:'删除分组'}).then(ok=>{
     if(!ok)return;
+    if(!requireVip('删除分组') || !requireOwnRecord(DB.groups.find(x=>x.id===g.id))){toast('权限已变化，未删除分组','warn');return;}
     if(g.appType && g.appType!=='normal')sj51InvalidateGroup(g,'管理员删除分组');
     DB.nodes.forEach(n=>n.groupIds=(n.groupIds||[]).filter(id=>id!==g.id));
     Repo.remove('groups',g.id);saveDB();addLog({module:'转换分组',type:'删除分组',target:g.name,after:'APP 失效清理事件已建立；节点实体保留'});refreshCurrent();toast('分组已删除，APP 授权进入 24 小时清理','success');
