@@ -100,3 +100,70 @@ HTML 与该 Worker 存在大范围同源接口设计，主要业务路由可在 
 5. APK 源码可读取后，逐项对照设备注册、授权租约、generation、防回滚、清理确认和凭证存储。
 
 **保护声明：本文件只记录审计结果和待办，不授权修改 Worker、D1、生产变量或部署。**
+
+
+## 8. 第二轮逐调用核对补充（HTML 请求与 Worker 分发）
+
+本轮继续读取 HTML 请求封装、用户面板动作、转换页面和 Worker 对应处理分支，确认以下具体兼容缺陷：
+
+### P1-06 用户面板“立即同步”调用错误接口
+
+- HTML 用户面板在约 2435-2438 行调用 `POST /api/admin/sync`，Authorization 使用当前用户 Session token。
+- Worker 路由入口把 `/api/admin/*` 归为 legacy API；legacy 分支要求 `ctx.isSuper`，普通用户会被拒绝。
+- Worker 已实现用户态同步路径：`POST /api/user/sources/:id/sync`，在 `userSourcesRoute` 中检查 operate scope、来源归属、审批通过和启用状态。
+- 结论：HTML 用户面板同步按钮与 Worker 接口不兼容，普通用户不能通过当前按钮同步自己的来源。
+- 修复方向：HTML 改用 `/api/user/sources/{source_id}/sync`；不要放宽 `/api/admin/sync` 让普通用户访问。还需核对该用户态路由实际返回字段与 HTML 状态提示兼容性。
+
+### P1-07 转换请求没有携带已登录用户 Session
+
+- HTML 转换主请求约 5594-5598 行使用裸 `fetch`，只传 `content-type` 和 `x-guest-key`，没有传当前登录 token。
+- HTML 的 `/api/convert/groups`、`/api/convert/links`、分组改名和链接失效请求同样只使用 guest key，没有 Authorization。
+- Worker 的 `convertRoute` 会尝试 `resolveSession`；无有效 Session 时按 guest key 建立 `g:<hash>` 归属，而非注册用户的 `u:<id>` 归属。
+- 结论：即使用户已登录，当前 HTML 转换页仍可能把转换历史归入匿名 guest 空间，无法可靠实现“注册用户转换记录按用户 ID 归档”及跨设备历史关联。
+- 修复方向：转换页在存在有效用户 Session 时携带 Authorization；匿名用户仍使用 guest key。Worker 继续以服务端 Session 身份优先确定 owner，不信任客户端传入的 user_id。匿名历史安全认领另行设计，不能仅凭 guest key 直接转移。
+
+### P1-08 高级过滤的 Worker 注释与实际执行不一致
+
+- Worker 在转换代码中注释“过滤/重命名仅对登录用户开放（VIP 功能）”，但随后无条件调用 `applyNodeFilters(nodes, body.filters)`。
+- HTML 公开转换页面无登录态也始终提交 include/exclude/rename 字段。
+- 结论：当前实现没有落实注释所述的登录限制，更没有有效 VIP 门禁；匿名访客也能提交高级过滤参数。
+- 修复方向：保留匿名基础转换；服务端按最终 V2.5 权限矩阵识别高级过滤参数，并对注册身份、有效 VIP 状态进行强制判断。前端可隐藏/提示，但不承担安全裁决。
+
+### P1-09 用户 APP 卡密导出缺少前端错误状态判断
+
+- HTML 约 3095-3104 行直接请求 `GET /api/user/app-cards/export`，不检查 `res.ok` 或响应 Content-Type，直接把响应作为 CSV 下载。
+- Worker 路由存在，按 `ctx.effectiveId` 导出当前管理员的卡密 CSV。
+- 结论：接口存在，但遇到 401/403/500 时，页面可能把 JSON 错误响应保存成 CSV，用户误以为导出成功。
+- 修复方向：下载前检查 HTTP 状态和 Content-Type；失败时读取 JSON 错误并显示，不生成下载文件。
+
+### P2-04 转换分组改名/链接失效未检查 HTTP 失败
+
+- HTML 对 `/api/convert/groups/rename` 和 `/api/convert/links/:id/revoke` 使用裸 fetch 后未判断 `res.ok` 与 `data.ok`。
+- Worker 会对 owner 不匹配返回 404，对无效参数返回 400。
+- 结论：服务端拒绝时，页面仍可能刷新并表现为操作完成，错误反馈不可靠。
+- 修复方向：统一检查状态码与 JSON `ok`；保留 owner_key 校验，不能为了让前端成功而放宽归属检查。
+
+### P2-05 用户页面调用超管接口属于无效探测
+
+- 登录成功后的公共流程会调用 `/api/super/alerts`、`/api/super/stats` 等超管数据接口；普通用户会被 Worker 正确拒绝，其中部分调用被 HTML catch 吞掉。
+- 结论：当前不构成权限绕过，但会产生无效请求和噪声；应按 `me.user.role` 分流初始化，普通用户只请求用户态接口。
+
+## 9. 请求封装与接口响应兼容规则
+
+- HTML 通用 `api()` 封装会携带 Bearer token，解析 JSON 并检查 HTTP 状态及 `data.ok`；多数管理 API 使用该封装，基本具备错误检查。
+- 但页面中仍存在多处裸 `fetch`。凡是访问需要 Session 的接口，必须显式携带 Authorization；凡是执行写操作，必须检查 HTTP 状态和业务响应。
+- 转换页应采用“双身份”模式：已登录用户带 Session，匿名用户带 guest key；Worker 通过服务端 Session 确定注册用户归属。
+- 不应把 `/api/admin/*` 当作普通用户 API。legacy 接口仅用于旧后台/超管凭据兼容；普通用户应使用明确的 `/api/user/*` 路由。
+- 本轮只确认了关键字段使用点，没有宣称全部 96 处调用的 request/response schema 已逐字段完成。
+
+## 10. 本轮修复优先顺序
+
+1. 修复用户面板同步接口路径：`/api/admin/sync` → `/api/user/sources/:id/sync`。
+2. 转换页在登录状态下携带 Session，修复注册用户归档归属。
+3. Worker 对过滤/重命名实施有效 VIP 服务端门禁，同时保留 L0 基础转换。
+4. 修复 APP 分组、入口和 APP 卡密写操作的有效 VIP 门禁。
+5. 修复分组删除生命周期与设备清理版本机制。
+6. 修复导出、改名、失效等裸 fetch 的响应检查。
+7. 普通用户和超管初始化请求按角色分流。
+
+以上仍是源码静态审计和修复建议，不是已修改或已通过测试的代码。
