@@ -8604,19 +8604,39 @@ registerPage('v1-overview', () => {
   const userCount = isMaster() ? DB.users.length : visibleUsers().length;
   const groupCount = (isMaster() ? DB.v1.backupGroups : DB.v1.backupGroups.filter(g => g.adminId === currentAdmin().id)).length;
   const v1Logs = visibleLogs().filter(l => l.module === 'V1 重建' || l.module === '管理员配额' || l.module === '备份分组').slice(0, 5);
+  const overviewGroups = [
+    { name:'转换与分组', desc:'最常用：生成配置、查看批次、整理自己的节点', items:[
+      ['v1-converter','订阅转换','多格式生成与基础过滤','shuffle'],
+      ['v1-batches','转换批次','查看、复制自己的生成记录','history'],
+      ['v1-groups','默认分组 / 分组管理','自动归档节点、版本与分享','layers'],
+      ['nodes','节点管理','节点查询、维护和分组','server'],
+      ['subs','订阅源管理','来源配置与同步记录','rss']
+    ]},
+    { name:'APP 与授权', desc:'管理 APP 用户、卡密、设备和对外分享', items:[
+      ['cards','卡密管理','APP 卡密生成、筛选与授权','key'],
+      ['users','APP 用户','用户身份、状态与授权关系','users'],
+      ['devices','设备管理','设备绑定与状态','monitor'],
+      ['app-shares','APP 授权分享','APP 用户可获取的分组授权','smartphone'],
+      ['v1-share-manager','分享管理','普通链接、星链接与 APP 接入分享','share'],
+      ['v1-app-downloads','星跃 APP 下载','下载地址与购买入口','download']
+    ]},
+    { name:'系统与维护', desc:'处理权限、运行状态、审计与环境核对', items:[
+      ['v1-heartbeat','APP 使用统计','用户、设备与活跃趋势','chart'],
+      ['v1-health','节点与检测','节点状态与健康检测','activity'],
+      ['v1-quotas','管理员与配额','权限、额度和资源限制','sliders'],
+      ['logs','操作审计','关键操作和变更记录','scroll'],
+      ['v1-env','系统环境盘点','Worker、D1、API 核对记录','settings']
+    ]}
+  ].map(g => ({...g, items:g.items.filter(m => isMenuItemAvailable(MENU_MAP[m[0]]))})).filter(g => g.items.length);
+  const overviewQuick = overviewGroups.flatMap(g => g.items).slice(0,3);
   return {
     html: `<section class="v1-hero v1-hero-compact"><div class="v1-hero-grid"><div style="min-width:240px;flex:1">
         <div class="v1-hero-title-row"><h1>星跃服务后台</h1><button class="btn sm v1-help-action" data-nav="v1-help">${ico('info')}使用说明</button></div>
         <p class="v1-hero-caption">统一管理订阅转换、节点、APP、用户与授权。首次使用请先阅读使用说明。</p>
         <div class="v1-hero-meta"><span class="chip">${ico('user-check')}身份 <b>${esc(v1IdentityTier(currentAdmin()))}</b></span><span class="chip">${ico('key')}卡密 <b>${cardsInScope.length}</b></span><span class="chip">${ico('layers')}分组 <b>${groupCount}</b></span><span class="chip">${ico('activity')}在线 <b>${online.onlineUsers}</b></span><span class="chip">${ico('database')}阶段 0 <b>${env.done}/${env.total}</b></span></div>
-        <div class="row v1-hero-actions"><button class="btn primary" data-nav="v1-converter">${ico('shuffle')}订阅转换</button><button class="btn" data-nav="v1-groups">${ico('layers')}管理分组</button><button class="btn" data-nav="v1-heartbeat">${ico('activity')}心跳</button></div>
+        <div class="row v1-hero-actions">${overviewQuick.map((m,i)=>`<button class="btn ${i===0?'primary':''}" data-nav="${m[0]}">${ico(m[3])}${esc(m[1])}</button>`).join('')}</div>
       </div></div></section>
-      ${sectionHead('常用功能', '日常只需转换、分组、卡密；其他按需进入', `<button class="btn sm ghost" data-nav="v1-help">${ico('info')}怎么用 ${ico('chevron-right')}</button>`, 'grid')}
-      <div class="v1-module-grid v1-module-grid-all">${[
-        ['v1-converter','订阅转换','多格式生成与过滤','shuffle'],['v1-groups','管理分组','节点集合、版本与分享','layers'],['cards','卡密管理','APP 卡密生成、筛选与授权','key'],['v1-share-manager','分享管理','查看与管理各类分享链接','share'],
-        ...(currentAdmin()?.status === 'active' ? [['v1-app-downloads','星跃 APP 下载','注册用户获取 APP 下载链接','smartphone']] : []),
-        ['v1-health','节点与检测','节点状态与健康检测','activity'],['v1-overview','总览首页','数据概况与阶段进度','home'],['v1-heartbeat','APP 使用统计','用户、设备与活跃趋势','chart'],['subs','订阅源管理','订阅来源与自动同步','rss'],['v1-quotas','管理员与配额','管理员权限与资源限额','users'],['logs','密码操作审计','账号与关键操作记录','scroll'],['v1-env','系统设置','环境、主题与备份','settings']
-      ].map(m => `<button class="v1-module" data-nav="${m[0] === 'v1-env' && !isMaster() ? 'settings' : m[0]}"><div class="vm-top"><span class="vm-ico">${ico(m[3])}</span><b>${m[1]}</b></div><p>${m[2]}</p></button>`).join('')}</div>
+      ${overviewGroups.map(g=>`${sectionHead(g.name,g.desc,'','grid')}<div class="v1-module-grid v1-module-grid-all">${g.items.map(m=>`<button class="v1-module" data-nav="${m[0]=== 'v1-env' && !isMaster() ? 'settings' : m[0]}"><div class="vm-top"><span class="vm-ico">${ico(m[3])}</span><b>${esc(m[1])}</b></div><p>${esc(m[2])}</p></button>`).join('')}</div>`).join('')}
       <details class="v1-fold"><summary>${ico('layers')}更多总览：重建阶段与最近操作 <span>${v1Logs.length} 条最近记录</span></summary><div class="v1-fold-body"><div class="v1-split"><div><div class="hr-label">重建阶段</div>${v1StageList()}</div><div><div class="hr-label">最近 V1 操作</div>${v1Logs.length ? v1Logs.slice(0, 4).map(l => `<div class="rule-card"><span class="r-ico">${ico('scroll')}</span><div class="r-main"><b>${esc(l.type)} · ${esc(l.target || '')}</b><span>${fmtDT(l.time)} · ${esc(l.actor)} · ${esc(l.result)}</span></div></div>`).join('') : `<div class="empty" style="padding:12px">${ico('scroll')}<b>暂无记录</b><span>操作后自动写入本地日志</span></div>`}<button class="btn sm ghost" data-nav="logs" style="margin-top:6px">全部审计 ${ico('chevron-right')}</button></div></div></div></details>`,
     mount: root => {
       ensureV1Data();
