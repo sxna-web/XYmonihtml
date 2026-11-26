@@ -238,3 +238,82 @@ HTML 与该 Worker 存在大范围同源接口设计，主要业务路由可在 
 - 体验/正式 VIP 到期后的操作权限：尚未落实到用户 APP 管理写接口，是当前最明确的权限缺口。
 - 免费分组资格：设备历史 grant 与 V2.5 的 APP 用户身份 ID 规则存在口径差异，必须先核实 APK 身份模型。
 - 尚未执行线上卡密激活、续费、失活、恢复或任何 D1 写操作；也未验证目标环境 Cron 配置。
+
+
+## 13. 第四轮：APP 身份、设备授权、分组与本地清理
+
+### 本轮核对范围与限制
+
+- 已读取原始 Worker 中 `appRedeemRoute`、`appGroupsForDevice`、`appLinksForDevice`、`appFreeGroupRoute`、管理员分享编号及授权维护代码。
+- 仓库根目录存在 `StarJump-6.00.47-source .zip` 和 `StarJump-6.00.48-source.zip`。本轮 GitHub 文件接口不能读取 ZIP 二进制内容；因此 APK 源码尚未解包审计，不能确认 Android 端 device_id 生成、Keystore 绑定、Token 保存、缓存清理和版本防回滚。
+- 本轮未修改 APK、Worker 或 D1。
+
+### P1-14 APP 设备身份目前主要依赖客户端提交的 device_id
+
+- `POST /api/app/redeem` 从请求体读取 `device_id`，只校验字符格式，然后把它写入 `app_entitlements`。
+- `GET /api/app/status` 只按 device_id 查询授权，不校验 entitlement token。
+- `GET /api/app/nodes`、`GET /api/app/groups`、`GET /api/app/links` 会校验 entitlement token，但 Token 仍与客户端提交的 device_id 共同使用。
+- 本轮未发现 Worker 端设备注册挑战、设备公钥登记、签名挑战或 Android Keystore 证明流程。
+- 风险：若 APK 仅使用可复制的本地字符串作为 device_id，复制该值即可模拟设备身份；Token 能降低仅知道 device_id 时的冒用风险，但不能代替可靠设备身份和密钥保护。
+- 处理方向：APK 侧应核对是否使用 Android Keystore 生成不可导出的设备密钥；服务端应采用设备注册/挑战签名机制，至少将 entitlement token 与设备密钥绑定。不能把 Android ID、随机 UUID 或 SharedPreferences 单独当成不可伪造身份。
+
+### P1-15 授权 Token 存在默认固定密钥回退值
+
+- `entToken` 使用 `env.SESSION_PEPPER || "starjump-app"` 作为 HMAC 密钥。
+- 若部署环境漏配 SESSION_PEPPER，所有环境会退回同一个源码固定值，Token 可被知悉该默认值的人按 entitlement_id 与 device_id 计算。
+- 这是配置安全缺口。正式环境应强制要求独立高熵密钥，缺失时拒绝启动或拒绝授权签发/验证；不得静默回退到固定常量。
+- 需同时规划密钥轮换与旧 Token 过渡策略，避免直接换密钥导致所有已授权 APP 会话突然失效。
+
+### P1-16 设备状态接口不验证 Token，授权元数据可被枚举查询
+
+- `/api/app/status` 仅凭 device_id 返回最近授权记录的 id、expires_at、purge_at、status 和 active。
+- 未看到对该查询执行 `verifyEntToken`。
+- 应改为要求有效 entitlement token 或设备密钥签名，并限制响应仅返回当前设备必要字段；配合查询频率限制，避免设备授权状态探测。
+
+### P1-17 APP 免费分组存在不经过有效授权 Token 的设备读取路径
+
+- `appGroupsForDevice` 在设备没有有效 entitlement 时，查询 `app_free_grants`；只要 device_id 曾经有 grant，就返回对应管理员当前启用的 free 分组节点。
+- 该分支没有执行 entitlement token 验证；`app_free_grants` 的键是 device_id + admin_user_id。
+- 因此免费分组的访问能力依赖可提交的 device_id，而不是已验证的 APP 用户身份凭证。
+- 这与 V2.5 “免费分组通过 APP 用户身份 ID 获取”的业务表述存在差距。应先确认 APK 的用户身份凭证定义，再设计设备/用户身份认证；不要直接将当前设备 grant 永久保留作为最终授权模型。
+
+### P1-18 普通免费分组接口与 APP 专属分组授权链路分离
+
+- `GET /api/app/free` 可通过管理员 ID 或 6 位分享编号解析管理员，再按 `free_group_enabled` 返回 free tier 节点；该接口没有 device_id、entitlement token 或用户身份认证参数。
+- 这与 `/api/app/groups` 的 entitlement / app_free_grants 模型是两套不同的免费分组获取路径。
+- 需要明确它们分别服务于“未绑定用户的公开免费体验”还是“已绑定 APP 用户的身份授权”，并在 V2.5 权限矩阵中规定是否允许匿名访问、可见数据范围和限流；不能将公开接口结果视为已完成身份授权。
+
+### P1-19 24 小时本地节点保留规则尚未形成端到端证据
+
+- Worker 核销时把 entitlement.expires_at 设置为当前时间 + 卡密天数，把 purge_at 设置为到期时间 + 24 小时。
+- `runEntitlementMaintenance` 会将到期授权标记 expired，并在 purge_at 到达后标记 purged。
+- 但 `/api/app/nodes` 只查询 status='active' 且 expires_at > now 的授权；授权到期后即停止节点下发，没有看到向 APK 下发明确的清理截止时间/清理任务状态。
+- `/api/app/nodes` 返回的 `purge_at` 当前固定为 null；核销响应虽返回 `local_retention_hours: 24`，但这只是提示值，不是设备端清理确认协议。
+- Worker 无法在设备离线时直接删除本地节点。要满足“分组删除/改型后 24 小时内清理”，需要 APK 保存服务端版本/撤销标记、联网拉取差异、执行本地删除，并回传 cleanup acknowledgement；离线设备还需定义下一次联网时的强制清理行为。
+- 当前代码未见分组 generation/version、撤销墓碑、设备同步游标、cleanup ack 或确认超时告警的完整链路。不能仅凭 purge_at 字段认定 24 小时清理已实现。
+
+### P2-09 entitlement 查询只取设备最近一条记录，需验证多授权场景
+
+- `/api/app/nodes`、`/api/app/groups`、`/api/app/links` 都以 device_id 查询最近创建的一条有效 entitlement。
+- 同一设备绑定多个管理员或同时存在多张授权时，接口只选择最近一条，可能导致其它有效授权对应的管理员分组/入口不可见。
+- 需明确产品规则是“一台设备同一时刻只能绑定一个管理员授权”，还是允许多管理员并存；若允许并存，API 必须返回多授权集合并按 entitlement token 分别校验。
+
+### P2-10 管理员分享编号是短码，需核实防枚举与滥用控制
+
+- 分享编号为 6 位字符，使用排除易混淆字符的字符集生成；`/api/app/free` 可用编号查询管理员。
+- 代码有随机生成和唯一约束冲突重试，但本轮未见该公开查询入口的专门速率限制、失败计数或异常枚举告警。
+- 需补充 IP/设备维度限流、错误响应一致性和审计；短码只能用于发现/绑定入口，不能作为用户身份凭证或设备授权凭证。
+
+### P2-11 管理员换绑设备后旧设备 Token 失效机制需验证
+
+- 超管换绑接口更新 entitlement.device_id，并返回基于新 device_id 生成的 Token。
+- 原设备的 Token 因 HMAC 输入包含 device_id，理论上无法对新 device_id 验证；但需结合 APK Token 更新/缓存机制验证换绑后旧设备是否立即停止使用，且换绑操作审计当前使用 catch 吞错。
+- 需将换绑前后设备状态、Token 轮换、旧设备撤销结果纳入测试。
+
+## 14. 本轮结论
+
+1. Worker 对有 entitlement 的节点、分组和入口读取使用 HMAC Token 校验，这是正向实现；但状态查询和免费分组分支存在未认证访问面。
+2. 固定默认 HMAC 密钥回退必须列为高优先级配置安全问题。
+3. 当前 device_id 不能单独证明设备身份；必须结合 APK Keystore/签名挑战和服务端设备注册机制核验。
+4. 24 小时本地清理目前只有授权时间字段与文字提示，缺少可验证的设备同步、清理确认和离线恢复闭环。
+5. APK 源码 ZIP 尚未解包，本轮所有 Android 端实现状态均标记为“待源码核验”，不作已实现判断。
