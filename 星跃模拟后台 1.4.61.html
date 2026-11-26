@@ -3574,7 +3574,7 @@ function renderTopbar() {
       <button class="icon-btn" data-act="page.refresh" aria-label="刷新当前页" title="刷新当前页">${ico('refresh')}</button>
       <button class="icon-btn" data-act="notifications.open" aria-label="通知" title="通知">${ico('bell')}${notis.length ? `<span class="badge-dot">${notis.length > 9 ? '9+' : notis.length}</span>` : ''}</button>
       <button class="icon-btn" data-act="theme.open" aria-label="主题设置" title="主题设置">${ico('palette')}</button>
-      <button class="vip-chip ${vipActive(admin) ? '' : 'off'}" data-act="nav:vip" title="${attr(vipLabel(admin))}">${ico('crown')}${admin?._guest ? '普通用户' : isMaster(admin) ? '超管理员' : vipActive(admin) ? 'VIP ' + vipDays(admin) + '天' : '注册用户'}</button>
+      <button class="vip-chip ${vipActive(admin) ? '' : 'off'}" ${admin?._guest ? 'data-nav="v1-access"' : 'data-act="nav:vip"'} title="${attr(admin?._guest ? '注册后解锁更多功能' : vipLabel(admin))}">${ico('crown')}${admin?._guest ? '注册 / VIP' : isMaster(admin) ? '超管理员' : vipActive(admin) ? 'VIP ' + vipDays(admin) + '天' : '注册用户'}</button>
       <button class="user-btn" data-act="identity.open" aria-label="当前身份"><span class="avatar">${esc(initials(admin?.name || '普通用户'))}</span></button>
     </div>`;
   const banner = $('#vip-banner');
@@ -3901,7 +3901,7 @@ function recentEvents(limit) {
   visibleCards().filter(c => c.activatedAt).forEach(c => events.push({ kind: 'card', title: '卡密激活 · ' + c.code, sub: `${c.userId} · ${c.batch}`, time: c.activatedAt, tone: 'good', path: 'cards', icon: 'key' }));
   visibleLogs().slice(0, 80).forEach(l => events.push({ kind: 'log', title: l.actor + ' · ' + l.type, sub: `${l.module}${l.target ? ' · ' + l.target : ''}${l.reason ? ' · ' + l.reason : ''}`, time: l.time, tone: l.result === '失败' ? 'bad' : 'accent', path: 'logs', icon: 'scroll' }));
   scopedByAdmin(DB.diagnostics).forEach(d => events.push({ kind: 'diag', title: '系统异常 · ' + d.type, sub: d.module + ' · ' + d.cause, time: d.time, tone: d.resolved ? 'good' : 'warn', path: 'diagnostics', icon: 'bug' }));
-  (CFG.recentPages || []).forEach(p => events.push({ kind: 'page', title: '访问页面 · ' + p.title, sub: p.group + ' · 点击返回此页面', time: p.time, tone: 'accent', path: p.path, icon: 'clock' }));
+  (CFG.recentPages || []).filter(p => !currentAdmin()?._guest || isMenuItemAvailable(MENU_MAP[p.path]) || ['v1-access','v1-help'].includes(p.path)).forEach(p => events.push({ kind: 'page', title: '访问页面 · ' + p.title, sub: p.group + ' · 点击返回此页面', time: p.time, tone: 'accent', path: p.path, icon: 'clock' }));
   return events.sort(byTime('time')).slice(0, limit || 10);
 }
 function timelineHtml(events) {
@@ -3971,13 +3971,14 @@ registerPage('dashboard', () => {
       ${sectionHead('核心快捷入口', '常用功能一键直达', `<button class="btn sm ghost" data-nav="quick">全部快捷操作 ${ico('chevron-right')}</button>`, 'zap')}
       <div class="quick-grid">
         ${[
-          ['convert', '开始节点转换', '多来源组合 + 过滤 + 生成', 'shuffle', 'primary'],
+          ['convert', '开始节点转换', '来源组合、格式选择、预览与生成', 'shuffle', 'primary'],
+          ['conv-history', '转换历史', `${myConvs.length} 条本人转换记录 · 查看与复制`, 'history'],
           ['subs', '管理订阅源', `${activeSubs.length} 个启用 · ${todayKey() === dayKey(DB.sources[0]?.lastSyncAt) ? '今日已同步' : '等待同步'}`, 'rss'],
           ['nodes', '管理节点', `${availableNodes.length} 个可用节点`, 'server'],
+          ['node-groups', '节点分组', `${tenantGroups().length} 个分组 · 整理复用节点`, 'layers'],
           ['cards', 'APP 卡密管理', `${unactivated.length} 张未激活待发放`, 'key'],
-          ['users', 'APP 用户管理', `${activeUsers.length} 位有效用户`, 'users'],
           ['app-shares', 'APP 授权管理', `${DB.appShares.filter(s => s.enabled).length} 条授权生效中`, 'user-check'],
-          ['v1-share-manager', '🔗 分享管理', `${tenantRows(DB.v1.groupShares).length} 条分享链接 · 三级权限管理`, 'share']
+          ['v1-share-manager', '分享管理', `${tenantRows(DB.v1.groupShares).length} 条分享链接 · 权限管理`, 'share']
         ].map(q => `<button class="quick-tile" data-nav="${q[0]}"><span class="q-ico">${ico(q[3])}</span><span style="flex:1;min-width:0"><b>${esc(q[1])}</b><span>${esc(q[2])}</span></span>${ico('chevron-right')}</button>`).join('')}
       </div>
 
@@ -4228,13 +4229,13 @@ function openConversionDrawer(conv) {
     body: `${kvList([
       ['转换 ID', `<span class="mono">${esc(conv.id)}</span>`],
       ['输出格式', (conv.formats||[conv.format]).map(f=>FORMATS[f]?.name||f).join('、')],
-      ['统一模拟订阅链接', conv.subscriptionUrl ? `<span class="mono">${esc(conv.subscriptionUrl)}</span>` : '—'],
+      ...(guestReadOnly ? [] : [['统一模拟订阅链接', conv.subscriptionUrl ? `<span class="mono">${esc(conv.subscriptionUrl)}</span>` : '—']]),
       ['使用来源', esc(conv.sourceDesc || '—')],
       ['原始数量', conv.rawCount], ['保留数量', `<b style="color:var(--good)">${conv.keptCount}</b>`],
       ['排除数量', `<b style="color:var(--bad)">${conv.excludedCount}</b>`],
       ['重复 / 不兼容', `${conv.duplicateCount || 0} / ${conv.incompatibleCount || 0}`],
       ['转换状态', badge(conv.status === 'success' ? '成功' : conv.status === 'failed' ? '失败' : '部分成功', conv.status === 'success' ? 'good' : conv.status === 'failed' ? 'bad' : 'warn')],
-      ['执行管理员', esc(adminName(conv.adminId))]
+      ...(guestReadOnly ? [] : [['执行管理员', esc(adminName(conv.adminId))])]
     ])}
     ${conv.error ? `<div class="notice bad" style="margin-top:12px">${ico('alert')}<div>${esc(conv.error)}</div></div>` : ''}
     ${(conv.errors && conv.errors.length) ? `<div class="detail-section"><h4>解析错误（${conv.errors.length}）</h4>${conv.errors.slice(0, 12).map(e => `<div class="note bad">${ico('alert')}<div>${e.input ? '【' + esc(e.input) + '】' : ''}${e.line ? '第 ' + e.line + ' 行：' : ''}${esc(e.reason)}</div></div>`).join('')}</div>` : ''}
@@ -4581,15 +4582,15 @@ function renderConv() {
     return f;
   })();
   const step3 = `<div class="card"><div class="card-head"><h3>${ico('file')} 第三步 · 选择输出格式</h3><span class="sub">${format.name}</span></div><div class="card-body">
-    <div class="format-grid">${Object.keys(FORMATS).map(f => `<button class="format-card ${c.format === f ? 'on' : ''}" data-cv-format="${f}"><span class="f-ico">${ico(f === 'base64' ? 'code' : f === 'singbox' ? 'terminal' : f === 'custom' ? 'sliders' : 'file')}</span><span><b>${esc(FORMATS[f].name)}</b><span>${esc(FORMATS[f].note)}</span></span><span class="tag">${f === 'custom' ? '模板' : f === 'v2ray' || f === 'base64' ? '可实测' : '模拟'}</span></button>`).join('')}</div>
-    <div class="detail-section"><h4>多格式统一输出</h4><div class="hint">勾选多种格式后，生成一条转换记录、一个统一模拟订阅标识和一个合并内容文件；不会创建多条互不关联的转换记录。各格式仍按各自兼容性生成。</div><div class="form-grid">${Object.keys(FORMATS).filter(f=>f!=='custom').map(f=>`<label class="check-line"><input type="checkbox" data-cv-multi-format="${f}" ${(c.formats||[c.format]).includes(f)?'checked':''}> ${esc(FORMATS[f].name)}</label>`).join('')}</div><div class="tiny faint" style="margin-top:6px">已选 ${((c.formats||[c.format]).length)} 种格式</div></div>
+    <div class="format-grid">${Object.keys(FORMATS).filter(f => !currentAdmin()?._guest || f !== 'custom').map(f => `<button class="format-card ${c.format === f ? 'on' : ''}" data-cv-format="${f}"><span class="f-ico">${ico(f === 'base64' ? 'code' : f === 'singbox' ? 'terminal' : f === 'custom' ? 'sliders' : 'file')}</span><span><b>${esc(FORMATS[f].name)}</b><span>${esc(FORMATS[f].note)}</span></span><span class="tag">${f === 'custom' ? '模板' : f === 'v2ray' || f === 'base64' ? '可实测' : '模拟'}</span></button>`).join('')}</div>
+    <div class="detail-section"><h4>多格式统一输出</h4><div class="hint">勾选多种格式后，生成一条转换记录、一个统一模拟订阅标识和一个合并内容文件；不会创建多条互不关联的转换记录。各格式仍按各自兼容性生成。</div><div class="form-grid">${Object.keys(FORMATS).filter(f=>f!=='custom' && !currentAdmin()?._guest).map(f=>`<label class="check-line"><input type="checkbox" data-cv-multi-format="${f}" ${(c.formats||[c.format]).includes(f)?'checked':''}> ${esc(FORMATS[f].name)}</label>`).join('')}</div><div class="tiny faint" style="margin-top:6px">已选 ${((c.formats||[c.format]).length)} 种格式</div></div>
     <div class="notice" style="margin-top:12px">${ico('info')}<div><b>${esc(format.name)}：</b>${esc(format.note)}。不同格式的字段仅按常见配置生成，尚未在真实客户端或内核中逐项校验；待接入服务端转换后以真实结果为准。</div></div>
     <div class="detail-section"><h4>格式选项</h4>${optionsHtml}</div>
     <div class="row" style="margin-top:12px"><span class="chip">模板：<b>${esc(DB.templates.find(t => t.id === c.templateId)?.name || '未使用')}</b></span><button class="btn sm ghost" data-cv-act="clearTemplate">清除模板</button></div>
     <div class="row" style="margin-top:14px"><button class="btn" data-cv-step="2">${ico('chevron-left')}上一步</button><button class="btn primary" data-cv-step="4">配置过滤条件 ${ico('chevron-right')}</button></div>
   </div></div>`;
   const ruleList = (scheme.rules || []).length ? scheme.rules.map(r => `<div class="rule-card ${r.action === 'exclude' ? 'exclude' : 'keep'}"><span class="r-ico">${ico(RULE_TYPES[r.type]?.icon || 'filter')}</span><div class="r-main"><b>${esc(RULE_TYPES[r.type]?.name || r.type)} · ${r.action === 'exclude' ? '排除' : '保留'}</b><span>${esc(ruleLabel(r))}</span></div>${c.schemeId === '__custom' ? `<div class="r-actions"><button class="btn sm ghost" data-cv-act="editRule" data-id="${r.id}">${ico('edit')}</button><button class="btn sm ghost" data-cv-act="delRule" data-id="${r.id}">${ico('trash')}</button></div>` : ''}</div>`).join('') : `<div class="empty" style="padding:18px">${ico('filter')}<b>没有过滤条件</b><span>${c.schemeId && c.schemeId !== '__custom' ? '该方案没有显式规则，可能只做去重 / 失效过滤。' : '添加条件，或直接预览全部节点。'}</span></div>`;
-  const step4 = `<div class="card"><div class="card-head"><h3>${ico('filter')} 第四步 · 配置过滤条件</h3><span class="sub">${scheme.rules.length} 条规则</span><div class="tools"><button class="btn sm" data-cv-act="saveScheme">${ico('save')}保存为方案</button><button class="btn sm ghost" data-nav="filter-rules">${ico('filter')}方案管理</button></div></div><div class="card-body">
+  const step4 = currentAdmin()?._guest ? `<div class="card"><div class="card-head"><h3>${ico('filter')} 第四步 · 基础过滤</h3><span class="sub">访客基础模式</span></div><div class="card-body"><div class="notice info">${ico('info')}<div>访客模式使用基础去重、无效节点和输出格式兼容性检查，不开放保存过滤方案、复杂规则组合或模板管理。注册后可根据身份权限逐步使用更多转换功能。</div></div><div class="row" style="margin-top:14px"><button class="btn" data-cv-step="3">${ico('chevron-left')}上一步</button><button class="btn primary" data-cv-act="preview">${ico('eye')}预览转换结果</button></div></div></div>` : `<div class="card"><div class="card-head"><h3>${ico('filter')} 第四步 · 配置过滤条件</h3><span class="sub">${scheme.rules.length} 条规则</span><div class="tools"><button class="btn sm" data-cv-act="saveScheme">${ico('save')}保存为方案</button><button class="btn sm ghost" data-nav="filter-rules">${ico('filter')}方案管理</button></div></div><div class="card-body">
     <div class="field"><label>选择过滤方案</label><select class="select" data-cv-scheme><option value="__custom" ${!c.schemeId || c.schemeId === '__custom' ? 'selected' : ''}>本次自定义（不保存）</option>${tenantFilterSchemes().map(f => `<option value="${f.id}" ${c.schemeId === f.id ? 'selected' : ''}>${esc(f.name)} · ${f.rules.length} 条规则${f.isDefault ? ' · 默认' : ''}</option>`).join('')}</select></div>
     <div class="scheme-pick">${tenantFilterSchemes().slice(0, 5).map(f => `<button class="chip ${c.schemeId === f.id ? 'accent' : ''}" data-cv-scheme-id="${f.id}">${esc(f.name)}</button>`).join('')}</div>
     <div class="logic-bar"><span>组合方式：</span><button class="badge ${scheme.logic === 'OR' ? '' : 'accent'}" data-cv-act="logic" data-id="AND">保留条件全部满足（AND）</button><button class="badge ${scheme.logic === 'OR' ? 'accent' : ''}" data-cv-act="logic" data-id="OR">任意满足（OR）</button><span class="spacer" style="flex:1"></span><button class="badge ${scheme.excludePriority !== false ? 'warn' : ''}" data-cv-act="excludePriority">${scheme.excludePriority !== false ? '排除优先：开' : '排除优先：关'}</button></div>
