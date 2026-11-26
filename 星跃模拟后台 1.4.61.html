@@ -9221,8 +9221,8 @@ registerPage('v1-batches', () => {
       {key:'nodeCount',label:'节点',sort:x=>x.nodeCount,cell:x=>`${x.nodeCount||0} 个`},
       {key:'group',label:'默认分组',cell:x=>esc(DB.v1.backupGroups.find(g=>g.id===x.defaultGroupId)?.name||'默认分组')},
       {key:'admin',label:'管理员',cell:x=>esc(adminName(x.adminId))},
-      {key:'ops',label:'操作',cell:x=>tableActions([{label:'复制链接',act:'copy',id:x.id,icon:'copy'},{label:'查看',act:'view',id:x.id,icon:'eye'}])}
-    ],defaultSort:{key:'batchId',dir:'desc'},onAction:(act,x)=>{if(act==='copy')copyText('https://sub.starjump.example/s/'+x.token,'演示链接已复制');if(act==='view')openModal({title:'批次详情',size:'md',body:`<div class="kv"><dt>批次号</dt><dd class="mono">${esc(x.batchId||'')}</dd><dt>生成时间</dt><dd>${fmtDT(x.createdAt)}</dd><dt>节点数量</dt><dd>${x.nodeCount||0}</dd><dt>输出格式</dt><dd>${(x.formats||[x.format]).map(k=>esc(C1_FORMATS[k]?.name||k)).join('、')}</dd><dt>管理员</dt><dd>${esc(adminName(x.adminId))}</dd></div>`})}}
+      {key:'ops',label:'操作',cell:x=>tableActions([{label:'复制链接',act:'copy',id:x.id,icon:'link'},{label:'复制内容',act:'content',id:x.id,icon:'copy'},{label:'查看',act:'view',id:x.id,icon:'eye'}])}
+    ],defaultSort:{key:'batchId',dir:'desc'},onAction:(act,x)=>{if(act==='copy')copyText('https://sub.starjump.example/s/'+x.token,'演示链接已复制');if(act==='content')copyText(x.content || (x.outputs||[]).map(o=>o.content).join('\n\n'),'批次配置内容已复制');if(act==='view')openModal({title:'批次详情',size:'md',body:`<div class="kv"><dt>批次号</dt><dd class="mono">${esc(x.batchId||'')}</dd><dt>生成时间</dt><dd>${fmtDT(x.createdAt)}</dd><dt>节点数量</dt><dd>${x.nodeCount||0}</dd><dt>输出格式</dt><dd>${(x.formats||[x.format]).map(k=>esc(C1_FORMATS[k]?.name||k)).join('、')}</dd><dt>管理员</dt><dd>${esc(adminName(x.adminId))}</dd></div>`})}}
   )};
 });
 
