@@ -3923,7 +3923,8 @@ function statCard(label, value, icon, path, foot) {
 }
 function recentEvents(limit) {
   const events = [];
-  visibleConversions().forEach(c => events.push({ kind: 'conversion', title: '节点转换 · ' + c.name, sub: `${FORMATS[c.format]?.short || c.format} · 保留 ${c.keptCount} / 排除 ${c.excludedCount}`, time: c.createdAt, tone: c.status === 'failed' ? 'bad' : 'accent', path: 'conv-history', icon: 'shuffle' }));
+  visibleConversions().forEach(c => events.push({ kind: 'conversion', title: '高级工作区转换 · ' + c.name, sub: `${FORMATS[c.format]?.short || c.format} · 保留 ${c.keptCount} / 排除 ${c.excludedCount}`, time: c.createdAt, tone: c.status === 'failed' ? 'bad' : 'accent', path: 'conv-history', icon: 'shuffle' }));
+  tenantRows(DB.v1?.conversionLinks || []).forEach(c => events.push({ kind: 'v1batch', title: '订阅转换批次 · ' + (c.filename || 'Config'), sub: `${(c.formats || [c.format]).map(f => C1_FORMATS?.[f]?.name || f).join(' + ')} · ${c.nodeCount || 0} 个节点 · ${c.batchId || ''}`, time: c.createdAt, tone: 'good', path: 'v1-batches', icon: 'layers' }));
   scopedByAdmin(DB.syncRecords).forEach(s => events.push({ kind: 'sync', title: '订阅同步 · ' + subName(s.subId), sub: `${s.result === 'success' ? '成功' : s.result === 'partial' ? '部分成功' : '失败'} · 新增 ${s.added} / 更新 ${s.updated}${s.failed ? ' / 失败 ' + s.failed : ''}`, time: s.time, tone: s.result === 'success' ? 'good' : 'warn', path: 'sync-records', icon: 'refresh' }));
   visibleCards().filter(c => c.activatedAt).forEach(c => events.push({ kind: 'card', title: '卡密激活 · ' + c.code, sub: `${c.userId} · ${c.batch}`, time: c.activatedAt, tone: 'good', path: 'cards', icon: 'key' }));
   visibleLogs().slice(0, 80).forEach(l => events.push({ kind: 'log', title: l.actor + ' · ' + l.type, sub: `${l.module}${l.target ? ' · ' + l.target : ''}${l.reason ? ' · ' + l.reason : ''}`, time: l.time, tone: l.result === '失败' ? 'bad' : 'accent', path: 'logs', icon: 'scroll' }));
@@ -3957,14 +3958,16 @@ registerPage('dashboard', () => {
   const availableNodes = scopedByAdmin(DB.nodes).filter(n => n.enabled && n.valid && n.protocol !== 'unknown');
   const today = todayKey();
   const myConvs = visibleConversions();
-  const todayConversions = myConvs.filter(c => dayKey(c.createdAt) === today);
-  const yesterdayConversions = myConvs.filter(c => dayKey(c.createdAt) === dayKey(now() - DAY));
+  const myV1Batches = tenantRows(DB.v1?.conversionLinks || []);
+  const todayConversions = myV1Batches.filter(c => dayKey(c.createdAt) === today);
+  const yesterdayConversions = myV1Batches.filter(c => dayKey(c.createdAt) === dayKey(now() - DAY));
   const onlineDevices = scopedByAdmin(DB.devices).filter(d => d.status === 'active' && withinDays(d.lastActiveAt, 1));
   const activeUsers = visibleUsers().filter(u => userStatus(u) === 'active');
   const activeSubs = tenantSources().filter(s => s.enabled);
   const vipPct = isM ? 100 : clamp(Math.round(vipDays(admin) / 365 * 100), 0, 100);
   const week = dateRangeKeys(7);
-  const weekValues = week.map(k => myConvs.filter(c => dayKey(c.createdAt) === k).length);
+  const allConversionRecords = myConvs.concat(myV1Batches);
+  const weekValues = week.map(k => allConversionRecords.filter(c => dayKey(c.createdAt) === k).length);
   const failedTasks = visibleTasks().filter(t => t.status === 'failed').length;
   const openDiag = scopedByAdmin(DB.diagnostics).filter(d => !d.resolved).length;
   const pendingAdmins = DB.admins.filter(a => a.status === 'pending').length;
@@ -3984,7 +3987,7 @@ registerPage('dashboard', () => {
           <span class="hero-pill">${ico('database')}本地模拟数据</span>
         </div>
         <div class="hero-actions" style="margin-top:16px">
-          ${hasEffectiveVipAccess(admin) ? '<button class="btn primary" data-nav="v1-converter">'+ico('shuffle')+'开始节点转换</button><button class="btn" data-nav="subs">'+ico('rss')+'管理订阅源</button><button class="btn" data-nav="tasks">'+ico('task')+'任务中心</button>' : '<button class="btn primary" data-nav="convert">'+ico('shuffle')+'开始基础转换</button><button class="btn" data-nav="conv-history">'+ico('history')+'我的转换记录</button><button class="btn" data-nav="v1-access">'+ico('crown')+'了解 VIP 权益</button>'}
+          ${hasEffectiveVipAccess(admin) ? '<button class="btn primary" data-nav="v1-converter">'+ico('shuffle')+'开始节点转换</button><button class="btn" data-nav="subs">'+ico('rss')+'管理订阅源</button><button class="btn" data-nav="tasks">'+ico('task')+'任务中心</button>' : '<button class="btn primary" data-nav="v1-converter">'+ico('shuffle')+'开始基础转换</button><button class="btn" data-nav="v1-batches">'+ico('history')+'我的转换批次</button><button class="btn" data-nav="v1-access">'+ico('crown')+'了解 VIP 权益</button>'}
         </div>
       </div>
       <div class="row" style="gap:16px;align-items:center">
@@ -4020,15 +4023,15 @@ registerPage('dashboard', () => {
           statCard('订阅源总数', tenantSources().length, 'rss', 'subs', activeSubs.length + ' 个启用'),
           statCard('节点总数', tenantNodes().length, 'server', 'nodes', tenantNodes().filter(n => !n.enabled).length + ' 个已停用'),
           statCard('可用节点数量', availableNodes.length, 'shield', 'nodes', Math.round(availableNodes.length / Math.max(tenantNodes().length, 1) * 100) + '% 可用率'),
-          statCard('今日转换次数', todayConversions.length, 'shuffle', 'conv-history', '较昨日 ' + (convGrowth >= 0 ? '+' : '') + convGrowth),
+          statCard('今日转换批次', todayConversions.length, 'shuffle', 'v1-batches', '较昨日 ' + (convGrowth >= 0 ? '+' : '') + convGrowth),
           statCard('APP 卡密总数', cards.length, 'key', 'cards', activeCards.length + ' 张已激活'),
           statCard('已激活卡密', activeCards.length, 'check-circle', 'cards', Math.round(activeCards.length / Math.max(cards.length, 1) * 100) + '% 激活率'),
           statCard('未激活卡密', unactivated.length, 'clock', 'cards', cards.filter(c => cardStatus(c) === 'expired').length + ' 张已过期'),
           statCard('APP 用户数量', visibleUsers().length, 'users', 'users', activeUsers.length + ' 位有效用户'),
           statCard('在线设备数量', onlineDevices.length, 'monitor', 'devices', '近 24h 活跃 · 模拟状态')
         ] : [
-          statCard('转换记录总数', myConvs.length, 'history', 'conv-history', '仅统计当前账号自己的转换记录'),
-          statCard('今日转换次数', todayConversions.length, 'shuffle', 'conv-history', '较昨日 ' + (convGrowth >= 0 ? '+' : '') + convGrowth),
+          statCard('我的转换批次', myV1Batches.length, 'history', 'v1-batches', '仅统计当前账号自己的订阅转换批次'),
+          statCard('今日转换批次', todayConversions.length, 'shuffle', 'v1-batches', '较昨日 ' + (convGrowth >= 0 ? '+' : '') + convGrowth),
           statCard('可用转换模板', tenantTemplates().length, 'file-text', 'templates', '查看当前账号可用模板'),
           statCard('会员状态', vipActive(admin) ? '有效' : '未开通', 'crown', 'vip', '查看 VIP 功能与续费入口')
         ]).join('')}
@@ -4107,7 +4110,7 @@ registerPage('quick', () => {
 registerPage('recent', (query) => {
   const type = query.type || 'all';
   const tabs = [
-    ['all', '全部'], ['page', '访问页面'], ['conversion', '节点转换'], ['sync', '订阅同步'], ['card', '卡密激活'], ['log', '用户操作'], ['diag', '系统异常']
+    ['all', '全部'], ['page', '访问页面'], ['conversion', '高级工作区转换'], ['v1batch', '订阅转换批次'], ['sync', '订阅同步'], ['card', '卡密激活'], ['log', '用户操作'], ['diag', '系统异常']
   ];
   let events = recentEvents(200);
   if (type !== 'all') events = events.filter(e => e.kind === type);
