@@ -6602,7 +6602,7 @@ function openUserDetail(u) {
     <div class="detail-section"><h4>最近操作</h4>${logs.map(l => `<div class="rule-card"><span class="r-ico">${ico('scroll')}</span><div class="r-main"><b>${esc(l.type)}</b><span>${fmtDT(l.time)} · ${esc(l.actor)} · ${esc(l.result)}</span></div></div>`).join('') || '<div class="empty" style="padding:14px">暂无操作日志</div>'}</div>`,
     footer: `<button class="btn" data-ud-devices>${ico('monitor')}设备</button><button class="btn" data-ud-id>${ico('edit')}改用户 ID</button><button class="btn ${u.status === 'disabled' ? 'primary' : 'danger'}" data-ud-toggle>${ico('power')}${u.status === 'disabled' ? '恢复用户' : '禁用用户'}</button>`,
     onMount: (el, close) => {
-      el.querySelectorAll('[data-rel]').forEach(b => b.addEventListener('click', () => { const rel = relationFor(u, b.dataset.rel); if (!rel) return; if (!isMaster() && rel.adminId !== currentAdmin().id) { toast('只能调整自己的授权关系', 'warn'); return; } close(); openUserRelationForm(u, rel); }));
+      el.querySelectorAll('[data-rel]').forEach(b => b.addEventListener('click', () => { const rel = relationFor(u, b.dataset.rel); if (!rel) return; if (!scopeRecordAllowed(rel, 'adminId')) { toast('只能调整自己的授权关系', 'warn'); return; } close(); openUserRelationForm(u, rel); }));
       el.querySelectorAll('[data-unbind-user]').forEach(b => b.addEventListener('click', () => { const d = DB.devices.find(x => x.id === b.dataset.unbindUser); if (d) { close(); unbindDevice(d); } }));
       el.querySelector('[data-user-devices]')?.addEventListener('click', () => { close(); openUserDevices(u); });
       el.querySelector('[data-ud-devices]')?.addEventListener('click', () => { close(); openUserDevices(u); });
@@ -8900,7 +8900,7 @@ function v1OpenGroupDetail(group) {
 }
 function v1DeleteGroup(group) {
   if (!requireOwnRecord(group)) return;
-  if (!isMaster() && group.adminId !== currentAdmin().id) { toast('只能删除自己的分组', 'warn'); return; }
+  if (!scopeRecordAllowed(group, 'adminId')) { toast('只能删除自己的分组', 'warn'); return; }
   confirmDialog({ title: '删除备份分组？', message: `将删除「${esc(group.name)}」及其所有版本和分享。不会删除任何原始节点。`, danger: true, requireText: '删除', confirmText: '删除分组' }).then(ok => {
     if (!ok) return;
     DB.v1.backupGroups = DB.v1.backupGroups.filter(g => g.id !== group.id);
