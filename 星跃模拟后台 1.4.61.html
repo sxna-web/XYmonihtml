@@ -4829,7 +4829,7 @@ registerPage('conv-history', (query) => {
     html: pageHead('转换历史', '每一次生成的转换结果都会保存在这里；可复制、下载、再次使用或查看过滤详情。', `<button class="btn" data-act="conv.exportHistory">${ico('download')}导出 CSV</button><button class="btn primary" data-nav="v1-converter">${ico('shuffle')}开始转换</button>`) + `<div id="dt-conv-history"></div>`,
     mount: root => {
       dataTable(root.querySelector('#dt-conv-history'), {
-        key: 'conv-history', rows: () => DB.conversions,
+        key: 'conv-history', rows: () => visibleConversions(),
         search: c => `${c.name} ${c.sourceDesc} ${FORMATS[c.format]?.name} ${c.status} ${adminName(c.adminId)}`,
         searchPlaceholder: '搜索转换名称、来源、格式…',
         filters: [
@@ -4847,8 +4847,8 @@ registerPage('conv-history', (query) => {
           { key: 'ops', label: '操作', cell: c => tableActions([{ label: '查看', act: 'view', id: c.id, icon: 'eye' }, { label: '复制', act: 'copy', id: c.id, icon: 'copy' }, { label: '下载', act: 'download', id: c.id, icon: 'download' }, { label: '再转', act: 'reuse', id: c.id, icon: 'refresh' }]) }
         ],
         defaultSort: { key: 'createdAt', dir: 'desc' }, selectable: true,
-        onRowClick: c => openConversionDrawer(c),
-        onAction: (act, c) => conversionRowAction(act, c),
+        onRowClick: c => { if (scopeRecordAllowed(c)) openConversionDrawer(c); else toast('只能查看自己的转换记录', 'warn'); },
+        onAction: (act, c) => { if (!scopeRecordAllowed(c)) { toast('只能操作自己的转换记录', 'warn'); return; } conversionRowAction(act, c); },
         bulk: [{ label: '批量导出', act: 'export', icon: 'download' }, { label: '批量删除记录', act: 'delete', icon: 'trash', tone: 'danger' }],
         onBulk: (act, list) => {
           if (act === 'export') {
@@ -4858,8 +4858,9 @@ registerPage('conv-history', (query) => {
           if (act === 'delete') {
             confirmDialog({ title: '删除所选转换记录？', message: `将删除 ${list.length} 条转换历史，节点、分组和订阅源不受影响。`, danger: true, requireText: '删除' }).then(ok => {
               if (!ok) return;
+              if (!list.every(c => scopeRecordAllowed(c) && visibleConversions().some(x => x.id === c.id))) { toast('权限已变化或记录不属于当前管理员，未执行删除', 'warn'); return; }
               const ids = list.map(x => x.id);
-              Repo.removeWhere('conversions', c => ids.includes(c.id));
+              Repo.removeWhere('conversions', c => ids.includes(c.id) && scopeRecordAllowed(c));
               saveDB(); addLog({ module: '节点转换', type: '批量删除转换历史', target: list.length + ' 条记录', result: '成功' }); refreshCurrent(); toast('已删除转换记录', 'success');
             });
           }
@@ -4869,6 +4870,7 @@ registerPage('conv-history', (query) => {
   };
 });
 function conversionRowAction(act, c) {
+  if (!scopeRecordAllowed(c)) { toast('只能操作自己的转换记录', 'warn'); return; }
   if (act === 'view') openConversionDrawer(c);
   if (act === 'copy') copyText(c.content || '', '转换内容已复制');
   if (act === 'download') downloadFile(`starjump-${c.id}.${FORMATS[c.format]?.kind === 'yaml' ? 'yaml' : c.format === 'singbox' ? 'json' : 'txt'}`, c.content || '');
@@ -4877,6 +4879,7 @@ function conversionRowAction(act, c) {
 function reuseConversion(c) {
   confirmDialog({ title: '基于此历史再次转换？', message: '将复用该记录的输出格式、过滤方案和模板；输入来源需要重新选择（历史记录不保存原始节点副本的完整关联）。', confirmText: '复用设置' }).then(ok => {
     if (!ok) return;
+    if (!scopeRecordAllowed(c)) { toast('记录所属管理员已变化，无法复用', 'warn'); return; }
     const c2 = defaultConv();
     c2.inputs = []; c2.name = c.name + ' · 再次转换'; c2.format = c.format; c2.templateId = c.templateId || '';
     c2.schemeId = DB.filterSchemes.some(f => f.id === c.filterSchemeId) ? c.filterSchemeId : '__custom';
@@ -5837,7 +5840,7 @@ registerPage('sync-records', () => {
         if (!b) return;
         if (b.dataset.syncAct === 'syncAll') syncSubscriptions(tenantSources().filter(s => s.enabled).map(s => s.id), '批量');
         if (b.dataset.syncAct === 'export') {
-          downloadFile('starjump-sync-records.csv', toCSV(DB.syncRecords, [{ key: 'time', label: '时间', value: r => fmtDT(r.time) }, { key: 'sub', label: '订阅源', value: r => subName(r.subId) }, { key: 'result', label: '结果' }, { key: 'added', label: '新增' }, { key: 'updated', label: '更新' }, { key: 'failed', label: '失败' }, { key: 'duration', label: '耗时(s)' }, { key: 'mode', label: '方式' }]), 'text/csv;charset=utf-8');
+          downloadFile('starjump-sync-records.csv', toCSV(scopedByAdmin(DB.syncRecords), [{ key: 'time', label: '时间', value: r => fmtDT(r.time) }, { key: 'sub', label: '订阅源', value: r => subName(r.subId) }, { key: 'result', label: '结果' }, { key: 'added', label: '新增' }, { key: 'updated', label: '更新' }, { key: 'failed', label: '失败' }, { key: 'duration', label: '耗时(s)' }, { key: 'mode', label: '方式' }]), 'text/csv;charset=utf-8');
           toast('同步记录已导出', 'success');
         }
       });
@@ -6188,6 +6191,10 @@ function openAppShareForm(share) {
     const ids = $$('[data-as-target]:checked', modal.el).map(x => x.dataset.asTarget);
     if (!ids.length) return toast('请至少选择一个授权范围', 'warn');
     if (!requireAppPerm('保存 APP 授权')) return;
+    if (!isNew && !requireOwnRecord(DB.appShares.find(x => x.id === s.id))) { toast('授权归属已变化，未保存', 'warn'); return; }
+    if (!visibleUsers().some(u => u.userId === userId)) { toast('只能为当前管理员名下的 APP 用户授权', 'warn'); return; }
+    const validTargets = scopeSel.value === 'group' ? tenantGroups() : tenantNodes();
+    if (!ids.every(id => validTargets.some(x => x.id === id))) { toast('授权目标已变化或不属于当前管理员', 'warn'); return; }
     const payload = { userId, adminId: isNew ? currentAdmin().id : s.adminId, scopeType: scopeSel.value, groupIds: scopeSel.value === 'group' ? ids : [], nodeIds: scopeSel.value === 'nodes' ? ids : [], expireAt: endOfDate(modal.el.querySelector('[data-as-expire]').value), enabled: modal.el.querySelector('[data-as-enabled]').checked, note: modal.el.querySelector('[data-as-note]').value.trim() };
     if (isNew) DB.appShares.unshift({ ...s, ...payload, lastUsedAt: null, createdAt: new Date().toISOString() });
     else Object.assign(s, payload);
@@ -6202,6 +6209,7 @@ function openAppShareRenew(s) {
     title: 'APP 授权续期', subtitle: s.userId + ' · ' + adminName(s.adminId), size: 'sm', icon: 'calendar',
     fields: [{ key: 'mode', label: '续期方式', type: 'select', options: [{ value: '7', label: '增加 7 天' }, { value: '30', label: '增加 30 天' }, { value: '90', label: '增加 90 天' }, { value: 'date', label: '指定到期日期' }] }, { key: 'date', label: '指定日期', type: 'date', value: dateInput(s.expireAt) }],
     submitText: '确认续期', onSubmit: v => {
+      if (!requireAppPerm('APP 授权续期') || !requireOwnRecord(DB.appShares.find(x => x.id === s.id))) throw new Error('当前身份无权续期此 APP 授权');
       const before = fmtDate(s.expireAt);
       if (v.mode === 'date') { if (!v.date) throw new Error('请选择日期'); s.expireAt = endOfDate(v.date); }
       else s.expireAt = addDays(Math.max(new Date(s.expireAt).getTime(), now()), Number(v.mode));
@@ -6248,7 +6256,7 @@ registerPage('app-shares', (query) => {
             const devices = DB.devices.filter(d => d.userId === s.userId && d.status !== 'unbound');
             openDrawer({ title: '用户设备', subtitle: s.userId + ' · ' + devices.length + ' 台', body: devices.map(d => `<div class="rule-card"><span class="r-ico">${ico('monitor')}</span><div class="r-main"><b>${esc(d.name)}</b><span>${esc(d.deviceId)} · ${esc(d.type)} · ${d.status === 'active' ? '正常' : d.status === 'disabled' ? '已禁用' : '已解绑'}</span></div>${badge(d.status === 'active' ? '活跃' : '非活跃', d.status === 'active' ? 'good' : '')}</div>`).join('') || '<div class="empty">暂无绑定设备</div>' });
           }
-          if (act === 'delete') confirmDialog({ title: '删除 APP 授权？', message: `将删除对 ${esc(s.userId)} 的授权记录，不影响其他管理员的独立授权。`, danger: true, confirmText: '删除授权' }).then(ok => { if (!ok) return; Repo.remove('appShares', s.id); saveDB(); addLog({ module: 'APP 授权分享', type: '删除 APP 授权', target: s.userId }); refreshCurrent(); toast('授权已删除', 'success'); });
+          if (act === 'delete') confirmDialog({ title: '删除 APP 授权？', message: `将删除对 ${esc(s.userId)} 的授权记录，不影响其他管理员的独立授权。`, danger: true, confirmText: '删除授权' }).then(ok => { if (!ok) return; if (!requireAppPerm('删除 APP 授权') || !requireOwnRecord(DB.appShares.find(x => x.id === s.id))) { toast('权限已变化，未删除授权', 'warn'); return; } Repo.remove('appShares', s.id); saveDB(); addLog({ module: 'APP 授权分享', type: '删除 APP 授权', target: s.userId }); refreshCurrent(); toast('授权已删除', 'success'); });
         }
       });
       if (autoNew) setTimeout(() => openAppShareForm(null), 180);
@@ -6482,7 +6490,7 @@ registerPage('cards', (query) => {
           if (act === 'disable') {
             if (!requireAppPerm('禁用卡密')) return;
             confirmDialog({ title: '批量禁用卡密？', message: `将禁用 ${list.length} 张卡密，保留激活和审计记录。`, danger: true, confirmText: '禁用' }).then(ok => {
-              if (!ok) return; list.forEach(c => { c.disabled = true; c.records = c.records || []; c.records.unshift({ time: new Date().toISOString(), action: '批量禁用', device: '', result: '成功' }); }); saveDB(); addLog({ module: 'APP 卡密', type: '批量禁用卡密', target: list.length + ' 张' }); refreshCurrent(); toast('已禁用 ' + list.length + ' 张卡密', 'success');
+              if (!ok) return; if (!requireAppPerm('批量禁用卡密') || !list.every(c => requireOwnRecord(DB.cards.find(x => x.id === c.id)) && visibleCards().some(x => x.id === c.id))) { toast('权限已变化或卡密不属于当前管理员，未执行批量禁用', 'warn'); return; } list.forEach(c => { c.disabled = true; c.records = c.records || []; c.records.unshift({ time: new Date().toISOString(), action: '批量禁用', device: '', result: '成功' }); }); saveDB(); addLog({ module: 'APP 卡密', type: '批量禁用卡密', target: list.length + ' 张' }); refreshCurrent(); toast('已禁用 ' + list.length + ' 张卡密', 'success');
             });
           }
           if (act === 'delete') deleteCards(list);
@@ -6493,6 +6501,7 @@ registerPage('cards', (query) => {
         if (!input) return;
         const card = DB.cards.find(x => x.id === input.dataset.cardDeviceLimit);
         if (!card) return;
+        if (!requireAppPerm('修改卡密设备数量') || !requireOwnRecord(card) || !visibleCards().some(x => x.id === card.id)) { toast('当前身份无权修改此卡密', 'warn'); refreshCurrent(); return; }
         const value = Math.max(1, Math.min(20, Number(input.value) || 1));
         card.deviceLimit = value; saveDB();
         toast('设备数量已更新为 ' + value + ' 台', 'success');
@@ -6706,7 +6715,7 @@ registerPage('devices', (query) => {
           if (act === 'records') openDeviceRecords(d);
           if (act === 'disable') {
             if (!requireAppPerm('禁用设备')) return;
-            confirmDialog({ title: '禁用设备？', message: `将禁用设备「${esc(d.name)}」。用户需要联系管理员恢复。`, danger: true, confirmText: '禁用' }).then(ok => { if (!ok) return; d.status = 'disabled'; addLog({ module: '设备管理', type: '禁用设备', target: d.deviceId, before: { status: 'active' }, after: { status: 'disabled' } }); saveDB(); refreshCurrent(); toast('设备已禁用', 'success'); });
+            confirmDialog({ title: '禁用设备？', message: `将禁用设备「${esc(d.name)}」。用户需要联系管理员恢复。`, danger: true, confirmText: '禁用' }).then(ok => { if (!ok) return; if (!requireAppPerm('禁用设备') || !requireOwnRecord(DB.devices.find(x => x.id === d.id))) { toast('权限已变化或设备不属于当前管理员，未执行禁用', 'warn'); return; } d.status = 'disabled'; addLog({ module: '设备管理', type: '禁用设备', target: d.deviceId, before: { status: 'active' }, after: { status: 'disabled' } }); saveDB(); refreshCurrent(); toast('设备已禁用', 'success'); });
           }
         }
       });
