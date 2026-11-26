@@ -1396,7 +1396,6 @@ html,body{max-width:100%;overflow-x:hidden}
   <aside id="right-sidebar" aria-label="快捷工具侧栏"></aside>
 </div>
 <nav id="bottom-nav" aria-label="底部导航"></nav>
-<div id="right-dock-root" aria-hidden="true"></div>
 <div id="modal-root"></div>
 <div id="drawer-root"></div>
 <div id="toast-root" aria-live="polite"></div>
@@ -3558,15 +3557,6 @@ function renderSidebar() {
       <button class="btn ghost" data-act="sidebar.collapse">${ico('chevron-left')}<span class="sb-foot-text">收起侧边栏</span></button>
     </div>`;
 }
-function renderRightDock() {
-  const root = $('#right-dock-root'); if (!root) return;
-  const guest = !!currentAdmin()?._guest;
-  const quick = guest ? [['convert','基础节点转换','输入节点 / 使用默认分组','shuffle'],['conv-history','我的转换记录','只查看和复制自己的结果','history'],['v1-access','注册 / 登录','创建独立账号','user-plus'],['v1-help','使用说明','查看功能与权限区别','info']] : [['convert','开始节点转换','最常用的转换入口','shuffle'],['conv-history','转换历史','查看、复制已有结果','history'],['subs','订阅源管理','维护节点来源','rss'],['node-groups','节点分组','整理和复用节点','layers'],['cards','APP 卡密管理','卡密批次与激活','key'],['v1-help','使用说明','查看功能与操作步骤','info']];
-  const links = quick.filter(x => isMenuItemAvailable(MENU_MAP[x[0]]) || ['v1-access','v1-help'].includes(x[0]));
-  const recent = (CFG.recentPages || []).filter(p => p.path && p.path !== CURRENT_ROUTE && (!guest || isMenuItemAvailable(MENU_MAP[p.path]) || ['v1-access','v1-help'].includes(p.path))).slice(0,6);
-  root.innerHTML = `<button class="right-dock-backdrop" data-act="rightdock.close" aria-label="关闭辅助侧栏"></button><aside class="right-dock-panel" role="complementary" aria-label="快捷辅助侧栏"><div class="right-dock-head"><div><b>快捷辅助</b><small>${guest ? '访客基础转换模式' : '当前页面的常用入口与最近访问'}</small></div><button class="icon-btn" data-act="rightdock.close" aria-label="关闭">${ico('x')}</button></div><div class="right-dock-body"><section class="right-dock-section"><h3>${ico('zap')}常用功能</h3>${links.map(x=>`<button class="right-dock-link" data-nav="${x[0]}"><span>${ico(x[3])}</span><span><b>${x[1]}</b><small>${x[2]}</small></span>${ico('chevron-right')}</button>`).join('')}</section><section class="right-dock-section"><h3>${ico('clock')}最近访问</h3>${recent.length?recent.map(x=>`<button class="right-dock-link" data-nav="${attr(x.path)}"><span>${ico('history')}</span><span><b>${esc(x.title)}</b><small>${esc(x.group)} · ${fromNow(x.time)}</small></span>${ico('chevron-right')}</button>`).join(''):'<div class="small muted">暂无最近访问页面</div>'}</section>${guest?`<section class="right-dock-section"><h3>${ico('crown')}注册与 VIP 权益</h3><p class="small muted">注册后可拥有独立工作空间和个人数据记录；成为有效 VIP 后可使用订阅、节点、分组、过滤方案、模板、APP 管理和分享等管理功能。部分 APP 操作还需对应 APP 权限。</p><button class="btn primary block" data-nav="v1-access">${ico('user-plus')}立即注册 / 登录</button></section>`:`<section class="right-dock-section"><h3>${ico('info')}使用提示</h3><p class="small muted">左侧用于完整功能分类；收藏可固定高频页面。右侧辅助栏只提供快捷入口，不替代原页面功能。</p></section>`}</div><div class="right-dock-foot"><button class="btn block" data-act="rightdock.close">关闭辅助侧栏</button></div></aside>`;
-  root.classList.add('show'); root.setAttribute('aria-hidden','false');
-}
 function renderTopbar() {
   const meta = PAGE_META[CURRENT_ROUTE] || ['页面', '星跃后台'];
   const admin = currentAdmin();
@@ -3579,7 +3569,6 @@ function renderTopbar() {
       <button class="icon-btn mobile-only" data-act="search.open" aria-label="搜索">${ico('search')}</button>
       <button class="icon-btn" data-act="workspace.panel" aria-label="打开快捷工具侧栏" title="快捷工具 / 最近访问">${ico('panel-right')}</button>
       <button class="icon-btn guide-btn" data-nav="v1-help" aria-label="使用说明" title="使用说明">${ico('info')}</button>
-      <button class="icon-btn" data-act="rightdock.toggle" aria-label="打开右侧辅助栏" title="快捷辅助侧栏">${ico('panel-right')}</button>
       <button class="icon-btn" data-act="page.refresh" aria-label="刷新当前页" title="刷新当前页">${ico('refresh')}</button>
       <button class="icon-btn" data-act="notifications.open" aria-label="通知" title="通知">${ico('bell')}${notis.length ? `<span class="badge-dot">${notis.length > 9 ? '9+' : notis.length}</span>` : ''}</button>
       <button class="icon-btn" data-act="theme.open" aria-label="主题设置" title="主题设置">${ico('palette')}</button>
@@ -9834,8 +9823,6 @@ const ACTIONS = {
   },
   'sidebar.open': () => { document.body.classList.add('sb-open'); },
   'sidebar.close': () => { document.body.classList.remove('sb-open'); },
-  'rightdock.toggle': () => { const r=$('#right-dock-root'); if(r?.classList.contains('show')){r.classList.remove('show');r.setAttribute('aria-hidden','true');}else renderRightDock(); },
-  'rightdock.close': () => { const r=$('#right-dock-root'); if(r){r.classList.remove('show');r.setAttribute('aria-hidden','true');} },
   'sidebar.collapse': () => {
     if (window.innerWidth <= 900) { document.body.classList.remove('sb-open'); return; }
     CFG.sidebarCollapsed = !CFG.sidebarCollapsed;
