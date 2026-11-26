@@ -3498,6 +3498,7 @@ function isMenuItemAvailable(item) {
   if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !GUEST_BASIC_ROUTES.has(item.id)) return false;
   if (item.masterOnly && (!isMaster() || CFG?.impersonator)) return false;
   if (MASTER_ONLY_ROUTES.has(item.id) && (!isMaster() || CFG?.impersonator)) return false;
+  if (item.id === 'v1-groups' && !currentAdmin()?._guest && !hasEffectiveVipAccess()) return false;
   if (VIP_ONLY_MENU_ROUTES.has(item.id) && !hasEffectiveVipAccess()) return false;
   if (item.id === 'v1-purchase-links') return false;
   if (item.id === 'v1-app-downloads' && !v1RegisteredAccount()) return false;
@@ -4001,11 +4002,11 @@ registerPage('dashboard', () => {
       ${sectionHead('核心快捷入口', '常用功能一键直达', `<button class="btn sm ghost" data-nav="quick">全部快捷操作 ${ico('chevron-right')}</button>`, 'zap')}
       <div class="quick-grid">
         ${[
-          ['convert', '开始节点转换', '来源组合、格式选择、预览与生成', 'shuffle', 'primary'],
-          ['conv-history', '转换历史', `${myConvs.length} 条本人转换记录 · 查看与复制`, 'history'],
-          ['subs', '管理订阅源', `${activeSubs.length} 个启用 · ${todayKey() === dayKey(DB.sources[0]?.lastSyncAt) ? '今日已同步' : '等待同步'}`, 'rss'],
+          ['v1-converter', '开始节点转换', '粘贴节点、选择格式并生成', 'shuffle'],
+          ['v1-batches', '转换批次记录', `${DB.v1.conversionLinks.filter(x=>x.adminId===admin.id).length} 条本人批次 · 查看与复制`, 'history'],
+          ['v1-groups', '默认分组 / 分组管理', '查看自动归档节点与历史版本', 'layers'],
+          ['subs', '管理订阅源', `${activeSubs.length} 个启用 · 维护来源与同步`, 'rss'],
           ['nodes', '管理节点', `${availableNodes.length} 个可用节点`, 'server'],
-          ['node-groups', '节点分组', `${tenantGroups().length} 个分组 · 整理复用节点`, 'layers'],
           ['cards', 'APP 卡密管理', `${unactivated.length} 张未激活待发放`, 'key'],
           ['app-shares', 'APP 授权管理', `${DB.appShares.filter(s => s.enabled).length} 条授权生效中`, 'user-check'],
           ['v1-share-manager', '分享管理', `${tenantRows(DB.v1.groupShares).length} 条分享链接 · 权限管理`, 'share']
