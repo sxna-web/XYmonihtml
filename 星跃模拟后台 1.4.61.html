@@ -10038,12 +10038,12 @@ function sj51InvalidateGroup(g,reason){
   };
   DB.groupLifecycleEvents.push(event);
   DB.appShares.forEach(sh=>{
-    if(sh.adminId===(g.adminId||sh.adminId) && (sh.groupIds||[]).includes(g.id)){
+    if(sh.adminId===(g.adminId||currentAdmin().id) && (sh.groupIds||[]).includes(g.id)){
       sh.invalidated=true; sh.invalidatedAt=nowIso; sh.generation=g.generation;
     }
   });
   // 原卡密不继承旧 generation 的分组权限；需重新配置后才能获得新授权。
-  DB.cards.forEach(c=>{ if(Array.isArray(c.groupIds)) c.groupIds=c.groupIds.filter(id=>id!==g.id); });
+  DB.cards.forEach(c=>{ if(c.adminId===(g.adminId||currentAdmin().id) && Array.isArray(c.groupIds)) c.groupIds=c.groupIds.filter(id=>id!==g.id); });
   sj51Log('APP 分组授权失效',g.name,`generation ${oldGeneration} → ${g.generation}；24 小时后清理`);
   return event;
 }
@@ -10151,7 +10151,8 @@ function sj51SetGroupType(g,type){
   }
   g.appType=type;
   g.appEnabled=true;
-  if(!invalidated) g.generation=(Number(g.generation)||1)+1;
+  // 重新启用必须再提升一次 generation，确保 24 小时清理只命中失效代际，不误删新授权缓存。
+  g.generation=(Number(g.generation)||1)+1;
   g.appInvalidatedAt=null;
   g.appTypeChangedAt=sj51Now();
   sj51Log('分组类型变更',g.name,sj51GroupLabel(type));
