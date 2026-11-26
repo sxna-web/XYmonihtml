@@ -78,6 +78,7 @@ body.bg-fixed #bg-layer{background-attachment:fixed}
 #main{flex:1;min-width:0;margin-left:var(--sidebar-w);display:flex;flex-direction:column;min-height:100vh;transition:margin-left .22s ease}
 body.sb-collapsed #sidebar{width:74px}
 body.sb-collapsed #main{margin-left:74px}
+#right-dock-root{position:fixed;inset:0;z-index:85;visibility:hidden;pointer-events:none}#right-dock-root.show{visibility:visible;pointer-events:auto}.right-dock-backdrop{position:absolute;inset:0;background:rgba(8,15,30,.38);opacity:0;transition:opacity .2s}#right-dock-root.show .right-dock-backdrop{opacity:1}.right-dock-panel{position:absolute;right:0;top:0;bottom:0;width:min(370px,92vw);display:flex;flex-direction:column;background:var(--card);border-left:1px solid var(--line);box-shadow:-18px 0 45px rgba(10,20,40,.16);transform:translateX(102%);transition:transform .22s ease}#right-dock-root.show .right-dock-panel{transform:translateX(0)}.right-dock-head{display:flex;align-items:center;gap:10px;padding:17px 16px;border-bottom:1px solid var(--line);flex:none}.right-dock-head>div{flex:1;min-width:0}.right-dock-head b{display:block;font-size:15px}.right-dock-head small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.right-dock-body{flex:1;overflow:auto;padding:13px;display:flex;flex-direction:column;gap:13px;overscroll-behavior:contain}.right-dock-section{border:1px solid var(--line);border-radius:13px;padding:11px;background:var(--surface-2)}.right-dock-section h3{font-size:12px;margin:0 0 8px;display:flex;align-items:center;gap:7px}.right-dock-link{display:flex;align-items:center;gap:9px;width:100%;padding:9px 8px;border:0;border-radius:9px;background:transparent;color:var(--text);text-align:left;font-size:12.5px}.right-dock-link:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}.right-dock-link>span:nth-child(2){flex:1;min-width:0}.right-dock-link small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}.right-dock-foot{padding:12px;border-top:1px solid var(--line);flex:none}
 body.sb-collapsed .sb-brand-text,
 body.sb-collapsed .sb-label,
 body.sb-collapsed .sb-group-title,
@@ -1387,6 +1388,7 @@ html,body{max-width:100%;overflow-x:hidden}
   </div>
 </div>
 <nav id="bottom-nav" aria-label="底部导航"></nav>
+<div id="right-dock-root" aria-hidden="true"></div>
 <div id="modal-root"></div>
 <div id="drawer-root"></div>
 <div id="toast-root" aria-live="polite"></div>
@@ -3490,7 +3492,7 @@ const MASTER_ONLY_ROUTES = new Set(['master','permissions','versions','update-co
 function isMenuItemAvailable(item) {
   if (!item) return false;
   const publicItems = ['v1-access','v1-help'];
-  const guestBasicItems = ['convert'];
+  const guestBasicItems = ['dashboard','convert','conv-history','recent'];
   if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !guestBasicItems.includes(item.id)) return false;
   if (item.masterOnly && (!isMaster() || CFG?.impersonator)) return false;
   if (MASTER_ONLY_ROUTES.has(item.id) && (!isMaster() || CFG?.impersonator)) return false;
@@ -3548,6 +3550,15 @@ function renderSidebar() {
       <button class="btn ghost" data-act="sidebar.collapse">${ico('chevron-left')}<span class="sb-foot-text">收起侧边栏</span></button>
     </div>`;
 }
+function renderRightDock() {
+  const root = $('#right-dock-root'); if (!root) return;
+  const guest = !!currentAdmin()?._guest;
+  const quick = guest ? [['convert','基础节点转换','输入节点 / 使用默认分组','shuffle'],['conv-history','我的转换记录','只查看和复制自己的结果','history'],['v1-access','注册 / 登录','创建独立账号','user-plus'],['v1-help','使用说明','查看功能与权限区别','info']] : [['convert','开始节点转换','最常用的转换入口','shuffle'],['conv-history','转换历史','查看、复制已有结果','history'],['subs','订阅源管理','维护节点来源','rss'],['node-groups','节点分组','整理和复用节点','layers'],['cards','APP 卡密管理','卡密批次与激活','key'],['v1-help','使用说明','查看功能与操作步骤','info']];
+  const links = quick.filter(x => isMenuItemAvailable(MENU_MAP[x[0]]) || ['v1-access','v1-help'].includes(x[0]));
+  const recent = (CFG.recentPages || []).filter(p => p.path && p.path !== CURRENT_ROUTE).slice(0,6);
+  root.innerHTML = `<button class="right-dock-backdrop" data-act="rightdock.close" aria-label="关闭辅助侧栏"></button><aside class="right-dock-panel" role="complementary" aria-label="快捷辅助侧栏"><div class="right-dock-head"><div><b>快捷辅助</b><small>${guest ? '访客基础转换模式' : '当前页面的常用入口与最近访问'}</small></div><button class="icon-btn" data-act="rightdock.close" aria-label="关闭">${ico('x')}</button></div><div class="right-dock-body"><section class="right-dock-section"><h3>${ico('zap')}常用功能</h3>${links.map(x=>`<button class="right-dock-link" data-nav="${x[0]}"><span>${ico(x[3])}</span><span><b>${x[1]}</b><small>${x[2]}</small></span>${ico('chevron-right')}</button>`).join('')}</section><section class="right-dock-section"><h3>${ico('clock')}最近访问</h3>${recent.length?recent.map(x=>`<button class="right-dock-link" data-nav="${attr(x.path)}"><span>${ico('history')}</span><span><b>${esc(x.title)}</b><small>${esc(x.group)} · ${fromNow(x.time)}</small></span>${ico('chevron-right')}</button>`).join(''):'<div class="small muted">暂无最近访问页面</div>'}</section>${guest?`<section class="right-dock-section"><h3>${ico('crown')}注册与 VIP 权益</h3><p class="small muted">注册后可拥有独立工作空间和个人数据记录；成为有效 VIP 后可使用订阅、节点、分组、过滤方案、模板、APP 管理和分享等管理功能。部分 APP 操作还需对应 APP 权限。</p><button class="btn primary block" data-nav="v1-access">${ico('user-plus')}立即注册 / 登录</button></section>`:`<section class="right-dock-section"><h3>${ico('info')}使用提示</h3><p class="small muted">左侧用于完整功能分类；收藏可固定高频页面。右侧辅助栏只提供快捷入口，不替代原页面功能。</p></section>`}</div><div class="right-dock-foot"><button class="btn block" data-act="rightdock.close">关闭辅助侧栏</button></div></aside>`;
+  root.classList.add('show'); root.setAttribute('aria-hidden','false');
+}
 function renderTopbar() {
   const meta = PAGE_META[CURRENT_ROUTE] || ['页面', '星跃后台'];
   const admin = currentAdmin();
@@ -3559,6 +3570,7 @@ function renderTopbar() {
     <div class="top-actions">
       <button class="icon-btn mobile-only" data-act="search.open" aria-label="搜索">${ico('search')}</button>
       <button class="icon-btn guide-btn" data-nav="v1-help" aria-label="使用说明" title="使用说明">${ico('info')}</button>
+      <button class="icon-btn" data-act="rightdock.toggle" aria-label="打开右侧辅助栏" title="快捷辅助侧栏">${ico('panel-right')}</button>
       <button class="icon-btn" data-act="page.refresh" aria-label="刷新当前页" title="刷新当前页">${ico('refresh')}</button>
       <button class="icon-btn" data-act="notifications.open" aria-label="通知" title="通知">${ico('bell')}${notis.length ? `<span class="badge-dot">${notis.length > 9 ? '9+' : notis.length}</span>` : ''}</button>
       <button class="icon-btn" data-act="theme.open" aria-label="主题设置" title="主题设置">${ico('palette')}</button>
@@ -3625,7 +3637,7 @@ const VIP_ONLY_ROUTES = new Set([
 function v1RouteDeniedReason(routeId) {
   if (routeId === 'v1-purchase-links') return 'redirect-purchase-settings';
   const publicRoutes = new Set(['v1-access','v1-help']);
-  const guestBasicRoutes = new Set(['convert']);
+  const guestBasicRoutes = new Set(['dashboard','convert','conv-history','recent']);
   if (MENU_MAP[routeId] && !publicRoutes.has(routeId) && !guestBasicRoutes.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (V1_REGISTERED_ONLY_ROUTES.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (MASTER_ONLY_ROUTES.has(routeId) && (!isMaster() || CFG?.impersonator)) return 'master';
@@ -3894,6 +3906,11 @@ function timelineHtml(events) {
 /* ================= 工作台：首页概览 ================= */
 registerPage('dashboard', () => {
   const admin = currentAdmin();
+  if (admin?._guest) {
+    const group = guestDefaultNodeGroup(); const own = visibleConversions();
+    const latest = own.slice().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,5);
+    return { html: pageHead('基础转换工作台', '访客模式：仅开放基础节点转换、默认节点分组，以及本人转换记录的查看和复制。', `<button class="btn" data-nav="conv-history">${ico('history')}我的转换记录</button><button class="btn primary" data-nav="convert">${ico('shuffle')}开始转换</button>`) + `<section class="hero"><div class="hero-grid"><div style="flex:1;min-width:230px"><div class="eyebrow" style="color:rgba(255,255,255,.75)">STARJUMP · BASIC MODE</div><h1>先体验基础转换</h1><p>无需注册即可使用基础转换。可粘贴节点内容、导入 Base64 或使用平台默认节点分组；生成的结果只归当前访客身份查看。</p><div class="hero-actions"><button class="btn primary" data-nav="convert">${ico('shuffle')}立即开始转换</button><button class="btn" data-nav="v1-access">${ico('user-plus')}注册账号</button></div></div><div class="hero-ring" style="--p:100%"><div><b>${own.length}</b><span>我的转换批次</span></div></div></div></section><div class="grid grid-2" style="margin-top:16px"><div class="card"><div class="card-head"><h3>${ico('layers')}默认节点分组</h3><span class="badge">只读</span></div><div class="card-body"><b>${esc(group?.name || '默认分组暂不可用')}</b><p class="small muted">${esc(group?.note || '平台提供的访客默认节点分组。')}</p><div class="row between"><span class="small muted">可用节点</span><b>${guestDefaultNodeRows().length}</b></div><p class="tiny muted" style="margin-top:8px">访客只能查看并选择该默认分组，不能浏览其他管理员节点或修改分组。</p><button class="btn block" data-nav="convert">${ico('shuffle')}使用默认分组转换</button></div></div><div class="card"><div class="card-head"><h3>${ico('history')}我的转换记录</h3><span class="sub">${own.length} 批</span></div><div class="card-body">${latest.length?latest.map(c=>`<button class="right-dock-link" data-nav="conv-history"><span>${ico('file-text')}</span><span><b>${esc(c.name)}</b><small>${fmtDT(c.createdAt)} · 保留 ${c.keptCount} 个节点</small></span>${ico('chevron-right')}</button>`).join(''):'<div class="empty">${ico('history')}<b>暂无转换批次</b><span>完成一次转换后会显示在这里</span></div>'}<button class="btn block" data-nav="conv-history">查看全部记录</button></div></div></div><section class="card" style="margin-top:16px"><div class="card-head"><h3>${ico('trending-up')}注册与 VIP 权益</h3><span class="sub">功能逐级开放</span></div><div class="card-body"><div class="grid grid-3"><div class="rule-card"><span class="r-ico">${ico('user-plus')}</span><div class="r-main"><b>注册普通账号</b><span>获得独立账号和个人工作空间；可保留自己的转换历史，并使用注册用户开放的功能。</span></div></div><div class="rule-card"><span class="r-ico">${ico('crown')}</span><div class="r-main"><b>成为有效 VIP</b><span>开放订阅源、节点与分组管理、转换方案、过滤规则、模板、分享及相关运营管理功能。</span></div></div><div class="rule-card"><span class="r-ico">${ico('shield-check')}</span><div class="r-main"><b>额外权限仍需满足</b><span>APP 卡密、用户和授权管理等操作还需相应 APP 管理权限；超管专属功能不会因 VIP 自动开放。</span></div></div></div><div class="notice info" style="margin-top:12px">${ico('info')}<div>注册不等于 VIP。注册后是否自动获得体验 VIP，取决于体验卡池是否有可领取卡密；VIP 到期后仍可使用基础转换。</div></div><div class="row" style="margin-top:12px"><button class="btn primary" data-nav="v1-access">${ico('user-plus')}注册 / 登录</button><button class="btn" data-nav="v1-help">查看完整功能说明</button></div></div></section>` , mount:()=>{} };
+  }
   const isM = isMaster(admin);
   const cards = visibleCards();
   const activeCards = cards.filter(c => cardStatus(c) === 'activated');
@@ -4093,7 +4110,7 @@ function convInputSub(inp) {
 }
 function inputNodes(inp) {
   if (inp.type === 'source') return (inp.refs || []).flatMap(id => tenantNodes().filter(n => n.sourceId === id)).map(n => ({ ...n, sourceName: subName(n.sourceId) }));
-  if (inp.type === 'group') return (inp.refs || []).flatMap(id => { const g = tenantGroups().find(x => x.id === id); return g ? g.nodeIds.map(nid => tenantNodes().find(n => n.id === nid)).filter(Boolean) : []; }).map(n => ({ ...n, groupIds: uniq([...(n.groupIds || []), ...(inp.refs || [])]) }));
+  if (inp.type === 'group') return (inp.refs || []).flatMap(id => { const g = currentAdmin()?._guest ? guestGroupById(id) : tenantGroups().find(x => x.id === id); const pool = currentAdmin()?._guest ? (DB.nodes || []) : tenantNodes(); return g ? g.nodeIds.map(nid => pool.find(n => n.id === nid)).filter(Boolean) : []; }).map(n => ({ ...n, groupIds: uniq([...(n.groupIds || []), ...(inp.refs || [])]) }));
   if (inp.type === 'nodes') return (inp.refs || []).map(id => tenantNodes().find(n => n.id === id)).filter(Boolean).map(n => ({ ...n, sourceName: '手动选择' }));
   if (inp.type === 'text' || inp.type === 'base64') {
     const r = parseInputText(inp.value || '', '粘贴导入', inp.type === 'base64');
@@ -4299,6 +4316,7 @@ function openAddConvInput(kind) {
     return;
   }
   if (kind === 'source') {
+    if (currentAdmin()?._guest) return toast('访客模式仅可使用默认分组、粘贴内容或订阅链接', 'info');
     openMultiPicker({
       title: '从已有订阅源选择', subtitle: '可组合多个订阅源一起转换', icon: 'rss',
       items: tenantSources().map(s => ({ id: s.id, label: s.name, sub: `${s.url} · ${nodeCount(s.id)} 个节点 · ${s.enabled ? '已启用' : '已停用'}` })),
@@ -4311,9 +4329,11 @@ function openAddConvInput(kind) {
     return;
   }
   if (kind === 'group') {
+    const guest = !!currentAdmin()?._guest;
+    const availableGroups = guest ? [guestDefaultNodeGroup()].filter(Boolean) : tenantGroups();
     openMultiPicker({
-      title: '从已有节点分组选择', subtitle: '多分组组合转换，不会修改原分组', icon: 'layers',
-      items: tenantGroups().map(g => ({ id: g.id, label: g.name, sub: `${g.nodeIds.length} 个节点 · ${g.note || ''}` })),
+      title: guest ? '选择默认节点分组' : '从已有节点分组选择', subtitle: guest ? '访客只能查看并使用平台提供的默认分组，不能管理或修改节点。' : '多分组组合转换，不会修改原分组', icon: 'layers',
+      items: availableGroups.map(g => ({ id: g.id, label: g.name, sub: `${g.nodeIds.length} 个节点 · ${g.note || ''}` })),
       onSave: refs => {
         c.inputs.push({ id: uid('inp'), type: 'group', refs, label: refs.map(groupName).join('、') });
         c.preview = null; c.result = null; refreshConv(); toast('已添加节点分组', 'success');
@@ -4322,6 +4342,7 @@ function openAddConvInput(kind) {
     return;
   }
   if (kind === 'nodes') {
+    if (currentAdmin()?._guest) return toast('访客模式不能浏览管理员节点库，请使用默认节点分组', 'info');
     openMultiPicker({
       title: '从已有节点选择', subtitle: '勾选要参与本次转换的节点', icon: 'server', searchPlaceholder: '搜索节点名称、协议、地区…',
       items: scopedByAdmin(DB.nodes).map(n => ({ id: n.id, label: n.name, sub: `${PROTOCOLS[n.protocol] || n.protocol} · ${n.region} · ${subName(n.sourceId)}` })),
@@ -4342,10 +4363,13 @@ function editConvInput(id) {
       onSubmit: v => { inp.value = v.value; c.preview = null; c.result = null; c.parsedAt = null; refreshConv(); toast('已更新来源', 'success'); }
     });
   } else if (inp.type === 'source') {
+    if (currentAdmin()?._guest) return toast('访客模式不能编辑订阅源库', 'warn');
     openMultiPicker({ title: '编辑订阅源选择', items: tenantSources().map(s => ({ id: s.id, label: s.name, sub: s.url })), preselected: inp.refs || [], onSave: refs => { inp.refs = refs; c.preview = null; c.parsedAt = null; refreshConv(); } });
   } else if (inp.type === 'group') {
-    openMultiPicker({ title: '编辑分组选择', items: tenantGroups().map(g => ({ id: g.id, label: g.name, sub: g.nodeIds.length + ' 个节点' })), preselected: inp.refs || [], onSave: refs => { inp.refs = refs; c.preview = null; c.parsedAt = null; refreshConv(); } });
+    const groups = currentAdmin()?._guest ? [guestDefaultNodeGroup()].filter(Boolean) : tenantGroups();
+    openMultiPicker({ title: currentAdmin()?._guest ? '编辑默认节点分组' : '编辑分组选择', items: groups.map(g => ({ id: g.id, label: g.name, sub: g.nodeIds.length + ' 个节点' })), preselected: inp.refs || [], onSave: refs => { inp.refs = refs; c.preview = null; c.parsedAt = null; refreshConv(); } });
   } else if (inp.type === 'nodes') {
+    if (currentAdmin()?._guest) return toast('访客模式不能浏览管理员节点库', 'warn');
     openMultiPicker({ title: '编辑节点选择', items: scopedByAdmin(DB.nodes).map(n => ({ id: n.id, label: n.name, sub: PROTOCOLS[n.protocol] + ' · ' + n.region })), preselected: inp.refs || [], onSave: refs => { inp.refs = refs; c.preview = null; c.parsedAt = null; refreshConv(); } });
   }
 }
@@ -4856,8 +4880,9 @@ function cancelTask(t) {
 /* ================= 转换历史 ================= */
 registerPage('conv-history', (query) => {
   tableQuery('conv-history', query.q);
+  const guest = !!currentAdmin()?._guest;
   return {
-    html: pageHead('转换历史', '每一次生成的转换结果都会保存在这里；可复制、下载、再次使用或查看过滤详情。', `<button class="btn" data-act="conv.exportHistory">${ico('download')}导出 CSV</button><button class="btn primary" data-nav="v1-converter">${ico('shuffle')}开始转换</button>`) + `<div id="dt-conv-history"></div>`,
+    html: pageHead(guest ? '我的转换记录' : '转换历史', guest ? '仅显示当前访客身份自己生成的转换批次；可以查看和复制，不提供批量管理、下载或修改。' : '每一次生成的转换结果都会保存在这里；可复制、下载、再次使用或查看过滤详情。', `${guest ? '' : `<button class="btn" data-act="conv.exportHistory">${ico('download')}导出 CSV</button>`}<button class="btn primary" data-nav="convert">${ico('shuffle')}开始转换</button>`) + `<div id="dt-conv-history"></div>`, 
     mount: root => {
       dataTable(root.querySelector('#dt-conv-history'), {
         key: 'conv-history', rows: () => visibleConversions(),
@@ -4874,13 +4899,13 @@ registerPage('conv-history', (query) => {
           { key: 'counts', label: '保留 / 排除', sort: c => c.keptCount, cell: c => `<span class="strong">${c.keptCount}</span><span class="faint"> / </span><span style="color:var(--bad)">${c.excludedCount}</span><div class="cell-sub">原始 ${c.rawCount}</div>` },
           { key: 'status', label: '状态', sort: c => c.status, cell: c => badge(c.status === 'success' ? '成功' : c.status === 'failed' ? '失败' : '部分成功', c.status === 'success' ? 'good' : c.status === 'failed' ? 'bad' : 'warn', true) },
           { key: 'createdAt', label: '生成时间', sort: c => new Date(c.createdAt), cell: c => `<span class="small">${fmtDT(c.createdAt)}</span><div class="cell-sub">${fromNow(c.createdAt)}</div>` },
-          { key: 'adminId', label: '管理员', sort: c => adminName(c.adminId), cell: c => esc(adminName(c.adminId)), mobileHide: true },
-          { key: 'ops', label: '操作', cell: c => tableActions([{ label: '查看', act: 'view', id: c.id, icon: 'eye' }, { label: '复制', act: 'copy', id: c.id, icon: 'copy' }, { label: '下载', act: 'download', id: c.id, icon: 'download' }, { label: '再转', act: 'reuse', id: c.id, icon: 'refresh' }]) }
+          ...(guest ? [] : [{ key: 'adminId', label: '管理员', sort: c => adminName(c.adminId), cell: c => esc(adminName(c.adminId)), mobileHide: true }]),
+          { key: 'ops', label: '操作', cell: c => tableActions([{ label: '查看', act: 'view', id: c.id, icon: 'eye' }, { label: '复制', act: 'copy', id: c.id, icon: 'copy' }, ...(!guest ? [{ label: '下载', act: 'download', id: c.id, icon: 'download' }, { label: '再转', act: 'reuse', id: c.id, icon: 'refresh' }] : [])]) }
         ],
-        defaultSort: { key: 'createdAt', dir: 'desc' }, selectable: true,
+        defaultSort: { key: 'createdAt', dir: 'desc' }, selectable: !guest,
         onRowClick: c => { if (scopeRecordAllowed(c)) openConversionDrawer(c); else toast('只能查看自己的转换记录', 'warn'); },
         onAction: (act, c) => { if (!scopeRecordAllowed(c)) { toast('只能操作自己的转换记录', 'warn'); return; } conversionRowAction(act, c); },
-        bulk: [{ label: '批量导出', act: 'export', icon: 'download' }, { label: '批量删除记录', act: 'delete', icon: 'trash', tone: 'danger' }],
+        bulk: guest ? [] : [{ label: '批量导出', act: 'export', icon: 'download' }, { label: '批量删除记录', act: 'delete', icon: 'trash', tone: 'danger' }],
         onBulk: (act, list) => {
           if (act === 'export') {
             downloadFile('starjump-conversions.csv', toCSV(list, [{ key: 'name', label: '名称' }, { key: 'format', label: '格式' }, { key: 'rawCount', label: '原始' }, { key: 'keptCount', label: '保留' }, { key: 'excludedCount', label: '排除' }, { key: 'status', label: '状态' }, { key: 'createdAt', label: '生成时间', value: c => fmtDT(c.createdAt) }]), 'text/csv;charset=utf-8');
@@ -6078,6 +6103,9 @@ function tenantRows(list, key) { return scopedByAdmin(list || [], key || 'adminI
 function tenantNodes() { return tenantRows(DB.nodes); }
 function tenantSources() { return tenantRows(DB.sources); }
 function tenantGroups() { return tenantRows(DB.groups); }
+function guestDefaultNodeGroup() { return (DB.groups || []).find(g => g && g.id === 'g1') || null; }
+function guestDefaultNodeRows() { const g = guestDefaultNodeGroup(); return g ? (g.nodeIds || []).map(id => (DB.nodes || []).find(n => n.id === id)).filter(n => n && n.enabled !== false && n.valid !== false) : []; }
+function guestGroupById(id) { const g = guestDefaultNodeGroup(); return g && g.id === id ? g : null; }
 function tenantTemplates() { return tenantRows(DB.templates); }
 function tenantFilterSchemes() { return tenantRows(DB.filterSchemes); }
 
@@ -9742,6 +9770,8 @@ const ACTIONS = {
   },
   'sidebar.open': () => { document.body.classList.add('sb-open'); },
   'sidebar.close': () => { document.body.classList.remove('sb-open'); },
+  'rightdock.toggle': () => { const r=$('#right-dock-root'); if(r?.classList.contains('show')){r.classList.remove('show');r.setAttribute('aria-hidden','true');}else renderRightDock(); },
+  'rightdock.close': () => { const r=$('#right-dock-root'); if(r){r.classList.remove('show');r.setAttribute('aria-hidden','true');} },
   'sidebar.collapse': () => {
     if (window.innerWidth <= 900) { document.body.classList.remove('sb-open'); return; }
     CFG.sidebarCollapsed = !CFG.sidebarCollapsed;
