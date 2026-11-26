@@ -1406,6 +1406,19 @@ const DAY = 86400000;
 const MIN = 60000;
 const pad2 = n => String(n).padStart(2, '0');
 const uid = (p) => (p || 'id') + '_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+function generateRegisteredUserId(){
+  const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const used=new Set([...(DB?.admins||[]).map(x=>String(x.id||'')),...(DB?.users||[]).map(x=>String(x.userId||''))]);
+  for(let attempt=0;attempt<10000;attempt++){
+    const bytes=new Uint8Array(8);
+    if(globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    else for(let i=0;i<8;i++) bytes[i]=Math.floor(Math.random()*256);
+    let id='';
+    for(const b of bytes) id+=alphabet[b%alphabet.length];
+    if(!used.has(id)) return id;
+  }
+  throw new Error('无法生成唯一的 8 位用户 ID，请重试');
+}
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const attr = esc;
 const num = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : (d || 0); };
@@ -9203,7 +9216,7 @@ registerPage('v1-access', () => {
           if (!Array.isArray(DB.trialCardPool)) DB.trialCardPool = [];
           const alreadyClaimedOnDevice = DB.trialCardPool.some(c => c.status === 'claimed' && c.deviceId === deviceId);
           const trialCard = alreadyClaimedOnDevice ? null : DB.trialCardPool.find(c => c.status === 'available');
-          const a = { id: uid('a'), name, account, role: 'admin', status: 'active', vipExpire: trialCard ? addDays(now(), Number(trialCard.durationDays) || 7) : null, trial: !!trialCard, appPerm: true, createdAt: new Date().toISOString(), note: trialCard ? '本地演示注册 · 已领取体验卡' : '本地演示注册 · 普通注册用户' };
+          const a = { id: generateRegisteredUserId(), name, account, role: 'admin', status: 'active', vipExpire: trialCard ? addDays(now(), Number(trialCard.durationDays) || 7) : null, trial: !!trialCard, appPerm: true, createdAt: new Date().toISOString(), note: trialCard ? '本地演示注册 · 已领取体验卡' : '本地演示注册 · 普通注册用户' };
           DB.admins.push(a); ensureV1Data(); DB.v1.quotas[a.id] = defaultQuota(a);
           if (trialCard) { trialCard.status='claimed'; trialCard.adminId=a.id; trialCard.claimedAt=new Date().toISOString(); trialCard.deviceId=deviceId; trialCard.claimedAccount=account; a.trialCardId=trialCard.id; a.trialStartedAt=trialCard.claimedAt; a.vipHistory=a.vipHistory||[]; a.vipHistory.push({type:'trial_granted',cardId:trialCard.id,at:trialCard.claimedAt,expireAt:a.vipExpire,note:'注册时从超管理员体验卡池领取'}); }
           addLog({ module: '认证演示', type: '公开注册（演示）', target: name, after: trialCard ? `账号 ${account} · 领取 7 天体验卡` : `账号 ${account} · 普通注册用户（体验卡池无可领取卡或本设备已领取）` });
