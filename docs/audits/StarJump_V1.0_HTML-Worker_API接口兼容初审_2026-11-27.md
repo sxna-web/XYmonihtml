@@ -167,3 +167,74 @@ HTML 与该 Worker 存在大范围同源接口设计，主要业务路由可在 
 7. 普通用户和超管初始化请求按角色分流。
 
 以上仍是源码静态审计和修复建议，不是已修改或已通过测试的代码。
+
+
+## 11. 第三轮：后台 VIP / APP 卡密生命周期核对
+
+### 已确认的正向实现
+
+1. 后台 VIP 卡密与 APP 用户卡密在表、路由和激活流程上分离：
+   - 后台 VIP：`admin_vip_cards`、`admin_vip_activations`、`/api/user/vip/activate`、`/api/super/vip-cards`。
+   - APP 用户卡密：`app_cards`、`app_entitlements`、`/api/user/app-cards`、`/api/app/redeem`。
+   - 没有发现两类卡密共用同一个激活路由的证据。
+2. 新用户体验记录使用 `kind='trial'`，正式卡激活记录使用 `kind='formal'`；体验天数常量为 7 天。
+3. 正式卡激活会检查卡密 unused，并通过批次断言 + 条件 UPDATE 防止同一卡密重复激活。
+4. APP 卡密到期维护只将满足以下条件的卡密自动失活：状态 normal、未手动停用、未激活/使用、卡密自身未过期。
+5. APP 卡密恢复只恢复 `inactive_reason='admin_vip_expired'` 且未手动停用、未激活/使用、自身未过期的记录。人工停用与已使用/过期卡密不会被该恢复 SQL 恢复。
+6. APP 卡密激活会创建独立 `app_entitlements`，并按卡密天数计算授权到期时间；节点下发接口检查授权有效期和 entitlement token。
+
+### P1-10 体验 VIP 与正式 VIP 到期权限没有在用户管理写接口统一执行
+
+- `vipStatus` 能返回当前到期时间、是否有效、是否有正式卡激活历史、是否有体验记录。
+- 但 `userAppGroupsRoute` 的 POST/PUT/DELETE 及 sources/members 写操作未见有效 VIP 门禁；`userAppLinksRoute` 的 POST/DELETE、`userAppCardsRoute` 的 POST/DELETE/disable 同样未见有效 VIP 门禁。
+- 这意味着体验 VIP 到期和正式 VIP 到期后，接口没有依据 V2.5 对两类身份执行不同的历史权限限制。仅有有效 Session 和 owner 归属不能替代会员权限检查。
+- 需在未来 Worker 修复中建立统一策略函数，至少区分：未注册、注册非 VIP、体验 VIP 有效、体验 VIP 过期、正式 VIP 有效、正式 VIP 过期、超管。过期正式 VIP允许查看和删除历史数据；过期体验 VIP只读；新增/编辑等有效 VIP 管理动作必须拒绝。
+- 不得把 `is_formal` 这个“历史上曾激活正式卡”的布尔值直接当作当前正式 VIP 有效状态。
+
+### P1-11 APP 卡密 3 天宽限维护没有充分证明会按时运行
+
+- `vipExpiredOverGrace` 的时间比较逻辑是到期时间 <= 当前时间减 3 天；符合“到期满三天后”才进入自动失活的意图。
+- 维护任务 `runVipCardMaintenance` 会遍历所有存在 APP 卡密的管理员，当前有效 VIP 时恢复符合条件的卡密；无有效 VIP 且已过三天宽限时失活。
+- 但本轮静态核查未建立完整证据证明 Cron 触发器已在目标部署环境配置、定时执行且失败会重试。因此不能认定实际环境能准时在三天边界执行。
+- 此外，维护任务审计写入使用 `catch(() => {})`，审计失败不会阻止维护任务结束；应改为可观测、可告警的可靠审计/任务日志机制，不能静默丢失审计。
+- 需在部署配置与运行日志中核实 Cron，而不是只看函数存在。
+
+### P1-12 APP 卡密激活事件审计可能静默丢失
+
+- `/api/app/redeem` 在完成卡密状态变更和 entitlement 创建后，另行插入 `app_card_events`，并使用 `.catch(() => {})` 吞掉写入错误。
+- 这导致业务激活成功但事件日志可能缺失；与关键操作应具备可靠审计的要求不一致。
+- 修复方向：把激活事件记录并入同一 D1 batch/事务性业务批次；若底层不支持则设计 outbox/重试与告警，不得静默吞错。
+
+### P1-13 APP 卡密激活后免费分组授权规则与 V2.5 口径需要确认/修正
+
+- `/api/app/redeem` 每次激活 APP 卡密后都会写入 `app_free_grants(device_id, admin_user_id)`。
+- `appGroupsForDevice` 在 entitlement 失效后仍会读取该表，并向该设备返回管理员的 `mode='free'` 分组；代码注释称该资格在激活过一次后永久保留。
+- 当前已确认的 V2.5 规则是：APP 免费分组通过 APP 用户身份 ID 获取，卡密分组通过 APP 卡密获取。现有实现把“曾经激活过卡密的设备 ID”永久变成免费分组资格，可能与按 APP 用户身份 ID 授权的规则不一致。
+- 需先确认 APK 当前身份 ID 的定义、设备更换/多设备规则，以及免费分组到底是用户身份授权还是设备历史激活授权；在确认前不得直接删除此 grant 逻辑或改 D1。
+
+### P2-06 后台 VIP 状态计算只暴露“曾有正式卡”而非当前会员类型
+
+- `vipStatus` 的 `is_formal` 是对全部历史激活记录的 formal_count 判断，不要求正式激活记录当前仍有效。
+- 例如用户曾激活过正式 VIP，现已过期且仅有历史记录时，仍可能返回 `is_formal=true`、`active=false`。
+- 前端若仅按 `is_formal` 判断当前会员类型，容易把“正式 VIP 历史”误认为“当前正式 VIP”。
+- 建议响应明确拆分 `current_membership_kind`、`active`、`expires_at`、`has_formal_history`、`has_trial_history`，但是否新增字段需先做 HTML 兼容核对，不在本轮改接口。
+
+### P2-07 体验卡自动赠送与并发唯一性待核实
+
+- `grantTrial` 先 SELECT 是否存在激活记录，再 INSERT trial 记录；从可见 SQL 未见数据库唯一约束保证每个用户只能有一条体验记录。
+- 如果注册流程可并发触发，可能存在两个请求同时通过 SELECT 并重复赠送的竞态。需核对注册入口调用次数、D1 表约束和实际批次行为。
+- 不能只依赖前端或注册流程调用一次；应由数据库约束/原子条件保证同一用户体验资格不可重复领取。
+
+### P2-08 APP 授权状态查询与免费分组访问边界
+
+- `GET /api/app/status` 只凭 device_id 返回最近一条授权记录状态，未见 entitlement token 校验；与已记录的 P1 设备状态元数据暴露风险一致。
+- `GET /api/app/groups` 对有效 entitlement 校验 token；但无有效 entitlement 时，若 device_id 有 `app_free_grants`，会返回免费分组节点列表，未见额外设备身份认证。
+- 需 APK 侧核实 device_id 是否不可伪造、是否绑定 Android Keystore 设备密钥；服务端也应验证设备注册凭证，而不能将可复制的 device_id 当作身份凭证。
+
+## 12. 本轮结论与后续验证
+
+- 后台 VIP 卡密与 APP 用户卡密：代码路径分离，方向正确。
+- APP 卡密三天宽限与按原因恢复：SQL 条件基本符合既定业务意图，但 Cron 运行与审计可靠性尚未证实。
+- 体验/正式 VIP 到期后的操作权限：尚未落实到用户 APP 管理写接口，是当前最明确的权限缺口。
+- 免费分组资格：设备历史 grant 与 V2.5 的 APP 用户身份 ID 规则存在口径差异，必须先核实 APK 身份模型。
+- 尚未执行线上卡密激活、续费、失活、恢复或任何 D1 写操作；也未验证目标环境 Cron 配置。
