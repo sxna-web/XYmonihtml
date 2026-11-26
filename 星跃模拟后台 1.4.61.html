@@ -3986,9 +3986,7 @@ registerPage('dashboard', () => {
           <span class="hero-pill">${ico('database')}本地模拟数据</span>
         </div>
         <div class="hero-actions" style="margin-top:16px">
-          <button class="btn primary" data-nav="v1-converter">${ico('shuffle')}开始节点转换</button>
-          <button class="btn" data-nav="subs">${ico('rss')}管理订阅源</button>
-          <button class="btn" data-nav="tasks">${ico('task')}任务中心${failedTasks ? ` · ${failedTasks} 失败` : ''}</button>
+          \${hasEffectiveVipAccess(admin) ? '<button class="btn primary" data-nav="v1-converter">'+ico('shuffle')+'开始节点转换</button><button class="btn" data-nav="subs">'+ico('rss')+'管理订阅源</button><button class="btn" data-nav="tasks">'+ico('task')+'任务中心</button>' : '<button class="btn primary" data-nav="convert">'+ico('shuffle')+'开始基础转换</button><button class="btn" data-nav="conv-history">'+ico('history')+'我的转换记录</button><button class="btn" data-nav="v1-access">'+ico('crown')+'了解 VIP 权益</button>'}
         </div>
       </div>
       <div class="row" style="gap:16px;align-items:center">
@@ -4020,15 +4018,22 @@ registerPage('dashboard', () => {
 
       ${sectionHead('统计数据', '数字均由当前模拟数据实时计算', `<span class="chip">${ico('refresh')}刷新页面后仍保留</span>`, 'chart')}
       <div class="stats-grid">
-        ${statCard('订阅源总数', tenantSources().length, 'rss', 'subs', `<span class="up">${activeSubs.length} 个启用</span> · ${tenantSources().filter(s => s.syncStatus === 'error').length} 个异常`)}
-        ${statCard('节点总数', tenantNodes().length, 'server', 'nodes', `${tenantNodes().filter(n => !n.enabled).length} 个已停用`)}
-        ${statCard('可用节点数量', availableNodes.length, 'shield', 'nodes', `<span class="up">${Math.round(availableNodes.length / Math.max(tenantNodes().length, 1) * 100)}%</span> 可用率`)}
-        ${statCard('今日转换次数', todayConversions.length, 'shuffle', 'conv-history', `${convGrowth >= 0 ? '<span class="up">+' + convGrowth + '</span>' : '<span class="down">' + convGrowth + '</span>'} 较昨日`)}
-        ${statCard('APP 卡密总数', cards.length, 'key', 'cards', `${activeCards.length} 张已激活`)}
-        ${statCard('已激活卡密', activeCards.length, 'check-circle', 'cards', `${Math.round(activeCards.length / Math.max(cards.length, 1) * 100)}% 激活率`)}
-        ${statCard('未激活卡密', unactivated.length, 'clock', 'cards', `${cards.filter(c => cardStatus(c) === 'expired').length} 张已过期`)}
-        ${statCard('APP 用户数量', visibleUsers().length, 'users', 'users', `${activeUsers.length} 位有效用户`)}
-        ${statCard('在线设备数量', onlineDevices.length, 'monitor', 'devices', '<span class="tiny faint">近 24h 活跃 · 模拟状态</span>')}
+        \${(hasEffectiveVipAccess(admin) ? [
+          statCard('订阅源总数', tenantSources().length, 'rss', 'subs', activeSubs.length + ' 个启用'),
+          statCard('节点总数', tenantNodes().length, 'server', 'nodes', tenantNodes().filter(n => !n.enabled).length + ' 个已停用'),
+          statCard('可用节点数量', availableNodes.length, 'shield', 'nodes', Math.round(availableNodes.length / Math.max(tenantNodes().length, 1) * 100) + '% 可用率'),
+          statCard('今日转换次数', todayConversions.length, 'shuffle', 'conv-history', '较昨日 ' + (convGrowth >= 0 ? '+' : '') + convGrowth),
+          statCard('APP 卡密总数', cards.length, 'key', 'cards', activeCards.length + ' 张已激活'),
+          statCard('已激活卡密', activeCards.length, 'check-circle', 'cards', Math.round(activeCards.length / Math.max(cards.length, 1) * 100) + '% 激活率'),
+          statCard('未激活卡密', unactivated.length, 'clock', 'cards', cards.filter(c => cardStatus(c) === 'expired').length + ' 张已过期'),
+          statCard('APP 用户数量', visibleUsers().length, 'users', 'users', activeUsers.length + ' 位有效用户'),
+          statCard('在线设备数量', onlineDevices.length, 'monitor', 'devices', '近 24h 活跃 · 模拟状态')
+        ] : [
+          statCard('转换记录总数', myConvs.length, 'history', 'conv-history', '仅统计当前账号自己的转换记录'),
+          statCard('今日转换次数', todayConversions.length, 'shuffle', 'conv-history', '较昨日 ' + (convGrowth >= 0 ? '+' : '') + convGrowth),
+          statCard('可用转换模板', tenantTemplates().length, 'file-text', 'templates', '查看当前账号可用模板'),
+          statCard('会员状态', vipActive(admin) ? '有效' : '未开通', 'crown', 'vip', '查看 VIP 功能与续费入口')
+        ]).join('')}
       </div>
       <div class="note" style="margin-top:8px">${ico('info')}<div>“在线设备”按最后活动时间在 24 小时内估算，不代表真实在线连接。真实在线状态需服务端心跳校验。</div></div>
     </div>
