@@ -3498,7 +3498,7 @@ const MASTER_ONLY_ROUTES = new Set(['master','permissions','versions','update-co
 function isMenuItemAvailable(item) {
   if (!item) return false;
   const publicItems = ['dashboard','v1-access','v1-help'];
-  const guestBasicItems = ['dashboard','convert','conv-history','recent'];
+  const guestBasicItems = ['dashboard','convert','conv-history'];
   if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !guestBasicItems.includes(item.id)) return false;
   if (item.masterOnly && (!isMaster() || CFG?.impersonator)) return false;
   if (MASTER_ONLY_ROUTES.has(item.id) && (!isMaster() || CFG?.impersonator)) return false;
@@ -3655,7 +3655,7 @@ const VIP_ONLY_ROUTES = new Set([
 function v1RouteDeniedReason(routeId) {
   if (routeId === 'v1-purchase-links') return 'redirect-purchase-settings';
   const publicRoutes = new Set(['dashboard','v1-access','v1-help']);
-  const guestBasicRoutes = new Set(['convert','conv-history','recent']);
+  const guestBasicRoutes = new Set(['convert','conv-history']);
   if (MENU_MAP[routeId] && !publicRoutes.has(routeId) && !guestBasicRoutes.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (V1_REGISTERED_ONLY_ROUTES.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (MASTER_ONLY_ROUTES.has(routeId) && (!isMaster() || CFG?.impersonator)) return 'master';
@@ -3986,7 +3986,7 @@ registerPage('dashboard', () => {
           <span class="hero-pill">${ico('database')}本地模拟数据</span>
         </div>
         <div class="hero-actions" style="margin-top:16px">
-          \${hasEffectiveVipAccess(admin) ? '<button class="btn primary" data-nav="v1-converter">'+ico('shuffle')+'开始节点转换</button><button class="btn" data-nav="subs">'+ico('rss')+'管理订阅源</button><button class="btn" data-nav="tasks">'+ico('task')+'任务中心</button>' : '<button class="btn primary" data-nav="convert">'+ico('shuffle')+'开始基础转换</button><button class="btn" data-nav="conv-history">'+ico('history')+'我的转换记录</button><button class="btn" data-nav="v1-access">'+ico('crown')+'了解 VIP 权益</button>'}
+          ${hasEffectiveVipAccess(admin) ? '<button class="btn primary" data-nav="v1-converter">'+ico('shuffle')+'开始节点转换</button><button class="btn" data-nav="subs">'+ico('rss')+'管理订阅源</button><button class="btn" data-nav="tasks">'+ico('task')+'任务中心</button>' : '<button class="btn primary" data-nav="convert">'+ico('shuffle')+'开始基础转换</button><button class="btn" data-nav="conv-history">'+ico('history')+'我的转换记录</button><button class="btn" data-nav="v1-access">'+ico('crown')+'了解 VIP 权益</button>'}
         </div>
       </div>
       <div class="row" style="gap:16px;align-items:center">
@@ -4018,7 +4018,7 @@ registerPage('dashboard', () => {
 
       ${sectionHead('统计数据', '数字均由当前模拟数据实时计算', `<span class="chip">${ico('refresh')}刷新页面后仍保留</span>`, 'chart')}
       <div class="stats-grid">
-        \${(hasEffectiveVipAccess(admin) ? [
+        ${(hasEffectiveVipAccess(admin) ? [
           statCard('订阅源总数', tenantSources().length, 'rss', 'subs', activeSubs.length + ' 个启用'),
           statCard('节点总数', tenantNodes().length, 'server', 'nodes', tenantNodes().filter(n => !n.enabled).length + ' 个已停用'),
           statCard('可用节点数量', availableNodes.length, 'shield', 'nodes', Math.round(availableNodes.length / Math.max(tenantNodes().length, 1) * 100) + '% 可用率'),
