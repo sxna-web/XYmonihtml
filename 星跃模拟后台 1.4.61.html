@@ -8837,6 +8837,7 @@ function v1OpenGroupForm() {
     title: '新建分组', size: 'sm', icon: 'layers', subtitle: '分组只保存节点引用，不会复制或删除原始节点',
     fields: [{ key: 'name', label: '分组名称', required: true, placeholder: '例如：日本优选备份' }, { key: 'note', label: '备注', type: 'textarea', rows: 2 }],
     submitText: '创建分组', onSubmit: v => {
+      if (!canCreateGroup()) throw new Error('当前身份或分组配额已变化，不能创建分组');
       ensureV1Data();
       const g = { id: uid('bg'), name: v.name, note: v.note, adminId: currentAdmin().id, nodeIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versions: [], currentVersion: 0 };
       v1PushGroupVersion(g, 'initial', '手动创建空分组');
