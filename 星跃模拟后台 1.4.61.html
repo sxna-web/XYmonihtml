@@ -4021,7 +4021,7 @@ registerPage('dashboard', () => {
           ['cards', 'APP 卡密管理', `${unactivated.length} 张未激活待发放`, 'key'],
           ['app-shares', 'APP 授权管理', `${DB.appShares.filter(s => s.enabled).length} 条授权生效中`, 'user-check'],
           ['v1-share-manager', '分享管理', `${tenantRows(DB.v1.groupShares).length} 条分享链接 · 权限管理`, 'share']
-        ].map(q => `<button class="quick-tile" data-nav="${q[0]}"><span class="q-ico">${ico(q[3])}</span><span style="flex:1;min-width:0"><b>${esc(q[1])}</b><span>${esc(q[2])}</span></span>${ico('chevron-right')}</button>`).join('')}
+        ].filter(q => isMenuItemAvailable(MENU_MAP[q[0]])).map(q => `<button class="quick-tile" data-nav="${q[0]}"><span class="q-ico">${ico(q[3])}</span><span style="flex:1;min-width:0"><b>${esc(q[1])}</b><span>${esc(q[2])}</span></span>${ico('chevron-right')}</button>`).join('')}
       </div>
 
       ${sectionHead('统计数据', '数字均由当前模拟数据实时计算', `<span class="chip">${ico('refresh')}刷新页面后仍保留</span>`, 'chart')}
@@ -4132,7 +4132,7 @@ function defaultConv() {
     createdAt: now()
   };
 }
-function ensureConv() { if (!CONV) CONV = defaultConv(); return CONV; }
+function ensureConv() { if (!CONV) { CONV = defaultConv(); if (currentAdmin()?._guest) CONV.inputs = []; } return CONV; }
 function refreshConv(keepScroll) {
   const y = window.scrollY;
   renderRoute();
@@ -9296,7 +9296,7 @@ registerPage('v1-access', () => {
       root.addEventListener('click', e => {
         const b = e.target.closest('[data-access-act]'); if (!b) return;
         const act = b.dataset.accessAct;
-        if (act === 'guest') { CFG.currentAdminId='__guest__'; CFG.impersonator=null; saveCFG(); renderShell(); navigate('dashboard'); toast('已切换为普通用户身份：仅开放基础转换和本人记录', 'success'); return; }
+        if (act === 'guest') { CFG.currentAdminId='__guest__'; CFG.impersonator=null; CONV=null; saveCFG(); renderShell(); navigate('dashboard'); toast('已切换为普通用户身份：仅开放基础转换和本人记录', 'success'); return; }
         if (act === 'login') {
           const id = root.querySelector('[data-login-admin]').value;
           const a = adminById(id);
