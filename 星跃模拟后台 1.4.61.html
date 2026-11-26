@@ -3590,9 +3590,10 @@ function renderTopbar() {
 }
 function renderBottomNav() {
   const items = currentAdmin()?._guest ? [
-    { id:'v1-access', label:'首页', icon:'home', path:'v1-access' },
-    { id:'v1-converter', label:'基础转换', icon:'shuffle', path:'v1-converter', fab:true },
-    { id:'v1-batches', label:'我的批次', icon:'history', path:'v1-batches' }
+    { id:'v1-converter', label:'转换', icon:'shuffle', path:'v1-converter', fab:true },
+    { id:'v1-groups', label:'默认分组', icon:'layers', path:'v1-groups' },
+    { id:'v1-batches', label:'我的批次', icon:'history', path:'v1-batches' },
+    { id:'v1-access', label:'注册', icon:'user-plus', path:'v1-access' }
   ] : [
     { id: 'v1-overview', label: '首页', icon: 'home', path: 'v1-overview' },
     { id: 'nodes', label: '节点', icon: 'server', path: 'nodes' },
@@ -9321,7 +9322,7 @@ registerPage('v1-access', () => {
       root.addEventListener('click', e => {
         const b = e.target.closest('[data-access-act]'); if (!b) return;
         const act = b.dataset.accessAct;
-        if (act === 'guest') { CFG.currentAdminId='__guest__'; CFG.impersonator=null; CONV=null; saveCFG(); renderShell(); navigate('dashboard'); toast('已切换为普通用户身份：仅开放基础转换和本人记录', 'success'); return; }
+        if (act === 'guest') { CFG.currentAdminId='__guest__'; CFG.impersonator=null; CONV=null; saveCFG(); renderShell(); navigate('v1-converter'); toast('已切换为普通用户身份：仅开放基础转换、默认分组和本人批次', 'success'); return; }
         if (act === 'login') {
           const id = root.querySelector('[data-login-admin]').value;
           const a = adminById(id);
@@ -9674,7 +9675,7 @@ registerPage('v1-converter', () => {
   ensureV1Data();
   const defaultGroup = DB.v1.backupGroups.find(g => g.adminId === currentAdmin().id && g.isDefault);
   return {
-    html: pageHead(guest ? '免费基础转换' : '订阅转换服务', guest ? '访客仅可使用基础转换；生成结果自动保存到自己的默认分组和批次记录。' : '粘贴节点，选择格式，直接生成。模板、下载限制、DNS/UDP、链式和远程规则放在下方，默认折叠。', `<button class="btn" data-nav="v1-help">${ico('info')}怎么用</button>${guest ? `<button class="btn primary" data-nav="v1-access">${ico('user-plus')}注册账号</button>` : `<button class="btn" data-nav="convert">${ico('layout')}高级工作区</button>`}`) +
+    html: pageHead(guest ? '免费基础转换' : '订阅转换服务', guest ? '访客仅可使用基础转换；生成结果自动保存到自己的默认分组和批次记录。' : '粘贴节点，选择格式，直接生成。模板、下载限制、DNS/UDP、链式和远程规则放在下方，默认折叠。', `<button class="btn" data-nav="v1-help">${ico('info')}怎么用</button>${guest ? `<button class="btn" data-nav="v1-groups">${ico('layers')}我的默认分组</button><button class="btn" data-nav="v1-batches">${ico('history')}我的批次</button><button class="btn primary" data-nav="v1-access">${ico('user-plus')}注册账号</button>` : `<button class="btn" data-nav="convert">${ico('layout')}高级工作区</button>`}`) +
       (guest ? `<div class="notice info" style="margin-bottom:12px"><div><b>我的默认分组：</b>${esc(defaultGroup?.name || '我的默认分组')} · 转换成功后自动归档；你只能查看、复制自己生成的节点和批次。</div></div>` : '') +
       `<div class="notice warn">${ico('alert')}<div><b>前端效果：</b>不请求 momobaby、不抓取外部订阅、不运行 subconverter；真实配置需 Worker/转换内核。</div></div>
       <div class="v1-quick-steps"><span><b>1</b> 粘贴节点</span><span><b>2</b> 选格式</span><span><b>3</b> 生成并复制</span><span class="tiny faint">高级项默认收起</span></div>
