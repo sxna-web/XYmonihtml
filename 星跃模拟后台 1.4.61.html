@@ -5390,6 +5390,7 @@ function openSubForm(s) {
     ],
     submitText: isNew ? '添加订阅源' : '保存修改',
     onSubmit: v => {
+      if (!requireVip(s ? '编辑订阅源' : '添加订阅源') || (s && !requireOwnRecord(s))) throw new Error('当前身份无权操作此订阅源');
       if (!/^https?:\/\//i.test(v.url)) throw new Error('订阅地址需以 http:// 或 https:// 开头');
       if (isNew) {
         DB.sources.unshift({ id: uid('s'), adminId: currentAdmin().id, ownerAdminId: currentAdmin().id, name: v.name, url: v.url, note: v.note, interval: Number(v.interval), syncTime: v.syncTime || '', dailyRuns: Number(v.dailyRuns)||1, enabled: !!v.enabled, expireAt: endOfDate(v.expireAt), lastSyncAt: null, nextSyncAt: new Date().toISOString(), syncStatus: v.enabled ? 'warning' : 'disabled', createdAt: new Date().toISOString() });
@@ -5418,6 +5419,7 @@ function deleteSubscriptions(list) {
     detail: list.map(s => '· ' + esc(s.name) + '（' + nodeCount(s.id) + ' 个节点）').join('<br>')
   }).then(ok => {
     if (!ok) return;
+    if (!requireVip('删除订阅源') || !list.every(s => requireOwnRecord(s) && tenantSources().some(x => x.id === s.id))) { toast('权限已变化或订阅源不属于当前管理员，未执行删除', 'warn'); return; }
     list.forEach(s => {
       scopedByAdmin(DB.nodes).forEach(n => { if (n.sourceId === s.id) { n.sourceId = null; n.note = (n.note ? n.note + '；' : '') + '原订阅「' + s.name + '」已删除'; } });
       Repo.remove('sources', s.id);
@@ -5516,6 +5518,9 @@ function openNodeForm(n) {
     values: n ? { ...n, groupId: (n.groupIds || [])[0] || '', sourceId: n.sourceId || '' } : { name: '', protocol: 'vless', server: '', port: 443, region: '香港', sourceId: '', groupId: '', enabled: true, cred: '', password: '', cipher: '', note: '' },
     fields: nodeFormFields(), submitText: isNew ? '新增节点' : '保存修改',
     onSubmit: v => {
+      if (!requireVip(isNew ? '新增节点' : '编辑节点') || (n && !requireOwnRecord(n))) throw new Error('当前身份无权操作此节点');
+      if (v.sourceId && !tenantSources().some(x => x.id === v.sourceId)) throw new Error('不能关联其他管理员的订阅源');
+      if (v.groupId && !tenantGroups().some(x => x.id === v.groupId)) throw new Error('不能加入其他管理员的节点分组');
       if (!v.server || !v.port) throw new Error('服务器地址和端口不能为空');
       if (isNew) {
         const node = { id: uid('n'), adminId: currentAdmin().id, ownerAdminId: currentAdmin().id, name: v.name, protocol: v.protocol, server: v.server.trim(), port: Number(v.port), region: v.region, sourceId: v.sourceId || null, groupIds: [], enabled: !!v.enabled, valid: true, cred: v.cred, password: v.password, cipher: v.cipher, net: 'ws', note: v.note, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -5548,6 +5553,7 @@ function deleteNodes(list) {
   if (!requireVip('删除节点')) return;
   confirmDialog({ title: '删除所选节点？', message: `将永久删除 ${list.length} 个节点，并解除分组、分享和过滤规则中的引用。<b>此操作不可撤销。</b>`, danger: true, confirmText: '删除节点', detail: list.slice(0, 8).map(n => '· ' + esc(n.name)).join('<br>') + (list.length > 8 ? '<br>…' : '') }).then(ok => {
     if (!ok) return;
+    if (!requireVip('删除节点') || !list.every(n => requireOwnRecord(n) && scopedByAdmin(DB.nodes).some(x => x.id === n.id))) { toast('权限已变化或节点不属于当前管理员，未执行删除', 'warn'); return; }
     const ids = list.map(n => n.id);
     DB.nodes = DB.nodes.filter(n => !ids.includes(n.id));
     ids.forEach(purgeNodeRefs);
@@ -5568,10 +5574,11 @@ function moveNodesToGroup(list) {
     title: '批量移动节点分组', subtitle: `将 ${list.length} 个节点从现有分组移入目标分组；不会删除节点。`, size: 'sm', icon: 'move',
     fields: [{ key: 'groupId', label: '目标分组', type: 'select', required: true, options: tenantGroups().map(g => ({ value: g.id, label: g.name + '（' + g.nodeIds.length + '）' })) }],
     submitText: '移动', onSubmit: v => {
+      if (!requireVip('移动节点分组') || !list.every(n => requireOwnRecord(n) && scopedByAdmin(DB.nodes).some(x => x.id === n.id))) throw new Error('当前身份无权移动这些节点');
       const g = tenantGroups().find(x => x.id === v.groupId);
-      if (!g) throw new Error('目标分组不存在');
+      if (!g || !requireOwnRecord(g)) throw new Error('目标分组不存在或不属于当前管理员');
       list.forEach(n => n.groupIds = []);
-      DB.groups.forEach(x => x.nodeIds = x.nodeIds.filter(id => !list.some(n => n.id === id)));
+      tenantGroups().forEach(x => x.nodeIds = x.nodeIds.filter(id => !list.some(n => n.id === id)));
       saveGroupMembership(g.id, uniq([...g.nodeIds, ...list.map(n => n.id)]));
       saveDB(); addLog({ module: '节点分组', type: '批量移动节点', target: g.name, after: `${list.length} 个节点` }); refreshCurrent(); toast('节点已移入「' + g.name + '」', 'success');
     }
@@ -5627,6 +5634,7 @@ function openBatchRename(list) {
     if (names.some(n => !n)) return toast('存在空名称，请检查模板', 'warn');
     confirmDialog({ title: '确认应用重命名？', message: `将修改 ${arr.length} 个节点的显示名称，服务器地址与配置保持不变。`, confirmText: '应用' }).then(ok => {
       if (!ok) return;
+      if (!requireVip('批量重命名节点') || !arr.every(n => requireOwnRecord(n) && scopedByAdmin(DB.nodes).some(x => x.id === n.id))) { toast('权限已变化或节点不属于当前管理员，未执行重命名', 'warn'); return; }
       const before = arr.slice(0, 5).map(n => n.name).join('、');
       arr.forEach((n, i) => { n.name = names[i]; n.updatedAt = new Date().toISOString(); });
       modal.close(); saveDB(); addLog({ module: '节点管理', type: '批量重命名', target: arr.length + ' 个节点', before, after: names.slice(0, 5).join('、') });
@@ -6335,6 +6343,7 @@ function toggleCard(c) {
   if (!requireAppPerm('禁用卡密')) return;
   confirmDialog({ title: c.disabled ? '恢复卡密？' : '禁用卡密？', message: c.disabled ? `将恢复卡密「${esc(c.code)}」。` : `将禁用卡密「${esc(c.code)}」。已激活卡密不建议物理删除，禁用会保留审计记录。`, danger: !c.disabled, confirmText: c.disabled ? '恢复' : '禁用' }).then(ok => {
     if (!ok) return;
+    if (!requireOwnRecord(c) || !requireAppPerm('禁用卡密')) { toast('权限已变化，未执行操作', 'warn'); return; }
     c.disabled = !c.disabled;
     c.records = c.records || []; c.records.unshift({ time: new Date().toISOString(), action: c.disabled ? '禁用' : '恢复', device: '', result: '成功' });
     saveDB(); addLog({ module: 'APP 卡密', type: c.disabled ? '禁用卡密' : '恢复卡密', target: c.code, before: c.disabled ? '启用' : '禁用', after: c.disabled ? '禁用' : '启用' });
@@ -6360,6 +6369,7 @@ function adjustCardTime(c) {
       { key: 'date', label: '指定到期日期', type: 'date' }
     ],
     submitText: '确认调整', onSubmit: v => {
+      if (!requireOwnRecord(c) || !requireAppPerm('调整卡密有效期')) throw new Error('当前身份无权调整此卡密');
       const before = { activatedAt: c.activatedAt, expireAt: c.expireAt, durationDays: c.durationDays };
       if (!c.activatedAt) {
         if (v.action === 'reduce') c.durationDays = Math.max(1, c.durationDays - Number(v.days));
@@ -6403,6 +6413,7 @@ function deleteCards(list) {
   if (!list.every(c => requireOwnRecord(c))) return;
   confirmDialog({ title: '删除未激活卡密？', message: `将删除 ${list.length} 张未激活卡密，此操作不可撤销。`, danger: true, requireText: '删除', confirmText: '删除卡密' }).then(ok => {
     if (!ok) return;
+    if (!requireAppPerm('删除卡密') || !list.every(c => requireOwnRecord(c) && visibleCards().some(x => x.id === c.id) && cardStatus(c) === 'unactivated')) { toast('权限已变化、卡密不属于当前管理员或状态已变化，未执行删除', 'warn'); return; }
     DB.cards = DB.cards.filter(c => !list.some(x => x.id === c.id));
     saveDB(); addLog({ module: 'APP 卡密', type: '删除未激活卡密', target: list.map(c => c.code).join('、'), result: '成功' }); refreshCurrent(); toast('已删除 ' + list.length + ' 张未激活卡密', 'success');
   });
@@ -7548,11 +7559,12 @@ registerPage('diagnostics', () => {
         onRowClick: d => openDiagDetail(d),
         onAction: (act, d) => {
           if (act === 'detail') openDiagDetail(d);
-          if (act === 'resolve') { d.resolved = true; saveDB(); addLog({ module: '故障诊断', type: '标记已解决', target: d.type }); refreshCurrent(); toast('已标记为解决', 'success'); }
+          if (act === 'resolve') { if (!scopeRecordAllowed(d, 'adminId')) { toast('只能处理自己的诊断记录', 'warn'); return; } d.resolved = true; saveDB(); addLog({ module: '故障诊断', type: '标记已解决', target: d.type }); refreshCurrent(); toast('已标记为解决', 'success'); }
           if (act === 'retry') {
             if (!d.retryable) { toast('该故障不支持直接重试', 'warn'); return; }
             confirmDialog({ title: '重试此故障？', message: `将创建模拟重试任务处理「${esc(d.type)}」。`, confirmText: '重试' }).then(ok => {
               if (!ok) return;
+              if (!scopeRecordAllowed(d, 'adminId')) { toast('只能重试自己的诊断记录', 'warn'); return; }
               createTask({ name: '故障重试 · ' + d.type, type: '故障重试', total: 1, detail: d.module, onDone: t => { d.resolved = true; d.time = new Date().toISOString(); addLog({ module: '故障诊断', type: '重试故障', target: d.type, result: '成功' }); setTimeout(() => { if (CURRENT_ROUTE === 'diagnostics') refreshCurrent(); }, 60); } });
               toast('已创建重试任务', 'success');
             });
