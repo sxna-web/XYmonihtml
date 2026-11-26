@@ -3555,7 +3555,7 @@ function renderRightDock() {
   const guest = !!currentAdmin()?._guest;
   const quick = guest ? [['convert','基础节点转换','输入节点 / 使用默认分组','shuffle'],['conv-history','我的转换记录','只查看和复制自己的结果','history'],['v1-access','注册 / 登录','创建独立账号','user-plus'],['v1-help','使用说明','查看功能与权限区别','info']] : [['convert','开始节点转换','最常用的转换入口','shuffle'],['conv-history','转换历史','查看、复制已有结果','history'],['subs','订阅源管理','维护节点来源','rss'],['node-groups','节点分组','整理和复用节点','layers'],['cards','APP 卡密管理','卡密批次与激活','key'],['v1-help','使用说明','查看功能与操作步骤','info']];
   const links = quick.filter(x => isMenuItemAvailable(MENU_MAP[x[0]]) || ['v1-access','v1-help'].includes(x[0]));
-  const recent = (CFG.recentPages || []).filter(p => p.path && p.path !== CURRENT_ROUTE).slice(0,6);
+  const recent = (CFG.recentPages || []).filter(p => p.path && p.path !== CURRENT_ROUTE && (!guest || isMenuItemAvailable(MENU_MAP[p.path]) || ['v1-access','v1-help'].includes(p.path))).slice(0,6);
   root.innerHTML = `<button class="right-dock-backdrop" data-act="rightdock.close" aria-label="关闭辅助侧栏"></button><aside class="right-dock-panel" role="complementary" aria-label="快捷辅助侧栏"><div class="right-dock-head"><div><b>快捷辅助</b><small>${guest ? '访客基础转换模式' : '当前页面的常用入口与最近访问'}</small></div><button class="icon-btn" data-act="rightdock.close" aria-label="关闭">${ico('x')}</button></div><div class="right-dock-body"><section class="right-dock-section"><h3>${ico('zap')}常用功能</h3>${links.map(x=>`<button class="right-dock-link" data-nav="${x[0]}"><span>${ico(x[3])}</span><span><b>${x[1]}</b><small>${x[2]}</small></span>${ico('chevron-right')}</button>`).join('')}</section><section class="right-dock-section"><h3>${ico('clock')}最近访问</h3>${recent.length?recent.map(x=>`<button class="right-dock-link" data-nav="${attr(x.path)}"><span>${ico('history')}</span><span><b>${esc(x.title)}</b><small>${esc(x.group)} · ${fromNow(x.time)}</small></span>${ico('chevron-right')}</button>`).join(''):'<div class="small muted">暂无最近访问页面</div>'}</section>${guest?`<section class="right-dock-section"><h3>${ico('crown')}注册与 VIP 权益</h3><p class="small muted">注册后可拥有独立工作空间和个人数据记录；成为有效 VIP 后可使用订阅、节点、分组、过滤方案、模板、APP 管理和分享等管理功能。部分 APP 操作还需对应 APP 权限。</p><button class="btn primary block" data-nav="v1-access">${ico('user-plus')}立即注册 / 登录</button></section>`:`<section class="right-dock-section"><h3>${ico('info')}使用提示</h3><p class="small muted">左侧用于完整功能分类；收藏可固定高频页面。右侧辅助栏只提供快捷入口，不替代原页面功能。</p></section>`}</div><div class="right-dock-foot"><button class="btn block" data-act="rightdock.close">关闭辅助侧栏</button></div></aside>`;
   root.classList.add('show'); root.setAttribute('aria-hidden','false');
 }
@@ -3594,7 +3594,12 @@ function renderTopbar() {
   renderBottomNav();
 }
 function renderBottomNav() {
-  const items = [
+  const items = currentAdmin()?._guest ? [
+    { id:'dashboard', label:'首页', icon:'home', path:'dashboard' },
+    { id:'convert', label:'转换', icon:'shuffle', path:'convert', fab:true },
+    { id:'conv-history', label:'记录', icon:'history', path:'conv-history' },
+    { id:'v1-access', label:'注册', icon:'user-plus', path:'v1-access' }
+  ] : [
     { id: 'v1-overview', label: '首页', icon: 'home', path: 'v1-overview' },
     { id: 'nodes', label: '节点', icon: 'server', path: 'nodes' },
     { id: 'v1-converter', label: '转换', icon: 'shuffle', path: 'v1-converter', fab: true },
@@ -4110,7 +4115,7 @@ function convInputSub(inp) {
 }
 function inputNodes(inp) {
   if (inp.type === 'source') return (inp.refs || []).flatMap(id => tenantNodes().filter(n => n.sourceId === id)).map(n => ({ ...n, sourceName: subName(n.sourceId) }));
-  if (inp.type === 'group') return (inp.refs || []).flatMap(id => { const g = currentAdmin()?._guest ? guestGroupById(id) : tenantGroups().find(x => x.id === id); const pool = currentAdmin()?._guest ? (DB.nodes || []) : tenantNodes(); return g ? g.nodeIds.map(nid => pool.find(n => n.id === nid)).filter(Boolean) : []; }).map(n => ({ ...n, groupIds: uniq([...(n.groupIds || []), ...(inp.refs || [])]) }));
+  if (inp.type === 'group') return (inp.refs || []).flatMap(id => { const g = currentAdmin()?._guest ? guestGroupById(id) : tenantGroups().find(x => x.id === id); const pool = currentAdmin()?._guest ? guestDefaultNodeRows() : tenantNodes(); return g ? g.nodeIds.map(nid => pool.find(n => n.id === nid)).filter(Boolean) : []; }).map(n => ({ ...n, groupIds: uniq([...(n.groupIds || []), ...(inp.refs || [])]) }));
   if (inp.type === 'nodes') return (inp.refs || []).map(id => tenantNodes().find(n => n.id === id)).filter(Boolean).map(n => ({ ...n, sourceName: '手动选择' }));
   if (inp.type === 'text' || inp.type === 'base64') {
     const r = parseInputText(inp.value || '', '粘贴导入', inp.type === 'base64');
@@ -4217,6 +4222,7 @@ function generateConversion() {
 }
 function openConversionDrawer(conv) {
   const excluded = conv.excluded || [];
+  const guestReadOnly = !!currentAdmin()?._guest;
   openDrawer({
     title: conv.name, subtitle: `${(conv.formats||[conv.format]).map(f=>FORMATS[f]?.name||f).join(' + ')} · ${fmtDT(conv.createdAt)}`,
     body: `${kvList([
@@ -4235,7 +4241,7 @@ function openConversionDrawer(conv) {
     ${(conv.versions && conv.versions.length) ? `<div class="detail-section"><h4>历史版本（${conv.versions.length}）</h4><div class="timeline">${conv.versions.map(v => `<div class="tl-item"><span class="tl-dot good"></span><div class="tl-top"><b>${esc(v.note || '生成版本')}</b><span class="tl-time">${fromNow(v.time)}</span></div><div class="tl-sub">保留 ${v.kept} 个节点 · ${fmtDT(v.time)}</div></div>`).join('')}</div></div>` : ''}
     ${excluded.length ? `<div class="detail-section"><h4>被排除节点（${excluded.length}）</h4><div class="pv-table-wrap"><table class="pv-table"><thead><tr><th>节点</th><th>来源</th><th>协议 / 地区</th><th>排除原因 / 命中规则</th></tr></thead><tbody>${excluded.map(e => `<tr><td>${esc(e.name)}</td><td>${esc(e.source || '—')}</td><td>${esc(PROTOCOLS[e.protocol] || e.protocol)} · ${esc(e.region)}</td><td><span class="reason">${esc(e.reason)}<span class="rule-name">${esc(e.rule || '')}</span></span></td></tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="detail-section"><h4>输出内容预览</h4><div class="code-box">${esc(truncate(conv.content || '（无内容）', 4000))}</div><div class="row" style="margin-top:8px"><span class="tiny faint">${esc(conv.formatNote || FORMATS[conv.format]?.note || '')}</span></div></div>`,
-    footer: `<button class="btn" data-copy-conv-link="${conv.id}">${ico('link')}复制统一链接</button><button class="btn" data-copy-conv="${conv.id}">${ico('copy')}复制内容</button><button class="btn" data-download-conv="${conv.id}">${ico('download')}下载</button><button class="btn primary" data-reconv="${conv.id}">${ico('refresh')}再次转换</button>`,
+    footer: guestReadOnly ? `<button class="btn primary" data-copy-conv="${conv.id}">${ico('copy')}复制转换内容</button>` : `<button class="btn" data-copy-conv-link="${conv.id}">${ico('link')}复制统一链接</button><button class="btn" data-copy-conv="${conv.id}">${ico('copy')}复制内容</button><button class="btn" data-download-conv="${conv.id}">${ico('download')}下载</button><button class="btn primary" data-reconv="${conv.id}">${ico('refresh')}再次转换</button>`, 
     onMount: (el, close) => {
       el.querySelector('[data-copy-conv-link]')?.addEventListener('click', () => copyText(conv.subscriptionUrl || '', '统一模拟订阅链接已复制；当前仅为本地演示标识'));
       el.querySelector('[data-copy-conv]')?.addEventListener('click', () => copyText(conv.content, '转换内容已复制'));
@@ -4927,6 +4933,7 @@ registerPage('conv-history', (query) => {
 });
 function conversionRowAction(act, c) {
   if (!scopeRecordAllowed(c)) { toast('只能操作自己的转换记录', 'warn'); return; }
+  if (currentAdmin()?._guest && !['view','copy'].includes(act)) { toast('访客模式仅可查看和复制自己的转换结果', 'warn'); return; }
   if (act === 'view') openConversionDrawer(c);
   if (act === 'copy') copyText(c.content || '', '转换内容已复制');
   if (act === 'download') downloadFile(`starjump-${c.id}.${FORMATS[c.format]?.kind === 'yaml' ? 'yaml' : c.format === 'singbox' ? 'json' : 'txt'}`, c.content || '');
@@ -6103,9 +6110,14 @@ function tenantRows(list, key) { return scopedByAdmin(list || [], key || 'adminI
 function tenantNodes() { return tenantRows(DB.nodes); }
 function tenantSources() { return tenantRows(DB.sources); }
 function tenantGroups() { return tenantRows(DB.groups); }
-function guestDefaultNodeGroup() { return (DB.groups || []).find(g => g && g.id === 'g1') || null; }
-function guestDefaultNodeRows() { const g = guestDefaultNodeGroup(); return g ? (g.nodeIds || []).map(id => (DB.nodes || []).find(n => n.id === id)).filter(n => n && n.enabled !== false && n.valid !== false) : []; }
-function guestGroupById(id) { const g = guestDefaultNodeGroup(); return g && g.id === id ? g : null; }
+const GUEST_DEFAULT_NODE_ROWS = [
+  { id:'guest-node-jp-01', name:'日本体验节点 01', protocol:'vless', server:'jp-demo.starjump.example', port:443, region:'日本', sourceName:'平台默认体验分组', sourceId:null, groupIds:['__guest_default__'], enabled:true, valid:true, simulated:true, cred:'11111111-1111-4111-8111-111111111111', net:'ws', tls:true },
+  { id:'guest-node-hk-01', name:'香港体验节点 01', protocol:'vmess', server:'hk-demo.starjump.example', port:8443, region:'香港', sourceName:'平台默认体验分组', sourceId:null, groupIds:['__guest_default__'], enabled:true, valid:true, simulated:true, cred:'22222222-2222-4222-8222-222222222222', net:'ws', tls:true },
+  { id:'guest-node-sg-01', name:'新加坡体验节点 01', protocol:'trojan', server:'sg-demo.starjump.example', port:443, region:'新加坡', sourceName:'平台默认体验分组', sourceId:null, groupIds:['__guest_default__'], enabled:true, valid:true, simulated:true, password:'demo-password-only', net:'tcp', tls:true }
+];
+function guestDefaultNodeGroup() { return { id:'__guest_default__', name:'平台默认体验分组', note:'仅供未注册用户体验转换的模拟节点，不连接真实服务器。', nodeIds:GUEST_DEFAULT_NODE_ROWS.map(n=>n.id), appType:'normal', appEnabled:false, readOnly:true }; }
+function guestDefaultNodeRows() { return GUEST_DEFAULT_NODE_ROWS.map(n=>({...n})); }
+function guestGroupById(id) { return id === '__guest_default__' ? guestDefaultNodeGroup() : null; }
 function tenantTemplates() { return tenantRows(DB.templates); }
 function tenantFilterSchemes() { return tenantRows(DB.filterSchemes); }
 
@@ -9241,7 +9253,7 @@ registerPage('v1-access', () => {
       root.addEventListener('click', e => {
         const b = e.target.closest('[data-access-act]'); if (!b) return;
         const act = b.dataset.accessAct;
-        if (act === 'guest') { CFG.currentAdminId='__guest__'; CFG.impersonator=null; saveCFG(); renderShell(); navigate('v1-access'); toast('已切换为普通用户身份：仅可使用基础转换', 'success'); return; }
+        if (act === 'guest') { CFG.currentAdminId='__guest__'; CFG.impersonator=null; saveCFG(); renderShell(); navigate('dashboard'); toast('已切换为普通用户身份：仅开放基础转换和本人记录', 'success'); return; }
         if (act === 'login') {
           const id = root.querySelector('[data-login-admin]').value;
           const a = adminById(id);
