@@ -5838,7 +5838,7 @@ registerPage('sync-records', () => {
 });
 /* ================= 分享管理 ================= */
 function scopeRecordAllowed(rec, key) {
-  if (!rec || CFG?.impersonator) return false;
+  if (!rec) return false;
   const ownerId = rec[key || 'adminId'];
   if (isMaster() && !CFG?.impersonator) return true;
   return !!ownerId && ownerId === currentAdmin()?.id;
