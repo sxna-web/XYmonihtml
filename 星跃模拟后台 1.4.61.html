@@ -5686,11 +5686,9 @@ function openNodeSort(list) {
       else if (v.mode === 'protocol') arr.sort((a, b) => Object.keys(PROTOCOLS).indexOf(a.protocol) - Object.keys(PROTOCOLS).indexOf(b.protocol) || a.name.localeCompare(b.name, 'zh'));
       else if (v.mode === 'port') arr.sort((a, b) => a.port - b.port);
       else arr.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
-      if (!list) DB.nodes = [...scopedByAdmin(DB.nodes).filter(n => !arr.some(x => x.id === n.id)), ...arr];
-      else {
-        const others = DB.nodes.filter(n => !list.some(x => x.id === n.id));
-        DB.nodes = [...arr, ...others];
-      }
+      const orderedIds = new Set(arr.map(n => n.id));
+      let orderedIndex = 0;
+      DB.nodes = DB.nodes.map(n => orderedIds.has(n.id) ? arr[orderedIndex++] : n);
       saveDB(); addLog({ module: '节点管理', type: '批量排序', target: (list ? list.length + ' 个节点' : '全部节点'), after: '排序方式：' + v.mode }); refreshCurrent(); toast('节点排序已更新', 'success');
     }
   });
