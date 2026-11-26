@@ -132,6 +132,10 @@ body.sb-collapsed .sb-foot .btn{justify-content:center;padding:0;width:40px}
 .sb-fav{margin:6px 10px 2px;padding:6px;border-radius:12px;background:color-mix(in srgb,var(--accent) 5%,transparent);border:1px dashed color-mix(in srgb,var(--accent) 22%,var(--line))}
 .sb-fav-title{display:flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:1px;color:var(--muted);padding:3px 6px 5px;font-weight:700}
 .sb-fav-title svg{width:12px;height:12px;color:#f59e0b}
+.sb-fav{max-height:230px;overflow:auto;overscroll-behavior:contain;margin:4px 10px 8px;padding:7px 5px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 92%,var(--accent) 8%)}
+.sb-fav .nav-row{padding-right:2px}.sb-fav .nav-star{flex:none}
+.tl-link{display:flex;width:100%;align-items:center;gap:10px;text-align:left;color:inherit;background:transparent;border:0;cursor:pointer;padding:10px 4px;border-radius:9px}
+.tl-link:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}.tl-content{display:block;flex:1;min-width:0}.tl-open{color:var(--faint);display:flex;align-items:center}.tl-link:disabled{cursor:default;opacity:.65}
 .sb-fav .nav-item{min-height:33px;font-size:12.5px}
 .sb-fav .nav-ico{width:20px;height:20px}
 .sb-fav .nav-ico svg{width:14px;height:14px}
@@ -2032,6 +2036,7 @@ function defaultCFG() {
   return {
     currentAdminId: 'a1', impersonator: null, sidebarCollapsed: false,
     menu: { hidden: [], favorites: ['dashboard', 'convert', 'nodes', 'cards'], collapsedGroups: [], itemOrder: {} },
+    recentPages: [],
     theme: defaultTheme(),
     pageSize: 10, density: 'normal', showSimBadge: true, lastRoute: 'dashboard',
     notificationsReadAt: null
@@ -3482,8 +3487,8 @@ const VIP_ONLY_MENU_ROUTES = new Set([
   'stats-nodes','stats-conversions','v1-groups','v1-quotas','v1-heartbeat','v1-health'
 ]);
 const MASTER_ONLY_ROUTES = new Set(['master','permissions','versions','update-config','v1-app-download-config','v1-purchase-quota','v1-admin-vip','v1-env']);
-function isMenuItemVisible(item) {
-  if (CFG.menu.hidden.includes(item.id)) return false;
+function isMenuItemAvailable(item) {
+  if (!item) return false;
   const publicItems = ['v1-access','v1-help'];
   const guestBasicItems = ['convert'];
   if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !guestBasicItems.includes(item.id)) return false;
@@ -3494,6 +3499,7 @@ function isMenuItemVisible(item) {
   if (item.id === 'v1-app-downloads' && !v1RegisteredAccount()) return false;
   return true;
 }
+function isMenuItemVisible(item) { return !CFG.menu.hidden.includes(item.id) && isMenuItemAvailable(item); }
 function orderedItems(group) {
   const order = CFG.menu.itemOrder[group.id] || [];
   const items = group.items.filter(isMenuItemVisible);
@@ -3515,7 +3521,7 @@ function renderSidebar() {
   const groupHtml = MENU.map(g => {
     const items = orderedItems(g);
     if (!items.length) return '';
-    const closed = true;
+    const closed = CFG.menu.collapsedGroups.includes(g.id);
     return `<div class="nav-group ${closed ? 'closed' : ''}" data-group="${g.id}">
       <button class="nav-group-head" data-act="menu.group" data-id="${g.id}">${ico(g.icon)}<span>${esc(g.label)}</span><span class="caret">${ico('chevron-down')}</span></button>
       <div class="nav-items">${items.map(i => navRow(i)).join('')}</div>
@@ -3630,6 +3636,13 @@ function renderRoute() {
   const parsed = parseHash();
   CURRENT_ROUTE = parsed.id;
   CURRENT_QUERY = parsed.query;
+  if (CFG && CURRENT_ROUTE && CURRENT_ROUTE !== 'recent' && CFG.lastRoute !== CURRENT_ROUTE) {
+    const meta = PAGE_META[CURRENT_ROUTE] || [CURRENT_ROUTE, '星跃后台'];
+    CFG.recentPages = Array.isArray(CFG.recentPages) ? CFG.recentPages : [];
+    CFG.recentPages.unshift({ path: CURRENT_ROUTE, title: meta[0], group: meta[1] || '星跃后台', time: new Date().toISOString() });
+    CFG.recentPages = CFG.recentPages.slice(0, 40);
+    saveCFG();
+  }
   const oldView = document.getElementById('view');
   const view = oldView.cloneNode(false);
   oldView.replaceWith(view);
@@ -3672,6 +3685,10 @@ function renderRoute() {
   }
   CFG.lastRoute = CURRENT_ROUTE;
   try { localStorage.setItem(LS_CFG, JSON.stringify(CFG)); } catch (e) {}
+  if (MENU_MAP[CURRENT_ROUTE] && CFG.menu.collapsedGroups.includes(MENU_MAP[CURRENT_ROUTE].group)) {
+    CFG.menu.collapsedGroups = CFG.menu.collapsedGroups.filter(x => x !== MENU_MAP[CURRENT_ROUTE].group);
+    saveCFG(); renderSidebar();
+  }
 }
 function refreshPage() {
   renderRoute();
@@ -3806,7 +3823,7 @@ function exitImpersonation() {
 }
 function openMenuSettings() {
   const body = `<div class="notice">${ico('info')}<div>调整菜单显示、排序和收藏。修改会立即保存并应用到侧边栏；隐藏的菜单仍可通过全局搜索或链接访问。</div></div>
-    <div class="stack" style="gap:12px">${MENU.map(g => ({ ...g, items: g.items.filter(item => isMenuItemVisible(item)) })).filter(g => g.items.length).map(g => `<div class="card"><div class="card-head" style="padding:9px 11px"><b class="small">${ico(g.icon)} ${esc(g.label)}</b><span class="sub">${g.items.length} 项</span></div><div>${g.items.map(item => `<div class="menu-setting-row"><label class="checkline" style="padding:0;flex:1"><input type="checkbox" data-menu-visible="${item.id}" ${CFG.menu.hidden.includes(item.id) ? '' : 'checked'}><span class="grow">${esc(item.label)} </span></label><button class="icon-btn" data-act="menu.up" data-id="${item.id}" title="上移">${ico('arrow-up')}</button><button class="icon-btn" data-act="menu.down" data-id="${item.id}" title="下移">${ico('arrow-down')}</button><button class="icon-btn" data-act="menu.fav" data-id="${item.id}" title="收藏" style="color:${CFG.menu.favorites.includes(item.id) ? '#f59e0b' : 'var(--faint)'}">${ico('star')}</button></div>`).join('')}</div></div>`).join('')}</div>`;
+    <div class="stack" style="gap:12px">${MENU.map(g => ({ ...g, items: g.items.filter(item => isMenuItemAvailable(item)) })).filter(g => g.items.length).map(g => `<div class="card"><div class="card-head" style="padding:9px 11px"><b class="small">${ico(g.icon)} ${esc(g.label)}</b><span class="sub">${g.items.length} 项</span></div><div>${g.items.map(item => `<div class="menu-setting-row"><label class="checkline" style="padding:0;flex:1"><input type="checkbox" data-menu-visible="${item.id}" ${CFG.menu.hidden.includes(item.id) ? '' : 'checked'}><span class="grow">${esc(item.label)} </span></label><button class="icon-btn" data-act="menu.up" data-id="${item.id}" title="上移">${ico('arrow-up')}</button><button class="icon-btn" data-act="menu.down" data-id="${item.id}" title="下移">${ico('arrow-down')}</button><button class="icon-btn" data-act="menu.fav" data-id="${item.id}" title="收藏" style="color:${CFG.menu.favorites.includes(item.id) ? '#f59e0b' : 'var(--faint)'}">${ico('star')}</button></div>`).join('')}</div></div>`).join('')}</div>`;
   openModal({
     title: '菜单显示设置', subtitle: '显示 / 隐藏、排序、收藏', size: 'lg', icon: 'sliders', body,
     footer: `<button class="btn danger" data-act="menu.reset">恢复默认</button><button class="btn primary" data-modal-close>完成</button>`,
@@ -3867,10 +3884,11 @@ function recentEvents(limit) {
   visibleCards().filter(c => c.activatedAt).forEach(c => events.push({ kind: 'card', title: '卡密激活 · ' + c.code, sub: `${c.userId} · ${c.batch}`, time: c.activatedAt, tone: 'good', path: 'cards', icon: 'key' }));
   visibleLogs().slice(0, 80).forEach(l => events.push({ kind: 'log', title: l.actor + ' · ' + l.type, sub: `${l.module}${l.target ? ' · ' + l.target : ''}${l.reason ? ' · ' + l.reason : ''}`, time: l.time, tone: l.result === '失败' ? 'bad' : 'accent', path: 'logs', icon: 'scroll' }));
   scopedByAdmin(DB.diagnostics).forEach(d => events.push({ kind: 'diag', title: '系统异常 · ' + d.type, sub: d.module + ' · ' + d.cause, time: d.time, tone: d.resolved ? 'good' : 'warn', path: 'diagnostics', icon: 'bug' }));
+  (CFG.recentPages || []).forEach(p => events.push({ kind: 'page', title: '访问页面 · ' + p.title, sub: p.group + ' · 点击返回此页面', time: p.time, tone: 'accent', path: p.path, icon: 'clock' }));
   return events.sort(byTime('time')).slice(0, limit || 10);
 }
 function timelineHtml(events) {
-  return `<div class="timeline">${events.map(e => `<div class="tl-item"><span class="tl-dot ${e.tone === 'bad' ? 'bad' : e.tone === 'warn' ? 'warn' : e.tone === 'good' ? 'good' : ''}"></span><div class="tl-top"><b>${esc(e.title)}</b><span class="tl-time">${fromNow(e.time)}</span></div><div class="tl-sub">${esc(e.sub)}</div></div>`).join('')}</div>`;
+  return `<div class="timeline">${events.map(e => `<button type="button" class="tl-item tl-link" ${e.path ? `data-nav="${attr(e.path)}" title="打开${attr(e.title)}"` : 'disabled'}><span class="tl-dot ${e.tone === 'bad' ? 'bad' : e.tone === 'warn' ? 'warn' : e.tone === 'good' ? 'good' : ''}"></span><span class="tl-content"><span class="tl-top"><b>${esc(e.title)}</b><span class="tl-time">${fromNow(e.time)}</span></span><span class="tl-sub">${esc(e.sub)}</span></span><span class="tl-open">${ico('chevron-right')}</span></button>`).join('')}</div>`;
 }
 
 /* ================= 工作台：首页概览 ================= */
@@ -4027,7 +4045,7 @@ registerPage('quick', () => {
 registerPage('recent', (query) => {
   const type = query.type || 'all';
   const tabs = [
-    ['all', '全部'], ['conversion', '节点转换'], ['sync', '订阅同步'], ['card', '卡密激活'], ['log', '用户操作'], ['diag', '系统异常']
+    ['all', '全部'], ['page', '访问页面'], ['conversion', '节点转换'], ['sync', '订阅同步'], ['card', '卡密激活'], ['log', '用户操作'], ['diag', '系统异常']
   ];
   let events = recentEvents(200);
   if (type !== 'all') events = events.filter(e => e.kind === type);
