@@ -9854,12 +9854,12 @@ registerPage('v1-converter', () => {
 });
 /* ================= 全局操作与启动 ================= */
 const ACTIONS = {
-  'workspace.panel': () => { CFG.rightSidebarOpen = !CFG.rightSidebarOpen; saveCFG(); renderRightSidebar(); },
+  'workspace.panel': () => { CFG.rightSidebarOpen = !CFG.rightSidebarOpen; if (CFG.rightSidebarOpen && window.innerWidth <= 900) document.body.classList.remove('sb-open'); saveCFG(); renderRightSidebar(); },
   'sidebar.toggle': () => {
-    if (window.innerWidth <= 900) document.body.classList.toggle('sb-open');
+    if (window.innerWidth <= 900) { const opening = !document.body.classList.contains('sb-open'); if (opening && CFG.rightSidebarOpen) { CFG.rightSidebarOpen = false; saveCFG(); renderRightSidebar(); } document.body.classList.toggle('sb-open'); }
     else { CFG.sidebarCollapsed = !CFG.sidebarCollapsed; document.body.classList.toggle('sb-collapsed', CFG.sidebarCollapsed); saveCFG(); }
   },
-  'sidebar.open': () => { document.body.classList.add('sb-open'); },
+  'sidebar.open': () => { if (window.innerWidth <= 900 && CFG.rightSidebarOpen) { CFG.rightSidebarOpen = false; saveCFG(); renderRightSidebar(); } document.body.classList.add('sb-open'); },
   'sidebar.close': () => { document.body.classList.remove('sb-open'); },
   'sidebar.collapse': () => {
     if (window.innerWidth <= 900) { document.body.classList.remove('sb-open'); return; }
