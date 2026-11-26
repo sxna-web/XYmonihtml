@@ -75,7 +75,13 @@ body.bg-fixed #bg-layer{background-attachment:fixed}
 #sidebar::before{content:"";position:absolute;inset:0;background:linear-gradient(var(--sidebar-overlay),var(--sidebar-overlay)),linear-gradient(180deg,color-mix(in srgb,var(--accent) 7%,transparent),transparent 34%);pointer-events:none}
 #sidebar>*{position:relative;z-index:1}
 #sidebar-backdrop{display:none;position:fixed;inset:0;z-index:45;background:rgba(8,15,30,.46);backdrop-filter:blur(2px)}
-#main{flex:1;min-width:0;margin-left:var(--sidebar-w);display:flex;flex-direction:column;min-height:100vh;transition:margin-left .22s ease}
+#main{flex:1;min-width:0;margin-left:var(--sidebar-w);display:flex;flex-direction:column;min-height:100vh;transition:margin-left .22s ease,margin-right .22s ease}
+#right-sidebar{position:fixed;z-index:42;right:0;top:0;bottom:0;width:var(--rightbar-w,290px);display:flex;flex-direction:column;background:var(--sidebar-bg-solid);border-left:1px solid var(--line);box-shadow:-12px 0 34px rgba(15,23,42,.08);transform:translateX(102%);transition:transform .22s ease;overflow:hidden}
+body.right-panel-open #right-sidebar{transform:translateX(0)}body.right-panel-open #main{margin-right:var(--rightbar-w,290px)}
+#right-sidebar-backdrop{display:none;position:fixed;inset:0;z-index:41;background:rgba(8,15,30,.36);backdrop-filter:blur(2px)}body.right-panel-open #right-sidebar-backdrop{display:block}
+.rb-head{height:var(--topbar-h);display:flex;align-items:center;justify-content:space-between;padding:0 15px;border-bottom:1px solid var(--line);flex:none}.rb-head b{font-size:13px}.rb-scroll{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px;overscroll-behavior:contain}
+.rb-section{border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}.rb-title{padding:10px 11px;font-size:11px;font-weight:750;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}.rb-list{padding:5px}.rb-link{display:flex;width:100%;align-items:center;gap:9px;padding:9px 8px;border:0;border-radius:8px;background:transparent;color:var(--text);text-align:left;font-size:12px;cursor:pointer}.rb-link:hover{background:var(--card-2)}.rb-link svg{width:16px;height:16px;color:var(--muted);flex:none}.rb-link span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rb-link small{display:block;color:var(--muted);font-size:10px;margin-top:2px}.rb-empty{padding:12px;color:var(--muted);font-size:11px}.benefit-row{display:flex;flex-direction:column;gap:5px;font-size:12px;line-height:1.55}.benefit-row b{color:var(--accent)}
+@media(max-width:1180px){body.right-panel-open #main{margin-right:0}#right-sidebar{width:min(340px,88vw)}}
 body.sb-collapsed #sidebar{width:74px}
 body.sb-collapsed #main{margin-left:74px}
 #right-dock-root{position:fixed;inset:0;z-index:85;visibility:hidden;pointer-events:none}#right-dock-root.show{visibility:visible;pointer-events:auto}.right-dock-backdrop{position:absolute;inset:0;background:rgba(8,15,30,.38);opacity:0;transition:opacity .2s}#right-dock-root.show .right-dock-backdrop{opacity:1}.right-dock-panel{position:absolute;right:0;top:0;bottom:0;width:min(370px,92vw);display:flex;flex-direction:column;background:var(--card);border-left:1px solid var(--line);box-shadow:-18px 0 45px rgba(10,20,40,.16);transform:translateX(102%);transition:transform .22s ease}#right-dock-root.show .right-dock-panel{transform:translateX(0)}.right-dock-head{display:flex;align-items:center;gap:10px;padding:17px 16px;border-bottom:1px solid var(--line);flex:none}.right-dock-head>div{flex:1;min-width:0}.right-dock-head b{display:block;font-size:15px}.right-dock-head small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.right-dock-body{flex:1;overflow:auto;padding:13px;display:flex;flex-direction:column;gap:13px;overscroll-behavior:contain}.right-dock-section{border:1px solid var(--line);border-radius:13px;padding:11px;background:var(--surface-2)}.right-dock-section h3{font-size:12px;margin:0 0 8px;display:flex;align-items:center;gap:7px}.right-dock-link{display:flex;align-items:center;gap:9px;width:100%;padding:9px 8px;border:0;border-radius:9px;background:transparent;color:var(--text);text-align:left;font-size:12.5px}.right-dock-link:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}.right-dock-link>span:nth-child(2){flex:1;min-width:0}.right-dock-link small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px}.right-dock-foot{padding:12px;border-top:1px solid var(--line);flex:none}
@@ -1386,6 +1392,8 @@ html,body{max-width:100%;overflow-x:hidden}
     <div id="impersonate-bar"></div>
     <main id="view" role="main"></main>
   </div>
+  <div id="right-sidebar-backdrop" data-act="workspace.panel" aria-hidden="true"></div>
+  <aside id="right-sidebar" aria-label="快捷工具侧栏"></aside>
 </div>
 <nav id="bottom-nav" aria-label="底部导航"></nav>
 <div id="right-dock-root" aria-hidden="true"></div>
@@ -2038,7 +2046,7 @@ function defaultCFG() {
   return {
     currentAdminId: 'a1', impersonator: null, sidebarCollapsed: false,
     menu: { hidden: [], favorites: ['dashboard', 'convert', 'nodes', 'cards'], collapsedGroups: [], itemOrder: {} },
-    recentPages: [],
+    recentPages: [], rightSidebarOpen: false,
     theme: defaultTheme(),
     pageSize: 10, density: 'normal', showSimBadge: true, lastRoute: 'dashboard',
     notificationsReadAt: null
@@ -3491,7 +3499,7 @@ const VIP_ONLY_MENU_ROUTES = new Set([
 const MASTER_ONLY_ROUTES = new Set(['master','permissions','versions','update-config','v1-app-download-config','v1-purchase-quota','v1-admin-vip','v1-env']);
 function isMenuItemAvailable(item) {
   if (!item) return false;
-  const publicItems = ['v1-access','v1-help'];
+  const publicItems = ['dashboard','v1-access','v1-help'];
   const guestBasicItems = ['dashboard','convert','conv-history','recent'];
   if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !guestBasicItems.includes(item.id)) return false;
   if (item.masterOnly && (!isMaster() || CFG?.impersonator)) return false;
@@ -3569,6 +3577,7 @@ function renderTopbar() {
     <button class="top-search" data-act="search.open" aria-label="全局搜索"><span>${ico('search')}</span><span>搜索节点、卡密、用户、菜单…</span><kbd>Ctrl K</kbd></button>
     <div class="top-actions">
       <button class="icon-btn mobile-only" data-act="search.open" aria-label="搜索">${ico('search')}</button>
+      <button class="icon-btn" data-act="workspace.panel" aria-label="打开快捷工具侧栏" title="快捷工具 / 最近访问">${ico('panel-right')}</button>
       <button class="icon-btn guide-btn" data-nav="v1-help" aria-label="使用说明" title="使用说明">${ico('info')}</button>
       <button class="icon-btn" data-act="rightdock.toggle" aria-label="打开右侧辅助栏" title="快捷辅助侧栏">${ico('panel-right')}</button>
       <button class="icon-btn" data-act="page.refresh" aria-label="刷新当前页" title="刷新当前页">${ico('refresh')}</button>
@@ -3621,9 +3630,26 @@ function updateNavActive() {
   renderBottomNav();
   $$('#bottom-nav [data-nav]').forEach(b => b.classList.toggle('on', b.dataset.nav === CURRENT_ROUTE));
 }
+function renderRightSidebar() {
+  const el = $('#right-sidebar'); if (!el) return;
+  const admin = currentAdmin();
+  const favs = (CFG.menu.favorites || []).map(id => MENU_MAP[id]).filter(isMenuItemVisible).slice(0,8);
+  const recent = (CFG.recentPages || []).filter(p => p.path && isMenuItemAvailable(MENU_MAP[p.path])).slice(0,8);
+  const guest = !!admin?._guest;
+  const quick = guest ? [['convert','基础节点转换','shuffle'],['v1-access','注册 / 登录','user-plus']] : [['convert','节点转换工作区','shuffle'],['conv-history','转换历史','history'],['nodes','节点管理','server'],['cards','APP 卡密','key'],['app-shares','APP 授权分享','smartphone'],['settings','系统设置','settings']].filter(x => isMenuItemAvailable(MENU_MAP[x[0]]));
+  el.innerHTML = `<div class="rb-head"><b>${ico('panel-right')} 快捷工具</b><button class="icon-btn" data-act="workspace.panel" aria-label="关闭快捷工具侧栏">${ico('x')}</button></div><div class="rb-scroll">
+    ${guest ? `<section class="rb-section"><div class="rb-title">${ico('sparkles')} 注册后可解锁</div><div class="rb-list"><div class="rb-empty">注册账号可保存个人转换记录、使用更多管理入口；开通有效 VIP 后可管理订阅源、节点、APP 用户、卡密和分享授权。</div><button class="rb-link" data-nav="v1-access">${ico('user-plus')}<span>立即注册 / 登录</span>${ico('chevron-right')}</button></div></section>` : ''}
+    <section class="rb-section"><div class="rb-title">${ico('zap')} 常用入口</div><div class="rb-list">${quick.map(x=>`<button class="rb-link" data-nav="${x[0]}">${ico(x[2])}<span>${esc(x[1])}</span>${ico('chevron-right')}</button>`).join('')}</div></section>
+    <section class="rb-section"><div class="rb-title">${ico('star')} 我的收藏</div><div class="rb-list">${favs.length?favs.map(x=>`<button class="rb-link" data-nav="${attr(x.path)}">${ico(x.icon)}<span>${esc(x.label)}</span>${ico('chevron-right')}</button>`).join(''):'<div class="rb-empty">还没有收藏菜单，可点击左侧菜单旁的星形图标添加。</div>'}</div></section>
+    <section class="rb-section"><div class="rb-title">${ico('clock')} 最近访问</div><div class="rb-list">${recent.length?recent.map(x=>`<button class="rb-link" data-nav="${attr(x.path)}">${ico('history')}<span>${esc(x.title)}<small>${esc(x.group||'')}</small></span>${ico('chevron-right')}</button>`).join(''):'<div class="rb-empty">访问过的页面会显示在这里。</div>'}</div></section>
+    <section class="rb-section"><div class="rb-title">${ico('life-buoy')} 帮助与说明</div><div class="rb-list"><button class="rb-link" data-nav="v1-help">${ico('book-open')}<span>平台使用说明</span>${ico('chevron-right')}</button><button class="rb-link" data-act="search.open">${ico('search')}<span>全局搜索功能</span>${ico('chevron-right')}</button></div></section>
+  </div>`;
+  document.body.classList.toggle('right-panel-open',!!CFG.rightSidebarOpen);
+}
 function renderShell() {
   renderSidebar();
   renderTopbar();
+  renderRightSidebar();
 }
 function setPageTitle() {
   const t = (PAGE_META[CURRENT_ROUTE] || ['星跃后台'])[0];
@@ -3641,8 +3667,8 @@ const VIP_ONLY_ROUTES = new Set([
 ]);
 function v1RouteDeniedReason(routeId) {
   if (routeId === 'v1-purchase-links') return 'redirect-purchase-settings';
-  const publicRoutes = new Set(['v1-access','v1-help']);
-  const guestBasicRoutes = new Set(['dashboard','convert','conv-history','recent']);
+  const publicRoutes = new Set(['dashboard','v1-access','v1-help']);
+  const guestBasicRoutes = new Set(['convert','conv-history']);
   if (MENU_MAP[routeId] && !publicRoutes.has(routeId) && !guestBasicRoutes.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (V1_REGISTERED_ONLY_ROUTES.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (MASTER_ONLY_ROUTES.has(routeId) && (!isMaster() || CFG?.impersonator)) return 'master';
@@ -3680,11 +3706,18 @@ function renderRoute() {
   }
   const fn = PAGE_RENDERERS[CURRENT_ROUTE] || PAGE_RENDERERS.dashboard;
   setPageTitle();
+  renderRightSidebar();
   renderTopbar();
   updateNavActive();
   document.body.classList.remove('sb-open');
   if (!fn) { view.innerHTML = pageHead('页面不存在') + '<div class="card card-pad">页面未注册</div>'; return; }
   try {
+    if (currentAdmin()?._guest && CURRENT_ROUTE === 'dashboard') {
+      view.innerHTML = renderGuestLanding();
+      view.style.animation = 'none'; void view.offsetHeight; view.style.animation = '';
+      document.body.classList.remove('sb-open');
+      CFG.lastRoute = CURRENT_ROUTE; saveCFG(); return;
+    }
     const out = fn(CURRENT_QUERY) || {};
     if (typeof out === 'string') view.innerHTML = out;
     else {
@@ -3706,6 +3739,15 @@ function renderRoute() {
     CFG.menu.collapsedGroups = CFG.menu.collapsedGroups.filter(x => x !== MENU_MAP[CURRENT_ROUTE].group);
     saveCFG(); renderSidebar();
   }
+}
+function renderGuestLanding() {
+  const own = visibleConversions();
+  const latest = own.slice().sort(byTime('createdAt')).slice(0,5);
+  return `${pageHead('欢迎使用星跃基础转换','无需注册即可体验基础节点转换；注册后可保存个人使用记录，开通 VIP 后可使用完整管理功能。',`<button class="btn primary" data-nav="convert">${ico('shuffle')}开始基础转换</button><button class="btn" data-nav="v1-access">${ico('user-plus')}注册 / 登录</button>`)}
+    <section class="hero"><div class="hero-grid"><div style="flex:1;min-width:230px"><div class="eyebrow">STARJUMP · BASIC</div><h1>先体验基础转换，再按需解锁更多能力</h1><p>当前为未注册体验身份。你可以粘贴节点内容进行基础转换，并查看、复制当前体验身份自己的转换记录。</p><div class="hero-actions"><button class="btn primary" data-nav="convert">${ico('shuffle')}立即转换</button><button class="btn" data-nav="v1-access">${ico('user-plus')}创建账号</button></div></div><div class="hero-ring"><div><b>${own.length}</b><span>我的转换记录</span></div></div></div></section>
+    <div class="grid grid-2" style="margin-top:16px"><section class="card"><div class="card-head"><h3>${ico('check-circle')} 未注册可使用</h3></div><div class="card-body"><div class="stack"><div class="row">${ico('check')}基础节点转换</div><div class="row">${ico('check')}默认体验节点分组（只读）</div><div class="row">${ico('check')}查看自己的转换记录与批次</div><div class="row">${ico('check')}复制自己的转换节点和结果</div></div><p class="tiny muted" style="margin-top:10px">体验数据仅保存在当前浏览器；清理浏览器数据后可能丢失。</p></div></section>
+    <section class="card"><div class="card-head"><h3>${ico('unlock')} 注册与 VIP 权益</h3></div><div class="card-body"><div class="benefit-row"><b>注册用户</b><span>个人账号与记录管理、更多基础页面入口、个人资料与账号状态管理。</span></div><div class="divider"></div><div class="benefit-row"><b>有效 VIP 管理员</b><span>订阅源与节点管理、节点分组、APP 用户与设备、卡密生成与激活、APP 授权分享、外部分享、数据统计及运营管理。</span></div><div class="divider"></div><button class="btn primary block" data-nav="v1-access">${ico('user-plus')}注册 / 登录，了解开通方式</button></div></section></div>
+    <section class="card" style="margin-top:16px"><div class="card-head"><h3>${ico('history')} 我的最近转换</h3><span class="sub">仅显示当前体验身份自己的记录</span><div class="tools"><button class="btn sm" data-nav="conv-history">查看全部</button></div></div><div class="card-body">${latest.length?timelineHtml(latest.map(c=>({title:c.name||'节点转换',sub:`${FORMATS[c.format]?.short||c.format} · ${c.keptCount||0} 个节点`,time:c.createdAt,tone:c.status==='failed'?'bad':'good',path:'conv-history'}))):'<div class="empty"><b>还没有转换记录</b><span>完成一次基础转换后，会在这里显示你的记录。</span></div>'}</div></section>`;
 }
 function refreshPage() {
   renderRoute();
@@ -9777,6 +9819,7 @@ registerPage('v1-converter', () => {
 });
 /* ================= 全局操作与启动 ================= */
 const ACTIONS = {
+  'workspace.panel': () => { CFG.rightSidebarOpen = !CFG.rightSidebarOpen; saveCFG(); renderRightSidebar(); },
   'sidebar.toggle': () => {
     if (window.innerWidth <= 900) document.body.classList.toggle('sb-open');
     else { CFG.sidebarCollapsed = !CFG.sidebarCollapsed; document.body.classList.toggle('sb-collapsed', CFG.sidebarCollapsed); saveCFG(); }
