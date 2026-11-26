@@ -6574,6 +6574,7 @@ function unbindDevice(d, silent) {
   if (!requireAppPerm('解绑设备')) return;
   if (!requireOwnRecord(d)) return;
   const run = () => {
+    if (!requireAppPerm('解绑设备') || !requireOwnRecord(d)) { toast('权限已变化，未执行解绑', 'warn'); return; }
     d.status = 'unbound';
     addLog({ module: '设备管理', type: '解绑设备', target: d.deviceId + ' · ' + d.name, before: { status: 'active' }, after: { status: 'unbound' } });
     saveDB(); refreshCurrent(); toast('设备已解绑', 'success');
@@ -7125,6 +7126,7 @@ function openAdminForm() {
     ],
     submitText: '创建管理员',
     onSubmit: v => {
+      if (!requireMaster('创建管理员')) throw new Error('仅超管理员可以创建管理员');
       if (DB.admins.some(a => a.account === v.account)) throw new Error('登录账号已存在');
       const a = { id: uid('a'), name: v.name, account: v.account, role: 'admin', status: v.status, vipExpire: addDays(now(), 7), trial: true, appPerm: !!v.appPerm, createdAt: new Date().toISOString(), note: v.note };
       DB.admins.push(a);
@@ -7138,6 +7140,7 @@ function approveAdmin(a) {
   if (!requireMaster('审核管理员')) return;
   confirmDialog({ title: '审核通过管理员？', message: `将启用管理员「${esc(a.name)}」，并开启 7 天体验期（模拟）。`, confirmText: '审核通过' }).then(ok => {
     if (!ok) return;
+    if (!requireMaster('审核管理员')) { toast('身份已变化，未执行审核', 'warn'); return; }
     a.status = 'active';
     if (!a.vipExpire || new Date(a.vipExpire) < now()) { a.vipExpire = addDays(now(), 7); a.trial = true; }
     saveDB(); addLog({ module: '管理员管理', type: '审核通过', target: a.name, before: '待审核', after: '已启用' }); refreshCurrent(); toast('管理员已审核通过', 'success');
@@ -7149,6 +7152,7 @@ function toggleAdminStatus(a) {
   const disable = a.status !== 'disabled';
   confirmDialog({ title: disable ? '停用管理员？' : '启用管理员？', message: disable ? `将停用「${esc(a.name)}」。其数据不会删除，但不能再进入后台。` : `将重新启用「${esc(a.name)}」。`, danger: disable, confirmText: disable ? '停用' : '启用' }).then(ok => {
     if (!ok) return;
+    if (!requireMaster('启停管理员') || a.id === currentAdmin().id) { toast('身份已变化或不能操作当前管理员', 'warn'); return; }
     a.status = disable ? 'disabled' : 'active';
     saveDB(); addLog({ module: '管理员管理', type: disable ? '停用管理员' : '启用管理员', target: a.name, before: a.status === 'disabled' ? 'active' : 'disabled', after: a.status }); refreshCurrent(); toast(disable ? '管理员已停用' : '管理员已启用', 'success');
   });
@@ -7159,6 +7163,7 @@ function adjustAdminVip(a) {
     title: '调整后台 VIP · ' + a.name, size: 'sm', icon: 'crown', subtitle: '后台 VIP 与 APP 卡密完全分开管理',
     fields: [{ key: 'mode', label: '调整方式', type: 'select', options: [{ value: '30', label: '增加 30 天' }, { value: '90', label: '增加 90 天' }, { value: '365', label: '增加 365 天' }, { value: 'date', label: '设置指定到期日期' }] }, { key: 'date', label: '指定日期', type: 'date', value: dateInput(a.vipExpire) }],
     submitText: '保存 VIP', onSubmit: v => {
+      if (!requireMaster('调整后台 VIP')) throw new Error('仅超管理员可以调整 VIP');
       const before = fmtDate(a.vipExpire);
       if (v.mode === 'date') { if (!v.date) throw new Error('请选择日期'); a.vipExpire = endOfDate(v.date); }
       else a.vipExpire = addDays(Math.max(new Date(a.vipExpire).getTime(), now()), Number(v.mode));
