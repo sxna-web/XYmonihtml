@@ -5266,6 +5266,7 @@ function mergeGroups(list) {
   });
 }
 function useGroupsForConvert(groups) {
+  if (!Array.isArray(groups) || !groups.length || !groups.every(g => g && tenantGroups().some(x => x.id === g.id) && scopeRecordAllowed(g))) { toast('只能使用当前管理员自己的分组进行转换', 'warn'); return; }
   const c = ensureConv();
   c.inputs = [{ id: uid('inp'), type: 'group', refs: groups.map(g => g.id), label: groups.map(g => g.name).join('、') }];
   c.parsed = []; c.parsedAt = null; c.preview = null; c.result = null; c.step = 1; c.name = groups.map(g => g.name).join(' + ') + ' 转换';
@@ -5293,10 +5294,10 @@ registerPage('templates', (query) => {
         if (act === 'new') openTemplateForm(null);
         if (act === 'edit') openTemplateForm(t);
         if (act === 'import') importTemplate();
-        if (act === 'default') { DB.templates.forEach(x => x.isDefault = x.id === id); saveDB(); addLog({ module: '转换模板', type: '设为默认模板', target: t.name }); refreshCurrent(); toast('已设为默认模板', 'success'); }
-        if (act === 'export') downloadFile('starjump-template-' + t.id + '.json', JSON.stringify(t, null, 2), 'application/json');
-        if (act === 'dup') { const nt = { ...clone(t), id: uid('t'), name: t.name + ' 副本', isDefault: false, createdAt: new Date().toISOString() }; DB.templates.unshift(nt); saveDB(); addLog({ module: '转换模板', type: '复制模板', target: t.name }); refreshCurrent(); toast('模板已复制', 'success'); }
-        if (act === 'delete') confirmDialog({ title: '删除模板？', message: `将删除「${esc(t.name)}」，不影响已生成的转换结果。`, danger: true, confirmText: '删除' }).then(ok => { if (!ok) return; Repo.remove('templates', id); saveDB(); addLog({ module: '转换模板', type: '删除模板', target: t.name }); refreshCurrent(); toast('模板已删除', 'success'); });
+        if (act === 'default') { if (!t || !requireVip('设置默认模板') || !requireOwnRecord(DB.templates.find(x => x.id === id))) { toast('当前身份无权设置此模板', 'warn'); return; } tenantTemplates().forEach(x => x.isDefault = x.id === id); saveDB(); addLog({ module: '转换模板', type: '设为默认模板', target: t.name }); refreshCurrent(); toast('已设为默认模板', 'success'); }
+        if (act === 'export') { if (t && scopeRecordAllowed(t)) downloadFile('starjump-template-' + t.id + '.json', JSON.stringify(t, null, 2), 'application/json'); else toast('只能导出自己的模板', 'warn'); }
+        if (act === 'dup') { if (!t || !requireVip('复制模板') || !requireOwnRecord(DB.templates.find(x => x.id === id))) { toast('当前身份无权复制此模板', 'warn'); return; } const nt = { ...clone(t), id: uid('t'), adminId: currentAdmin().id, name: t.name + ' 副本', isDefault: false, createdAt: new Date().toISOString() }; DB.templates.unshift(nt); saveDB(); addLog({ module: '转换模板', type: '复制模板', target: t.name }); refreshCurrent(); toast('模板已复制', 'success'); }
+        if (act === 'delete') confirmDialog({ title: '删除模板？', message: `将删除「${esc(t.name)}」，不影响已生成的转换结果。`, danger: true, confirmText: '删除' }).then(ok => { if (!ok) return; if (!requireVip('删除模板') || !requireOwnRecord(DB.templates.find(x => x.id === id))) { toast('权限已变化，未删除模板', 'warn'); return; } Repo.remove('templates', id); saveDB(); addLog({ module: '转换模板', type: '删除模板', target: t.name }); refreshCurrent(); toast('模板已删除', 'success'); });
       });
     }
   };
@@ -5465,6 +5466,7 @@ function syncSubscriptions(ids, mode) {
   const task = createTask({
     name: `订阅${mode || ''}同步 · ${list.length} 个来源`, type: '订阅同步', total: list.length, detail: '模拟抓取，真实抓取待服务端接入',
     onDone: t => {
+      if (!requireVip('完成订阅同步') || !list.every(x => requireOwnRecord(DB.sources.find(s => s.id === x.id)) && tenantSources().some(s => s.id === x.id))) { t.status = 'failed'; t.error = '执行期间身份或订阅源权限已变化，已阻止写入'; toast(t.error, 'warn'); saveDB(); refreshCurrent(); return; }
       let success = 0, fail = 0;
       const errors = [];
       list.forEach((s, i) => {
@@ -6432,12 +6434,13 @@ function adjustCardTime(c) {
   });
 }
 function viewCardDetail(c) {
+  if (!c || !scopeRecordAllowed(c) || !visibleCards().some(x => x.id === c.id)) { toast('只能查看当前管理员名下的卡密', 'warn'); return; }
   const user = visibleUsers().find(u => u.userId === c.userId);
   openDrawer({
     title: '卡密详情', subtitle: c.code,
     body: `${kvList([['卡密', `<span class="mono">${esc(c.code)}</span>`], ['卡密 ID', `<span class="mono">${esc(c.id)}</span>`], ['用户 ID', esc(c.userId)], ['批次', esc(c.batch)], ['状态', badge(cardStatusLabel(cardStatus(c)), cardStatusTone(cardStatus(c)))], ['关联管理员', esc(adminName(c.adminId))], ['生成时间', fmtDT(c.createdAt)], ['激活时间', c.activatedAt ? fmtDT(c.activatedAt) : '未激活'], ['到期时间', c.expireAt ? fmtDT(c.expireAt) : '激活后计算'], ['有效时长', c.durationDays + ' 天'], ['设备限制', c.deviceLimit + ' 台'], ['备注', esc(c.note || '—')], ['关联用户', user ? `<span class="mono">${esc(user.userId)}</span> · ${userStatusLabel(userStatus(user))}` : '未创建 APP 用户']])}
     <div class="detail-section"><h4>激活与操作记录</h4>${(c.records || []).length ? c.records.map(r => `<div class="rule-card"><span class="r-ico">${ico('key')}</span><div class="r-main"><b>${esc(r.action)} · ${esc(r.result)}</b><span>${fmtDT(r.time)}${r.device ? ' · ' + esc(r.device) : ''}</span></div></div>`).join('') : '<div class="empty" style="padding:14px">暂无记录</div>'}</div>
-    <div class="detail-section"><h4>关联设备</h4>${DB.devices.filter(d => d.userId === c.userId).map(d => `<div class="rule-card"><span class="r-ico">${ico('monitor')}</span><div class="r-main"><b>${esc(d.name)}</b><span>${esc(d.deviceId)} · ${esc(d.type)} · ${d.status}</span></div></div>`).join('') || '<div class="empty" style="padding:14px">暂无关联设备</div>'}</div>
+    <div class="detail-section"><h4>关联设备</h4>${scopedByAdmin(DB.devices).filter(d => d.userId === c.userId).map(d => `<div class="rule-card"><span class="r-ico">${ico('monitor')}</span><div class="r-main"><b>${esc(d.name)}</b><span>${esc(d.deviceId)} · ${esc(d.type)} · ${d.status}</span></div></div>`).join('') || '<div class="empty" style="padding:14px">暂无关联设备</div>'}</div>
     ${c.activatedAt ? `<div class="note warn" style="margin-top:10px">${ico('alert')}<div>已激活卡密不建议物理删除，禁用或作废会保留审计记录。</div></div>` : ''}`,
     footer: `<button class="btn" data-card-copy="${c.id}">${ico('copy')}复制卡密</button><button class="btn" data-card-time="${c.id}">${ico('calendar')}调时间</button><button class="btn" data-card-user="${c.id}">${ico('user')}改用户 ID</button><button class="btn danger" data-card-del="${c.id}">${ico('trash')}删除</button>`,
     onMount: (el, close) => {
@@ -6461,7 +6464,10 @@ function deleteCards(list) {
   });
 }
 function exportCards(list, format) {
-  const rows = Array.isArray(list) ? list : visibleCards();
+  if (!requireAppPerm('导出卡密')) return;
+  const allowed = new Set(visibleCards().map(c => c.id));
+  const rows = (Array.isArray(list) ? list : visibleCards()).filter(c => c && allowed.has(c.id) && scopeRecordAllowed(c));
+  if (!rows.length) { toast('没有当前管理员可导出的卡密', 'warn'); return; }
   if (format === 'txt') {
     downloadFile('starjump-cards.txt', rows.map(c => c.code).join('\n')); toast('TXT 已导出', 'success');
   } else {
