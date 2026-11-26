@@ -4599,7 +4599,7 @@ function renderConv() {
       <button class="source-add" data-cv-act="addBase64">${ico('code')}<span>Base64 导入</span></button>
       ${guest ? `<button class="source-add" data-cv-act="addGroup">${ico('folder')}<span>默认体验分组<br><span class="faint">只读 · 仅体验节点</span></span></button>` : `<button class="source-add" data-cv-act="addSource">${ico('rss')}<span>已有订阅源</span></button><button class="source-add" data-cv-act="addNodes">${ico('server')}<span>已有节点</span></button><button class="source-add" data-cv-act="addGroup">${ico('folder')}<span>已有分组</span></button>`}
     </div>
-    ${guest ? `<div class="notice info" style="margin-top:10px">${ico('info')}<div>体验身份仅能通过粘贴节点、Base64 或输入订阅地址进行基础转换；不能读取管理员订阅源、节点库或其他用户的分组。</div></div>` : ''}
+    ${guest ? `<div class="notice info" style="margin-top:10px">${ico('info')}<div>体验身份可使用平台默认体验节点分组（只读），也可粘贴节点、导入 Base64 或输入订阅地址；不能读取管理员订阅源、节点库或其他用户的分组。</div></div>` : ''}
     <div class="conv-summary">
       <div class="cs-item"><span>来源数量</span><b>${c.inputs.length}</b></div>
       <div class="cs-item"><span>识别节点</span><b>${c.parsed.length || '—'}</b></div>
@@ -9890,6 +9890,7 @@ document.addEventListener('click', e => {
     const path = navEl.dataset.nav;
     closeAllOverlays();
     document.body.classList.remove('sb-open');
+    if (window.innerWidth <= 1180 && CFG.rightSidebarOpen) { CFG.rightSidebarOpen = false; saveCFG(); }
     navigate(path);
     return;
   }
