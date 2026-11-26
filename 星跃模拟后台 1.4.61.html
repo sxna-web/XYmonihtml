@@ -3589,6 +3589,7 @@ function renderTopbar() {
     imp.innerHTML = `${ico('eye')}<div>当前工作空间：<b>${esc(admin.name)}</b>。此页面仅显示当前工作空间的数据。</div><button class="btn sm" data-act="identity.exit">退出当前工作空间</button>`;
   } else imp.classList.remove('show');
   renderBottomNav();
+  renderRightSidebar();
 }
 function renderBottomNav() {
   const items = currentAdmin()?._guest ? [
@@ -9267,9 +9268,9 @@ registerPage('v1-access', () => {
   ensureV1Data();
   const admins = isMaster() && !CFG?.impersonator ? DB.admins.filter(a => a.status === 'active' && a.role !== 'master') : (currentAdmin()?._guest ? DB.admins.filter(a => a.status === 'active') : [currentAdmin()]);
   return {
-    html: pageHead('登录 / 注册 / 免费转换', '三个公开入口的界面效果稿：普通管理员登录、公开注册、访客基础转换。密码和会话尚未接入真实 Worker，演示环境不保存密码。', `<button class="btn" data-nav="v1-help">${ico('info')}帮助中心</button><button class="btn" data-access-act="guest">${ico('user')}普通用户体验</button>${currentAdmin()?._guest ? `<button class="btn primary" data-access-tab="free">${ico('shuffle')}免费基础转换</button>` : `<button class="btn primary" data-nav="dashboard">${ico('home')}进入当前后台</button>`}`) +
+    html: pageHead('登录 / 注册 / 免费转换', '三个公开入口的界面效果稿：普通管理员登录、公开注册、访客基础转换。密码和会话尚未接入真实 Worker，演示环境不保存密码。', `<button class="btn" data-nav="v1-help">${ico('info')}帮助中心</button><button class="btn" data-access-act="guest">${ico('user')}普通用户体验</button>${currentAdmin()?._guest ? `<button class="btn primary" data-nav="convert">${ico('shuffle')}免费基础转换</button>` : `<button class="btn primary" data-nav="dashboard">${ico('home')}进入当前后台</button>`}`) +
       `<div class="notice warn">${ico('alert')}<div><b>演示边界：</b>这里的“登录”只切换本地管理员身份，不校验密码；“注册”只创建本地演示账号，不写入 D1；真实认证、限流、会话和安全策略必须由 Worker 实现。</div></div>
-      <div class="tabs access-tabs"><button class="tab on" data-access-tab="login">管理员登录</button><button class="tab" data-access-tab="register">公开注册</button><button class="tab" data-access-tab="free">免费转换</button></div>
+      <div class="tabs access-tabs"><button class="tab on" data-access-tab="login">管理员登录</button><button class="tab" data-access-tab="register">公开注册</button><button class="tab" data-nav="convert">免费基础转换</button></div>
       <div class="access-panel on" data-access-panel="login"><div class="grid grid-2" style="gap:14px"><div class="card"><div class="card-head"><h3>${ico('user')} 登录演示</h3><span class="sub">不校验密码</span></div><div class="card-body">
         <div class="field"><label>管理员账号</label><select class="select" data-login-admin>${admins.map(a => `<option value="${a.id}">${esc(a.name)} · ${esc(a.account)} · ${roleLabel(a)}</option>`).join('')}</select></div>
         <div class="field"><label>密码（演示不校验）</label><input class="input" type="password" data-login-password placeholder="任意内容；不会保存或发送" autocomplete="off"></div>
