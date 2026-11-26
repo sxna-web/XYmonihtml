@@ -3647,7 +3647,7 @@ const V1_REGISTERED_ONLY_ROUTES = new Set(['v1-overview','v1-share-manager','v1-
 const VIP_ONLY_ROUTES = new Set([
   'subs','nodes','node-groups','sync-records','shares','app-shares','share-records',
   'app','cards','users','devices','stats-users','stats-activation','stats-devices',
-  'stats-nodes','stats-conversions','v1-groups','v1-quotas','v1-heartbeat','v1-health'
+  'stats-nodes','stats-conversions','v1-quotas','v1-heartbeat','v1-health'
 ]);
 function v1RouteDeniedReason(routeId) {
   if (routeId === 'v1-purchase-links') return 'redirect-purchase-settings';
