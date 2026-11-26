@@ -3489,17 +3489,13 @@ function consumeNewQuery(query) {
   return true;
 }
 function menuItemsFlat() { return MENU.flatMap(g => g.items); }
-const VIP_ONLY_MENU_ROUTES = new Set([
-  'subs','nodes','node-groups','sync-records','shares','app-shares','share-records',
-  'app','cards','users','devices','stats-users','stats-activation','stats-devices',
-  'stats-nodes','stats-conversions','v1-groups','v1-quotas','v1-heartbeat','v1-health'
-]);
+const GUEST_BASIC_ROUTES = new Set(['v1-converter','v1-batches','v1-groups']);
+const VIP_ONLY_MENU_ROUTES = new Set(['subs','nodes','node-groups','sync-records','shares','app-shares','share-records','app','cards','users','devices','stats-users','stats-activation','stats-devices','stats-nodes','stats-conversions','v1-quotas','v1-heartbeat','v1-health']);
 const MASTER_ONLY_ROUTES = new Set(['master','permissions','versions','update-config','v1-app-download-config','v1-purchase-quota','v1-admin-vip','v1-env']);
 function isMenuItemAvailable(item) {
   if (!item) return false;
-  const publicItems = ['dashboard','v1-access','v1-help'];
-  const guestBasicItems = ['dashboard','convert','conv-history'];
-  if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !guestBasicItems.includes(item.id)) return false;
+  const publicItems = ['v1-access','v1-help'];
+  if (!v1RegisteredAccount() && !publicItems.includes(item.id) && !GUEST_BASIC_ROUTES.has(item.id)) return false;
   if (item.masterOnly && (!isMaster() || CFG?.impersonator)) return false;
   if (MASTER_ONLY_ROUTES.has(item.id) && (!isMaster() || CFG?.impersonator)) return false;
   if (VIP_ONLY_MENU_ROUTES.has(item.id) && !hasEffectiveVipAccess()) return false;
@@ -3593,10 +3589,9 @@ function renderTopbar() {
 }
 function renderBottomNav() {
   const items = currentAdmin()?._guest ? [
-    { id:'dashboard', label:'首页', icon:'home', path:'dashboard' },
-    { id:'convert', label:'转换', icon:'shuffle', path:'convert', fab:true },
-    { id:'conv-history', label:'记录', icon:'history', path:'conv-history' },
-    { id:'v1-access', label:'注册', icon:'user-plus', path:'v1-access' }
+    { id:'v1-access', label:'首页', icon:'home', path:'v1-access' },
+    { id:'v1-converter', label:'基础转换', icon:'shuffle', path:'v1-converter', fab:true },
+    { id:'v1-batches', label:'我的批次', icon:'history', path:'v1-batches' }
   ] : [
     { id: 'v1-overview', label: '首页', icon: 'home', path: 'v1-overview' },
     { id: 'nodes', label: '节点', icon: 'server', path: 'nodes' },
@@ -3624,7 +3619,7 @@ function renderRightSidebar() {
   const admin = currentAdmin();
   const recent = (CFG.recentPages || []).filter(p => p.path && (isMenuItemAvailable(MENU_MAP[p.path]) || ['v1-access','v1-help'].includes(p.path))).slice(0,8);
   const guest = !!admin?._guest;
-  const quick = guest ? [['convert','基础节点转换','shuffle'],['conv-history','我的转换记录','history'],['recent','最近操作','clock'],['v1-access','注册 / 登录','user-plus'],['v1-help','使用说明','info']] : [['convert','节点转换工作区','shuffle'],['conv-history','转换历史','history'],['nodes','节点管理','server'],['cards','APP 卡密','key'],['app-shares','APP 授权分享','smartphone'],['settings','系统设置','settings']].filter(x => isMenuItemAvailable(MENU_MAP[x[0]]));
+  const quick = guest ? [['v1-converter','基础节点转换','shuffle'],['v1-batches','我的转换批次','history'],['v1-groups','我的默认分组','layers'],['v1-access','注册 / 登录','user-plus'],['v1-help','使用说明','info']] : [['v1-converter','节点转换','shuffle'],['v1-batches','转换批次','history'],['v1-groups','分组管理','layers'],['subs','订阅源管理','rss'],['conv-history','转换历史','history'],['nodes','节点管理','server'],['cards','APP 卡密','key'],['app-shares','APP 授权分享','smartphone'],['settings','系统设置','settings']].filter(x => isMenuItemAvailable(MENU_MAP[x[0]]));
   el.innerHTML = `<div class="rb-head"><b>${ico('panel-right')} 快捷工具</b><button class="icon-btn" data-act="workspace.panel" aria-label="关闭快捷工具侧栏">${ico('x')}</button></div><div class="rb-scroll">
     ${guest ? `<section class="rb-section"><div class="rb-title">${ico('sparkles')} 注册与 VIP 权益</div><div class="rb-list"><div class="rb-empty"><b>注册普通账号</b><br>获得独立工作空间，保留自己的转换历史，并使用注册用户开放的功能。<br><br><b>成为有效 VIP</b><br>开放订阅源、节点、分组、过滤方案、模板、分享和相关管理功能。APP 卡密、用户及授权操作还需对应 APP 权限。<br><br>注册不等于 VIP；是否获得 7 天体验取决于体验卡池库存。</div><button class="rb-link" data-nav="v1-access">${ico('user-plus')}<span>立即注册 / 登录</span>${ico('chevron-right')}</button></div></section>` : ''}
     <section class="rb-section"><div class="rb-title">${ico('zap')} 常用入口</div><div class="rb-list">${quick.map(x=>`<button class="rb-link" data-nav="${x[0]}">${ico(x[2])}<span>${esc(x[1])}</span>${ico('chevron-right')}</button>`).join('')}</div></section>
@@ -3647,7 +3642,7 @@ function setPageTitle() {
 /* ================= 路由渲染 ================= */
 const PAGE_RENDERERS = {};
 function registerPage(id, fn) { PAGE_RENDERERS[id] = fn; }
-const V1_REGISTERED_ONLY_ROUTES = new Set(['v1-overview','v1-converter','v1-batches','v1-share-manager','v1-app-downloads','v1-groups','v1-quotas','v1-heartbeat','v1-health','v1-me']);
+const V1_REGISTERED_ONLY_ROUTES = new Set(['v1-overview','v1-share-manager','v1-app-downloads','v1-quotas','v1-heartbeat','v1-health','v1-me']);
 const VIP_ONLY_ROUTES = new Set([
   'subs','nodes','node-groups','sync-records','shares','app-shares','share-records',
   'app','cards','users','devices','stats-users','stats-activation','stats-devices',
@@ -3655,11 +3650,11 @@ const VIP_ONLY_ROUTES = new Set([
 ]);
 function v1RouteDeniedReason(routeId) {
   if (routeId === 'v1-purchase-links') return 'redirect-purchase-settings';
-  const publicRoutes = new Set(['dashboard','v1-access','v1-help']);
-  const guestBasicRoutes = new Set(['convert','conv-history']);
-  if (MENU_MAP[routeId] && !publicRoutes.has(routeId) && !guestBasicRoutes.has(routeId) && !v1RegisteredAccount()) return 'registered';
+  const publicRoutes = new Set(['v1-access','v1-help']);
+  if (MENU_MAP[routeId] && !publicRoutes.has(routeId) && !GUEST_BASIC_ROUTES.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (V1_REGISTERED_ONLY_ROUTES.has(routeId) && !v1RegisteredAccount()) return 'registered';
   if (MASTER_ONLY_ROUTES.has(routeId) && (!isMaster() || CFG?.impersonator)) return 'master';
+  if (routeId === 'v1-groups' && !currentAdmin()?._guest && !hasEffectiveVipAccess()) return 'vip';
   if (VIP_ONLY_ROUTES.has(routeId) && !hasEffectiveVipAccess()) return 'vip';
   return '';
 }
@@ -8188,12 +8183,12 @@ function ensureV1Data() {
   // 每位管理员拥有独立默认分组；所有成功转换默认归档到该管理员自己的默认分组。
   DB.admins.forEach(a => {
     let dg = v.backupGroups.find(g => g.adminId === a.id && g.isDefault);
-    if (!dg) {
-      dg = { id: uid('bg'), name: '默认分组', note: '自动收纳该管理员的全部转换节点', adminId: a.id, nodeIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versions: [], currentVersion: 0, isDefault: true };
-      v1PushGroupVersion(dg, 'initial', '创建管理员专属默认分组');
-      v.backupGroups.push(dg); changed = true;
-    }
+    if (!dg) { dg = { id: uid('bg'), name: '默认分组', note: '自动收纳该管理员的全部转换节点', adminId: a.id, nodeIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versions: [], currentVersion: 0, isDefault: true }; v1PushGroupVersion(dg, 'initial', '创建管理员专属默认分组'); v.backupGroups.push(dg); changed = true; }
   });
+  if (currentAdmin()?._guest && !v.backupGroups.some(g => g.adminId === '__guest__' && g.isDefault)) {
+    const dg = { id: uid('bg'), name: '我的默认分组', note: '仅归档当前访客自己生成的节点；访客不能创建、编辑或分享分组', adminId: '__guest__', nodeIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), versions: [], currentVersion: 0, isDefault: true };
+    v1PushGroupVersion(dg, 'initial', '创建访客专属默认分组'); v.backupGroups.push(dg); changed = true;
+  }
   if (!v.groupShares) { v.groupShares = seedGroupShares(); changed = true; }
   if (!v.adminVipCards) { v.adminVipCards = seedAdminVipCards(); changed = true; }
   if (!Array.isArray(v.vipPurchaseLinks)) { v.vipPurchaseLinks = []; changed = true; }
@@ -9109,6 +9104,13 @@ function v1DeleteGroup(group) {
 registerPage('v1-groups', () => {
   ensureV1Data();
   const rows = tenantRows(DB.v1.backupGroups);
+  if (currentAdmin()?._guest) {
+    const group = rows.find(g => g.isDefault) || rows[0];
+    const nodes = group ? (group.nodeIds || []).map(id => DB.nodes.find(n => n.id === id)).filter(n => n && n.adminId === currentAdmin().id) : [];
+    return { html: pageHead('我的默认分组', '访客专属只读空间：仅展示当前访客自己转换并归档的节点，不能编辑、删除、分享或查看其他用户的数据。', `<button class="btn primary" data-nav="v1-converter">${ico('shuffle')}继续转换</button><button class="btn" data-nav="v1-batches">${ico('history')}我的批次</button>`) +
+      `<div class="card card-pad" style="margin-bottom:12px"><div class="row between"><div><b>${esc(group?.name || '我的默认分组')}</b><div class="tiny muted">自动归档自己生成的节点</div></div><span class="badge">只读</span></div><div class="stats-grid" style="margin-top:12px;grid-template-columns:repeat(2,minmax(0,1fr))"><div><b class="s-val">${nodes.length}</b><span class="tiny muted">节点数量</span></div><div><b class="s-val">${(group?.versions || []).length}</b><span class="tiny muted">历史版本</span></div></div></div>` +
+      (nodes.length ? `<div class="card"><div class="card-head"><h3>我的转换节点</h3><span class="sub">${nodes.length} 个</span></div><div class="card-body" style="display:grid;gap:7px">${nodes.map(n => `<div class="rule-card"><span class="r-ico">${ico('server')}</span><div class="r-main"><b>${esc(n.name)}</b><span>${esc(PROTOCOLS[n.protocol] || n.protocol)} · ${esc(n.region || '未知地区')} · ${esc(n.server || '')}:${esc(n.port || '')}</span></div><button class="btn sm" data-v1-copy-node="${attr(n.id)}">${ico('copy')}复制</button></div>`).join('')}</div></div>` : `<div class="empty card card-pad">${ico('layers')}<b>默认分组暂时为空</b><span>完成一次基础转换后，自己的节点会自动归档到这里。</span><button class="btn primary" data-nav="v1-converter">开始转换</button></div>`), mount: root => root.addEventListener('click', e => { const b=e.target.closest('[data-v1-copy-node]'); if(!b)return; const n=DB.nodes.find(x=>x.id===b.dataset.v1CopyNode && x.adminId===currentAdmin().id); if(n) copyText(nodeUri(n),'节点链接已复制'); }) };
+  }
   return {
     html: pageHead('管理分组', '转换结果自动备份、分组管理、追加去重、替换、历史版本、回滚和分享。当前版本库为本地模拟，不会调用转换服务或写入生产。', `<button class="btn" data-nav="v1-converter">${ico('shuffle')}去转换</button><button class="btn primary" data-v1-group="new">${ico('plus')}新建分组</button>`) +
       `<div class="notice warn">${ico('alert')}<div><b>自动备份尚未接入真实转换任务。</b> 这里的“追加/替换”基于当前本地节点库操作并保存版本快照；真实实现必须由 Worker 在转换成功事务中写入。</div></div>
@@ -9645,9 +9647,13 @@ function c1BuildContent(nodes, format, opts) {
   return { content: nodes.map(n => nodeUri(n)).join('\n'), ext: 'txt', mime: 'text/plain;charset=utf-8', note: '链接列表' };
 }
 registerPage('v1-converter', () => {
+  const guest = !!currentAdmin()?._guest;
   const vip = hasEffectiveVipAccess(currentAdmin());
+  ensureV1Data();
+  const defaultGroup = DB.v1.backupGroups.find(g => g.adminId === currentAdmin().id && g.isDefault);
   return {
-    html: pageHead('订阅转换服务', '粘贴节点，选择格式，直接生成。模板、下载限制、DNS/UDP、链式和远程规则放在下方，默认折叠。', `<button class="btn" data-nav="v1-help">${ico('info')}怎么用</button><button class="btn" data-nav="convert">${ico('layout')}高级工作区</button>`) +
+    html: pageHead(guest ? '免费基础转换' : '订阅转换服务', guest ? '访客仅可使用基础转换；生成结果自动保存到自己的默认分组和批次记录。' : '粘贴节点，选择格式，直接生成。模板、下载限制、DNS/UDP、链式和远程规则放在下方，默认折叠。', `<button class="btn" data-nav="v1-help">${ico('info')}怎么用</button>${guest ? `<button class="btn primary" data-nav="v1-access">${ico('user-plus')}注册账号</button>` : `<button class="btn" data-nav="convert">${ico('layout')}高级工作区</button>`}`) +
+      (guest ? `<div class="notice info" style="margin-bottom:12px"><div><b>我的默认分组：</b>${esc(defaultGroup?.name || '我的默认分组')} · 转换成功后自动归档；你只能查看、复制自己生成的节点和批次。</div></div>` : '') +
       `<div class="notice warn">${ico('alert')}<div><b>前端效果：</b>不请求 momobaby、不抓取外部订阅、不运行 subconverter；真实配置需 Worker/转换内核。</div></div>
       <div class="v1-quick-steps"><span><b>1</b> 粘贴节点</span><span><b>2</b> 选格式</span><span><b>3</b> 生成并复制</span><span class="tiny faint">高级项默认收起</span></div>
       <div class="card"><div class="card-head"><h3>${ico('shuffle')} 转换设置</h3><span class="sub">Clash / V2Ray / 小火箭 / 更多</span></div><div class="card-body">
@@ -9675,6 +9681,11 @@ registerPage('v1-converter', () => {
       const templates = C1_TEMPLATES;
       const get = sel => root.querySelector(sel);
       const chainBox = get('[data-c1-chainbox]');
+      if (guest) {
+        const more = root.querySelector('.v1-more'); if (more) more.hidden = true;
+        const advanced = root.querySelector('.v1-advanced'); if (advanced) advanced.hidden = true;
+        [get('[data-c1-library]'), get('[data-c1-sources]')].forEach(el => { if (el) el.hidden = true; });
+      }
       if (!vip) {
         root.querySelectorAll('.v1-advanced input, .v1-advanced select, .v1-advanced button, [data-c1-dns], [data-c1-udp], [data-c1-chain]').forEach(el => el.disabled = true);
         const adv = root.querySelector('.v1-advanced summary span'); if (adv) adv.textContent = 'VIP 专属 · 当前后台 VIP 已过期';
