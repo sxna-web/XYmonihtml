@@ -6344,12 +6344,15 @@ function openCardGenerate() {
     ],
     submitText: '生成卡密',
     onSubmit: v => {
+      if (!requireAppPerm('生成卡密')) throw new Error('当前身份无权生成卡密');
+      const requestedAdminId = isMaster() ? String(v.adminId || '') : currentAdmin().id;
+      if (!requestedAdminId || !DB.admins.some(a => a.id === requestedAdminId && a.status === 'active')) throw new Error('请选择有效的关联管理员');
       const count = clamp(Number(v.count), 1, 100);
       const days = v.durationUnit === 'year' ? Number(v.durationValue) * 365 : v.durationUnit === 'month' ? Number(v.durationValue) * 30 : Number(v.durationValue);
       const batch = v.batch || '默认批次';
       const used = new Set(DB.cards.map(c => c.code));
       const usedUserIds = new Set([...DB.cards.map(c => c.userId), ...DB.users.map(u => u.userId)]);
-      const adminId = isMaster() ? v.adminId : currentAdmin().id;
+      const adminId = requestedAdminId;
       ensureV1Data();
       const quota = quotaFor(adminId);
       const adminCards = DB.cards.filter(c => c.adminId === adminId);
@@ -6395,8 +6398,11 @@ function toggleCard(c) {
 function editCardUser(c) {
   if (!requireOwnRecord(c) || !requireAppPerm('修改卡密用户 ID')) return;
   openForm({ title: '修改用户 ID', size: 'sm', icon: 'user', values: { userId: c.userId }, fields: [{ key: 'userId', label: '用户 ID', required: true, placeholder: 'U20260001' }], submitText: '保存', onSubmit: v => {
+    const current = DB.cards.find(x => x.id === c.id);
+    if (!requireAppPerm('修改卡密用户 ID') || !current || !requireOwnRecord(current) || !visibleCards().some(x => x.id === current.id)) throw new Error('当前身份无权修改此卡密');
     if (!/^[A-Za-z0-9_-]{4,32}$/.test(v.userId)) throw new Error('用户 ID 需为 4-32 位字母、数字、下划线或连字符');
-    const before = c.userId; c.userId = v.userId;
+    if (visibleCards().some(x => x.id !== current.id && x.userId === v.userId)) throw new Error('当前管理员下已存在相同用户 ID');
+    const before = current.userId; current.userId = v.userId;
     saveDB(); addLog({ module: 'APP 卡密', type: '修改用户 ID', target: c.code, before: { userId: before }, after: { userId: c.userId } }); refreshCurrent(); toast('用户 ID 已更新', 'success');
   } });
 }
@@ -7715,6 +7721,7 @@ async function importBackup(text, file) {
     detail: `影响范围：<br>${impact}<br><br>导入前建议先导出一份当前数据作为备份。此操作仅影响本浏览器。`
   });
   if (!ok) return;
+  if (!requireMaster('确认导入备份')) { toast('当前身份已变化，已取消导入', 'warn'); return; }
   try {
     DB = deepMerge(seedData(), data);
     DB.meta = { ...(DB.meta || {}), app: '星跃后台', version: 'V1.4.54', demo: true, mark: APP_MARK, importedAt: new Date().toISOString() };
@@ -8970,8 +8977,15 @@ function v1DeleteGroup(group) {
   confirmDialog({ title: '删除备份分组？', message: `将删除「${esc(group.name)}」及其所有版本和分享。不会删除任何原始节点。`, danger: true, requireText: '删除', confirmText: '删除分组' }).then(ok => {
     if (!ok) return;
     if (!requireOwnRecord(group) || !requireVip('删除备份分组')) return;
-    DB.v1.backupGroups = DB.v1.backupGroups.filter(g => g.id !== group.id);
-    DB.v1.groupShares.forEach(s => { if (s.groupId === group.id) s.enabled = false; });
+    const groupIds = new Set([group.id]);
+    DB.v1.backupGroups = DB.v1.backupGroups.filter(g => !groupIds.has(g.id));
+    DB.v1.groupShares.forEach(s => {
+      const linkedIds = Array.isArray(s.groupIds) ? s.groupIds : (s.groupId ? [s.groupId] : []);
+      if (linkedIds.some(id => groupIds.has(id))) {
+        s.enabled = false;
+        s.disabledReason = '关联分组已删除';
+      }
+    });
     addLog({ module: '备份分组', type: '删除备份分组', target: group.name, after: '节点与主数据保留' });
     saveDB(); refreshCurrent(); toast('分组已删除，原始节点保留', 'success');
   });
