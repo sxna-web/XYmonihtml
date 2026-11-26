@@ -6066,6 +6066,10 @@ function openShareForm(share) {
     const targetIds = $$('[data-share-target]:checked', modal.el).map(x => x.dataset.shareTarget);
     if (!targetIds.length) return toast('请至少选择一个授权目标', 'warn');
     const type = scopeSel.value;
+    if (!requireVip(isNew ? '创建分享' : '编辑分享')) return;
+    if (!isNew && !requireOwnRecord(DB.shares.find(x => x.id === s.id))) { toast('分享归属已变化，未保存', 'warn'); return; }
+    const validTargets = type === 'group' ? tenantGroups() : type === 'source' ? tenantSources() : tenantNodes();
+    if (!targetIds.every(id => validTargets.some(x => x.id === id))) { toast('授权目标已变化或不属于当前管理员', 'warn'); return; }
     const payload = {
       name, note: modal.el.querySelector('[data-share-note]').value.trim(),
       password: modal.el.querySelector('[data-share-password]').value.trim(),
@@ -6095,6 +6099,7 @@ function renewShare(s) {
     title: '分享续期', size: 'sm', icon: 'calendar', subtitle: '续期只影响新访问，不会追溯修改已下载内容。',
     fields: [{ key: 'mode', label: '续期方式', type: 'select', options: [{ value: '7', label: '增加 7 天' }, { value: '30', label: '增加 30 天' }, { value: '90', label: '增加 90 天' }, { value: 'date', label: '指定到期日期' }] }, { key: 'date', label: '指定日期', type: 'date', value: dateInput(s.expireAt) }],
     submitText: '确认续期', onSubmit: v => {
+      if (!requireVip('续期分享') || !requireOwnRecord(DB.shares.find(x => x.id === s.id))) throw new Error('当前身份无权续期此分享');
       if (v.mode === 'date') { if (!v.date) throw new Error('请选择日期'); s.expireAt = endOfDate(v.date); }
       else s.expireAt = addDays(Math.max(new Date(s.expireAt).getTime(), now()), Number(v.mode));
       saveDB(); addLog({ module: '分享管理', type: '分享续期', target: s.name, after: fmtDate(s.expireAt) }); refreshCurrent(); toast('分享已续期至 ' + fmtDate(s.expireAt), 'success');
@@ -6253,7 +6258,7 @@ registerPage('app-shares', (query) => {
             openDrawer({ title: 'APP 授权详情', subtitle: s.userId + ' · ' + adminName(s.adminId), body: `${kvList([['授权 ID', `<span class="mono">${esc(s.id)}</span>`], ['APP 用户', esc(s.userId)], ['所属管理员', esc(adminName(s.adminId))], ['授权范围', esc(s.scopeType === 'group' ? (s.groupIds || []).map(groupName).join('、') : (s.nodeIds || []).length + ' 个节点')], ['有效期', fmtDate(s.expireAt)], ['状态', badge(s.enabled ? '启用' : '停用', s.enabled ? 'good' : '')], ['最近使用', s.lastUsedAt ? fmtDT(s.lastUsedAt) : '—'], ['用户状态', user ? userStatusLabel(userStatus(user)) : '—'], ['备注', esc(s.note || '—')]])}<div class="detail-section"><h4>授权记录</h4><div class="timeline"><div class="tl-item"><span class="tl-dot good"></span><div class="tl-top"><b>创建授权</b><span class="tl-time">${fmtDT(s.createdAt)}</span></div><div class="tl-sub">${esc(adminName(s.adminId))} · ${esc(s.scopeType === 'group' ? '节点分组' : '指定节点')}</div></div><div class="tl-item"><span class="tl-dot"></span><div class="tl-top"><b>最近使用</b><span class="tl-time">${s.lastUsedAt ? fmtDT(s.lastUsedAt) : '—'}</span></div><div class="tl-sub">模拟使用记录，不代表真实在线</div></div></div></div><div class="note" style="margin-top:10px">${ico('info')}<div>授权记录为模拟数据。真实生效范围需 APK 与服务端校验；绑定规则待源码核实。</div></div>`, footer: `<button class="btn" data-nav="users?q=${encodeURIComponent(s.userId)}" data-drawer-close>${ico('user')}查看用户</button><button class="btn primary" data-close>关闭</button>`, onMount: (el, close) => { el.querySelector('[data-close]')?.addEventListener('click', close); el.querySelectorAll('[data-drawer-close]').forEach(b => b.addEventListener('click', close)); } });
           }
           if (act === 'devices') {
-            const devices = DB.devices.filter(d => d.userId === s.userId && d.status !== 'unbound');
+            const devices = scopedByAdmin(DB.devices).filter(d => d.userId === s.userId && d.status !== 'unbound');
             openDrawer({ title: '用户设备', subtitle: s.userId + ' · ' + devices.length + ' 台', body: devices.map(d => `<div class="rule-card"><span class="r-ico">${ico('monitor')}</span><div class="r-main"><b>${esc(d.name)}</b><span>${esc(d.deviceId)} · ${esc(d.type)} · ${d.status === 'active' ? '正常' : d.status === 'disabled' ? '已禁用' : '已解绑'}</span></div>${badge(d.status === 'active' ? '活跃' : '非活跃', d.status === 'active' ? 'good' : '')}</div>`).join('') || '<div class="empty">暂无绑定设备</div>' });
           }
           if (act === 'delete') confirmDialog({ title: '删除 APP 授权？', message: `将删除对 ${esc(s.userId)} 的授权记录，不影响其他管理员的独立授权。`, danger: true, confirmText: '删除授权' }).then(ok => { if (!ok) return; if (!requireAppPerm('删除 APP 授权') || !requireOwnRecord(DB.appShares.find(x => x.id === s.id))) { toast('权限已变化，未删除授权', 'warn'); return; } Repo.remove('appShares', s.id); saveDB(); addLog({ module: 'APP 授权分享', type: '删除 APP 授权', target: s.userId }); refreshCurrent(); toast('授权已删除', 'success'); });
