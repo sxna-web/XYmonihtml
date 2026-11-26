@@ -131,3 +131,38 @@ HTML 实际调用的主要接口族包括：
 - 不得调用 `/api/super/migrate`，不得执行生产 SQL 或部署。
 - 下一步先完成 Worker 路由/HTML 调用映射与同步 fencing 专项审计，再形成差异矩阵。
 - 所有修复必须先给出影响范围、兼容方案、D1 影响、回滚和测试计划，等待明确授权后才可实施。
+
+
+## 七、同步 fencing 专项复核
+
+### 已看到的保护机制
+
+本轮继续检查 Worker 900-1285 行附近的同步实现，发现以下机制确实写入源码：
+
+1. `acquireLease` 使用 `subscription_sync_state` 的条件 UPSERT：仅当旧租约已过期时才允许接管，并递增 generation；同时更新随机 lease_owner、token hash 和租约截止时间（约 912-954 行）。
+2. 每个 stage 分块写入前，将 fencing 断言与节点暂存写入放在同一 D1 batch；每条暂存 INSERT 也带有 generation、owner、token hash 和 lease expiry 条件（约 956-982 行）。
+3. `sealTask` 重新读取暂存数据、核对数量并计算 manifest hash；写入 manifest、断言 hash、更新 staged 状态和 fencing 检查放在同一批次（约 984-1010 行）。
+4. `commitTask` 在提交前再次读取 stage 并重新计算 hash；最终 D1 batch 内包含 fencing 断言、staged 状态断言、set-based upsert、别名写入、节点数完整性断言、同步日志、审计、任务 committed、清理 stage 和释放租约（约 1012-1085 行）。
+5. 手动同步和 Cron 自动同步均通过 `syncSource` / `runSync` 进入同一套租约与提交流程；Cron 注释明确复用 fencing（约 1183-1278、5577-5612 行）。
+
+初步判断：同步 fencing 并非只在日志表保存 generation，而是覆盖了租约获取、分块暂存、封存和最终提交关键路径。当前静态检查未发现明显的“旧 generation 可以在新 generation 接管后继续覆盖节点”的直接绕过路径。这是源码层面的正向发现，不等于并发测试通过。
+
+### 仍需验证的边界
+
+- 租约过期时间由 Worker 的 `Date.now()` 生成并作为参数传入 SQL；多实例时钟偏差和临界时间行为需要测试，最好明确 D1 时间与 Worker 时间的权威口径。
+- `acquireLease` 成功更新租约后，再单独创建 task；若创建 task 的 batch 失败，租约会暂时占用至过期，需验证重试体验与恢复时间。
+- `failTask` 的清理与状态回写应纳入异常注入测试，覆盖租约过期、被新 generation 接管、stage 分块中断、manifest 不匹配、commit batch 失败等场景。
+- 需要用两个并发 Worker/任务做真实竞争测试，验证旧任务在新租约接管后，stage、manifest、节点 upsert、同步日志和租约释放均不能写入。
+- 需要核对真实 D1 中 generation、lease_owner、lease_token_hash、lease_expires_at 的字段类型、索引和约束；不能只依据源码迁移注释推断。
+
+## 八、敏感节点凭证存储差异
+
+证据：
+- 解析阶段生成的节点记录包含完整 `uri`（包含节点认证信息），并将该字段放入 staging payload（Worker 1183-1265 附近）。
+- 最终提交 SQL 将 `json_extract(payload,'$.u')` 写入 `node_records.uri`（Worker 1012-1045 附近）。
+- 手动节点创建/更新也将节点 URI 写入 `user_manual_nodes.uri`（Worker 1675-1700 附近）。
+- 相比之下，转换短链载荷使用 `sealJson/openJson` 封装；但这并不等于节点主表和手动节点表也已加密。
+
+与 V2.5 数据保护规范的差异：规范要求订阅凭证、节点认证信息按敏感数据处理，并设计静态加密和密钥轮换。当前源码路径中可见 URI 直接写入 D1 字段，未看到应用层加密/解密封装。
+
+风险：如果该规范要求应用层静态加密，则当前节点 URI 持久化方式不满足要求。必须先核实生产 D1 现状、APP/前端读取依赖、历史数据迁移和密钥方案；不能直接改字段或执行迁移。此项需列入高优先级设计评审。
