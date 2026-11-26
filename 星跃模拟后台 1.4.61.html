@@ -3509,7 +3509,7 @@ function renderSidebar() {
     </div>`;
   }).join('');
   $('#sidebar').innerHTML = `
-    <div class="sb-brand"><div class="brand-mark">${ico('logo')}</div><div class="sb-brand-text"><b>星跃后台</b><span>STARJUMP · V1.4.60</span></div><button class="sb-mobile-close" data-act="sidebar.close" aria-label="关闭菜单">${ico('x')}</button></div>
+    <div class="sb-brand"><div class="brand-mark">${ico('logo')}</div><div class="sb-brand-text"><b>星跃后台</b><span>STARJUMP · V1.4.61</span></div><button class="sb-mobile-close" data-act="sidebar.close" aria-label="关闭菜单">${ico('x')}</button></div>
     <button class="collapse-btn" data-act="sidebar.collapse" title="收起侧边栏">${ico('chevron-left')}</button>
     <div class="sb-scroll">
       ${favs.length ? `<div class="sb-fav"><div class="sb-fav-title">${ico('star')}收藏的菜单</div>${favs.map(i => navRow(i, true)).join('')}</div>` : ''}
@@ -3591,7 +3591,7 @@ function renderShell() {
 }
 function setPageTitle() {
   const t = (PAGE_META[CURRENT_ROUTE] || ['星跃后台'])[0];
-  document.title = t + ' · 星跃后台 V1.4.60';
+  document.title = t + ' · 星跃后台 V1.4.61';
 }
 
 /* ================= 路由渲染 ================= */
@@ -8775,13 +8775,14 @@ function v1OpenGroupForm() {
   });
 }
 function v1OpenNodePickerForGroup(group, mode) {
-  if (!requireOwnRecord(group)) return;
+  if (!requireOwnRecord(group) || !requireVip(mode === 'append' ? '追加分组节点' : '替换分组节点')) return;
   const currentSet = new Set(group.nodeIds);
   const items = tenantNodes().map(n => ({ id: n.id, label: n.name, sub: `${PROTOCOLS[n.protocol] || n.protocol} · ${n.region} · ${subName(n.sourceId)}` }));
   openMultiPicker({
     title: (mode === 'append' ? '追加节点到 · ' : '替换节点 · ') + group.name, subtitle: mode === 'append' ? '只追加新节点，按协议+地址+端口+凭据去重' : '替换当前节点，但历史版本会保留，可回滚', size: 'lg', icon: 'layers',
     items, preselected: mode === 'append' ? [] : group.nodeIds,
     onSave: ids => {
+      if (!requireOwnRecord(group) || !requireVip(mode === 'append' ? '追加分组节点' : '替换分组节点')) return;
       const currentByIdentity = new Set(group.nodeIds.map(id => { const n = tenantNodes().find(x => x.id === id); return n ? [n.protocol, n.server, n.port, n.cred || n.password].join('|') : id; }));
       const next = mode === 'append' ? [...group.nodeIds] : [];
       const seen = new Set(next.map(id => { const n = tenantNodes().find(x => x.id === id); return n ? [n.protocol, n.server, n.port, n.cred || n.password].join('|') : id; }));
@@ -8802,7 +8803,7 @@ function v1OpenNodePickerForGroup(group, mode) {
   });
 }
 function v1RollbackGroup(group) {
-  if (!requireOwnRecord(group)) return;
+  if (!requireOwnRecord(group) || !requireVip('回滚分组版本')) return;
   if (!group.versions.length) return;
   const modal = openModal({
     title: '选择回滚版本 · ' + group.name, size: 'lg', icon: 'history', subtitle: '回滚会生成新版本，不会删除或覆盖历史版本',
@@ -8816,6 +8817,7 @@ function v1RollbackGroup(group) {
     modal.close();
     confirmDialog({ title: '确认回滚到 v' + no + '？', message: `目标版本有 ${v.count} 个节点，创建于 ${fmtDT(v.time)}。当前版本会保留在历史中。`, confirmText: '回滚并生成新版本' }).then(ok => {
       if (!ok) return;
+      if (!requireOwnRecord(group) || !requireVip('回滚分组版本')) return;
       group.nodeIds = [...v.nodeIds];
       const nv = v1PushGroupVersion(group, 'rollback', `回滚到 v${no}`);
       addLog({ module: '备份分组', type: '回滚分组版本', target: group.name, before: { version: group.currentVersion }, after: { version: nv.no, target: no } });
@@ -8884,7 +8886,7 @@ function v1OpenGroupDetail(group) {
     body: `<div class="note">${ico('info')}<div>分组只保存节点引用；追加/替换/回滚都会生成新版本，不删除原始节点。</div></div>
     <div class="detail-section"><h4>当前节点（${nodes.length}）</h4><div class="pv-table-wrap" style="max-height:220px"><table class="pv-table"><thead><tr><th>节点</th><th>协议</th><th>地区</th></tr></thead><tbody>${nodes.map(n => `<tr><td>${esc(n.name)}</td><td>${esc(PROTOCOLS[n.protocol] || n.protocol)}</td><td>${esc(n.region)}</td></tr>`).join('') || '<tr><td colspan="3"><div class="empty" style="padding:10px">空分组</div></td></tr>'}</tbody></table></div></div>
     <div class="detail-section"><h4>版本历史（${versions.length}）</h4><div class="v1-version-list">${versions.map(v => `<div class="v1-version-item"><b>v${v.no} · ${esc(v.type)} · ${v.count} 个节点 ${v.no === group.currentVersion ? badge('当前', 'accent') : ''}</b><span>${fmtDT(v.time)} · ${esc(v.actor)} · ${esc(v.note || '')} · 新增 ${v.added} / 移除 ${v.removed}</span></div>`).join('')}</div><div class="row" style="margin-top:6px"><button class="btn sm" data-g-rollback>${ico('history')}选择版本回滚</button></div></div>
-    <div class="detail-section"><h4>分组分享（${shares.length}）</h4>${shares.map(s => `<div class="rule-card"><span class="r-ico">${ico('share')}</span><div class="r-main"><b>${esc(s.enabled ? '生效中' : '已停用')} · ${s.expireAt ? fmtDate(s.expireAt) : '无期限'}</b><span class="mono tiny">${esc(v1GroupLink(s))}</span></div><div class="row"><button class="btn sm" data-g-copy="${s.id}">${ico('copy')}</button><button class="btn sm ${s.enabled ? 'danger' : ''}" data-g-revoke="${s.id}">${s.enabled ? '停用' : '恢复'}</button></div></div>`).join('') || '<div class="empty" style="padding:12px">暂无分享</div>'}</div>
+    <div class="detail-section"><h4>分组分享（${shares.length}）</h4>${shares.map(s => `<div class="rule-card"><span class="r-ico">${ico('share')}</span><div class="r-main"><b>${esc(s.enabled ? '生效中' : '已停用')} · ${s.expireAt ? fmtDate(s.expireAt) : '无期限'}</b><span class="mono tiny">${esc(v1GroupLink(s))}</span></div><div class="row"><button class="btn sm" data-g-copy="${s.id}">${ico('copy')}</button><button class="btn sm ${s.enabled ? 'danger' : ''}" data-g-revoke="${s.id}">${shareNeedsVip(s)&&hasEffectiveVipAccess()?`<button class="btn sm ${s.enabled ? 'danger' : ''}" data-g-revoke="${s.id}">${s.enabled ? '停用' : '恢复'}</button>`:''}</div></div>`).join('') || '<div class="empty" style="padding:12px">暂无分享</div>'}</div>
     <div class="note warn" style="margin-top:10px">${ico('alert')}<div>示例分享域名为演示地址，不能在生产使用；跨管理员访问控制必须由 Worker 校验。</div></div>`,
     footer: `<button class="btn" data-g-append>${ico('plus')}追加</button><button class="btn" data-g-replace>${ico('refresh')}替换</button><button class="btn" data-g-share>${ico('share')}分享</button><button class="btn danger" data-g-delete>${ico('trash')}删除</button>`,
     onMount: (el, close) => {
@@ -8894,15 +8896,16 @@ function v1OpenGroupDetail(group) {
       el.querySelector('[data-g-delete]')?.addEventListener('click', () => { close(); v1DeleteGroup(group); });
       el.querySelector('[data-g-rollback]')?.addEventListener('click', () => { close(); v1RollbackGroup(group); });
       el.querySelectorAll('[data-g-copy]').forEach(b => b.addEventListener('click', () => { const s = shares.find(x => x.id === b.dataset.gCopy); if (s) copyText(v1GroupLink(s), '演示分享链接已复制'); }));
-      el.querySelectorAll('[data-g-revoke]').forEach(b => b.addEventListener('click', () => { const s = DB.v1.groupShares.find(x => x.id === b.dataset.gRevoke); if (!s) return; s.enabled = !s.enabled; addLog({ module: '备份分组', type: s.enabled ? '恢复分组分享' : '停用分组分享', target: group.name, after: s.enabled ? '启用' : '停用' }); saveDB(); close(); refreshCurrent(); toast(s.enabled ? '分享已恢复' : '分享已停用', 'success'); }));
+      el.querySelectorAll('[data-g-revoke]').forEach(b => b.addEventListener('click', () => { const s = DB.v1.groupShares.find(x => x.id === b.dataset.gRevoke); if (!s || !canManageShare(s, s.enabled ? '暂停分享链接' : '恢复分享链接')) return; s.enabled = !s.enabled; addLog({ module: '备份分组', type: s.enabled ? '恢复分组分享' : '停用分组分享', target: group.name, after: s.enabled ? '启用' : '停用' }); saveDB(); close(); refreshCurrent(); toast(s.enabled ? '分享已恢复' : '分享已停用', 'success'); }));
     }
   });
 }
 function v1DeleteGroup(group) {
-  if (!requireOwnRecord(group)) return;
+  if (!requireOwnRecord(group) || !requireVip('删除备份分组')) return;
   if (!scopeRecordAllowed(group, 'adminId')) { toast('只能删除自己的分组', 'warn'); return; }
   confirmDialog({ title: '删除备份分组？', message: `将删除「${esc(group.name)}」及其所有版本和分享。不会删除任何原始节点。`, danger: true, requireText: '删除', confirmText: '删除分组' }).then(ok => {
     if (!ok) return;
+    if (!requireOwnRecord(group) || !requireVip('删除备份分组')) return;
     DB.v1.backupGroups = DB.v1.backupGroups.filter(g => g.id !== group.id);
     DB.v1.groupShares.forEach(s => { if (s.groupId === group.id) s.enabled = false; });
     addLog({ module: '备份分组', type: '删除备份分组', target: group.name, after: '节点与主数据保留' });
@@ -8985,7 +8988,7 @@ function v1RenderShareCategory(root, category) {
     }
     if(!canManageShare(x,act==='delete'?'删除分享链接':act==='toggle'?'启停分享链接':'修改分享范围'))return;
     if(act==='toggle'){x.enabled=!x.enabled;addLog({module:'分享管理',type:x.enabled?'恢复分享链接':'暂停分享链接',target:x.token,after:x.enabled?'启用':'暂停'});saveDB();refreshCurrent();toast(x.enabled?'分享已恢复':'分享已暂停','success');}
-    if(act==='scope'){if((x.nodeIds||[]).length){openMultiPicker({title:'调整分享节点范围',subtitle:'仅修改此链接包含的节点，不删除节点实体',icon:'server',items:tenantNodes().map(n=>({id:n.id,label:n.name,sub:(PROTOCOLS[n.protocol]||n.protocol)+' · '+n.region})),preselected:x.nodeIds,onSave:ids=>{if(!canManageShare(x,'修改分享节点范围'))return;if(!ids.length){toast('至少保留一个节点','warn');return;}x.nodeIds=ids;saveDB();addLog({module:'分享管理',type:'调整节点分享范围',target:x.token,after:ids.length+' 个节点'});refreshCurrent();toast('分享节点范围已更新','success');}});}else{const gs=DB.v1.backupGroups.filter(g=>isMaster()||g.adminId===currentAdmin().id);openMultiPicker({title:'调整分享包含的分组',subtitle:'仅修改此链接的分组范围，不删除源分组或节点',icon:'layers',items:gs.map(g=>({id:g.id,label:g.name,sub:g.nodeIds.length+' 个节点'})),preselected:x.groupIds||[x.groupId],onSave:ids=>{if(!canManageShare(x,'修改分享分组范围'))return;if(!ids.length){toast('至少保留一个分组','warn');return;}x.groupIds=ids;x.groupId=ids[0];saveDB();addLog({module:'分享管理',type:'调整分组分享范围',target:x.token,after:ids.length+' 个分组'});refreshCurrent();toast('分享范围已更新','success');}});}}
+    if(act==='scope'){if((x.nodeIds||[]).length){openMultiPicker({title:'调整分享节点范围',subtitle:'仅修改此链接包含的节点，不删除节点实体',icon:'server',items:tenantNodes().map(n=>({id:n.id,label:n.name,sub:(PROTOCOLS[n.protocol]||n.protocol)+' · '+n.region})),preselected:x.nodeIds,onSave:ids=>{if(!canManageShare(x,'修改分享节点范围'))return;if(!ids.length){toast('至少保留一个节点','warn');return;}x.nodeIds=ids;saveDB();addLog({module:'分享管理',type:'调整节点分享范围',target:x.token,after:ids.length+' 个节点'});refreshCurrent();toast('分享节点范围已更新','success');}});}else{const gs=DB.v1.backupGroups.filter(g=>scopeRecordAllowed(g,'adminId'));openMultiPicker({title:'调整分享包含的分组',subtitle:'仅修改此链接的分组范围，不删除源分组或节点',icon:'layers',items:gs.map(g=>({id:g.id,label:g.name,sub:g.nodeIds.length+' 个节点'})),preselected:x.groupIds||[x.groupId],onSave:ids=>{if(!canManageShare(x,'修改分享分组范围'))return;if(!ids.length){toast('至少保留一个分组','warn');return;}x.groupIds=ids;x.groupId=ids[0];saveDB();addLog({module:'分享管理',type:'调整分组分享范围',target:x.token,after:ids.length+' 个分组'});refreshCurrent();toast('分享范围已更新','success');}});}}
     if(act==='delete')confirmDialog({title:'删除分享链接？',message:'仅删除这条分享链接记录，不删除其源节点或分组。APP 本地节点清理仍须按授权失效及 24 小时清理协议执行。',danger:true,confirmText:'删除'}).then(ok=>{if(ok&&canManageShare(x,'删除分享链接')){DB.v1.groupShares=DB.v1.groupShares.filter(y=>y.id!==x.id);saveDB();addLog({module:'分享管理',type:'删除分享链接',target:x.token,after:'已删除分享记录'});refreshCurrent();toast('分享记录已删除','success');}});
   }});
 }
