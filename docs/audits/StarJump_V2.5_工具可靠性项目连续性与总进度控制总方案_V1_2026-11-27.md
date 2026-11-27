@@ -1453,3 +1453,18 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
   6. 比较 HMAC 三种候选方案，给出选择标准、迁移 coverage 和 rollback proof；不设生产阈值。
   7. 不连接 D1、不读取凭证、不执行 SQL/迁移、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
   8. 更新总进度、总方案与第八十二批唯一接手卡。
+
+
+---
+
+## 第八十一批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-IDENTITY-81`；报告：`docs/backend/StarJump_V2.5_APP_v2身份适配器实施前置缺口关闭报告_第八十一批_V2.5-DEV-B1-APP-IDENTITY-81_2026-11-28.md`。
+- 新增八方法逐语句 assertion matrix，映射 D1-001..034；包括数据来源、bind contract、result classification、receipt/audit assertion，以及 created/existing/revoke/rotation composite operation 最终断言。
+- 新增默认禁用 disposable D1 harness 实施审查稿：无默认 DB/binding/credential、独立身份核验、read/write/cleanup 分别批准、run namespace、append-only ledger、ledger-only cleanup、outcome-unknown 停止。
+- 新增 HMAC overlap 三方案比较。目标模型工程偏好 canonical logical event + per-version aliases，但不构成生产架构批准；dual-write 与 single authoritative namespace migration 的风险、coverage 和 rollback proof 已列出。
+- 历史 Worker/HTML share-code caller 静态盘点完成；APK ZIP 不可检查，客户端调用清单不完整；APP v2 handler 未证明接入历史 Worker或被 APK 调用，保持 feature flag OFF。
+- U80-01..08 仍待用户决策；不为缺失业务语义填入默认值。
+- 首轮 CI Run `46042241488` 因 workflow 用 unittest module path 解析带点目录失败，已修正启动命令为 unittest discovery，并修订两项文本断言。修订 Run `46042353787` 待最终核验。
+- 本批无 D1/SQL/migration/credentials/Worker/HTML/APK/Room/Secrets/Cloudflare 变更，无部署。
+- **第八十二批唯一接手卡：**复核 U80-01..08；如 APK ZIP 可读，完成 HTTP/deep-link/token storage 全量调用审计；对 statement matrix 做独立负面复核；验证 HMAC aliases 在 partial backfill/high-water/late retry/rollback 下无 undercount；继续离线，不连接 D1、不部署。
