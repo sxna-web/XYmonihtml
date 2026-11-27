@@ -667,3 +667,30 @@
 7. 不改 D1 schema、不访问生产、不操作 Secrets、不部署；不擅自修改 APK query Token 协议。
 8. 完成后更新报告、进度、总方案与第五十五批接手卡。
 
+
+
+## 第五十四批核查结论与第五十五批接手卡（2026-11-27）
+
+### 第五十四批状态：CONTRACT_REVIEWED / CARD_GROUP_RELATION_MISSING / IMPLEMENTATION_BLOCKED / NOT_DEPLOYABLE
+
+- 批次：`V2.5-DEV-B1-APP-SCHEMA-54`
+- 报告：`docs/backend/StarJump_V2.5_APP卡密分组授权关系与读取接口数据契约核查报告_第五十四批_V2.5-DEV-B1-APP-SCHEMA-54_2026-11-27.md`
+- 报告 Commit：`cf678ae37ecf5ee2a4d341b376769dafdb551492`
+- 第四十九批 Worker 内嵌 DDL 证明 app_entitlements.card_id 关联 app_cards，但没有 card_id → group_id 的卡密专属分组关联；app_group_members 仅按设备，app_free_grants 是管理员维度永久免费资格；public/free/assigned 均不能替代卡密专属配置。
+- 当前 /api/app/nodes 按管理员全来源下发，绕过 APP 分组；/api/app/groups 以最新 entitlement 取管理员 public/free/assigned 分组；/api/app/free 可直接返回免费节点数据。
+- 本批仅源码和数据契约静态核查；无业务代码改动、无代码测试；未连接 D1/Cloudflare，未改 Worker/HTML/Secrets/APK，未部署。
+- 建议方向：新增 card-group 关联模型（需用户批准后才可形成正式 migration），读取时以 entitlement.card_id + admin_user_id 精确校验卡密/分组归属；节点接口必须受同一分组 allowlist 约束。
+
+### 第五十五批唯一首要任务
+
+**APP 卡密分组配置管理接口与管理端调用链只读盘点，形成端到端实施规格。**
+
+1. 重读 AGENTS、功能基线、总方案、进度、API 契约和第五十一至五十四批报告。
+2. 只读追踪管理端 HTML 的 APP 卡密创建/编辑/列表、APP 分组管理、分组来源配置、分享入口页面和 API 调用。
+3. 核对第四十九批 Worker app_cards、app_groups、super/user APP group routes、权限门禁与审计路径。
+4. 确认卡密批量生成/编辑接口能力；不得擅自新增字段。
+5. 设计卡密绑定多个分组的后台交互、服务端接口、审计、有效 VIP 修改权限、到期只读边界和旧版兼容。
+6. 输出关联表 migration 草案与回滚/数据兼容方案，但不创建正式 migration、不连接 D1、不执行 SQL。
+7. APK 仍标记 APK_PENDING；不修改客户端协议。
+8. 完成后更新报告、进度、总方案与第五十六批接手卡。
+
