@@ -30,7 +30,7 @@ A production D1 implementation must use conditional SQL and uniqueness constrain
 These are design fields only. No executable SQL is provided.
 
 ## Tests
-Final GitHub Actions run will be recorded in the batch report after the workflow executes. Tests cover concurrent single-use challenge, context mismatch, expiry, nonce replay, idempotent binding, cross-admin separation, key mismatch, revocation, owner scope, concurrent code rotation CAS, binding retention on rotation, idempotent cleanup, store failure and invalid proof.
+Final GitHub Actions Run `45978995116`: completed/success; Node.js 22 syntax checks passed; 14/14 tests passed, 0 failed. Job `140437815695`: https://github.com/sxna-web/XYmonihtml/actions/runs/45978995116 Tests cover concurrent single-use challenge, context mismatch, expiry, nonce replay, idempotent binding, cross-admin separation, key mismatch, revocation, owner scope, concurrent code rotation CAS, binding retention on rotation, idempotent cleanup, store failure and invalid proof.
 
 ## Security / unresolved
 - The store adapter is not implemented against D1. D1_NOT_TESTED.
