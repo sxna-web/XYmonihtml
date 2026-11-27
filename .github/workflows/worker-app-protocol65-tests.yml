@@ -1,0 +1,32 @@
+name: APP v2 protocol 65 isolated tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/**"
+      - ".github/workflows/worker-app-protocol65-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-v2-protocol65-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax checks
+        run: |
+          node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/composed-group-service.mjs
+          node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/composed-groups-handler.mjs
+          node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/composed-group-service.test.mjs
+      - name: Isolated group composition and handler tests
+        run: node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/composed-group-service.test.mjs
