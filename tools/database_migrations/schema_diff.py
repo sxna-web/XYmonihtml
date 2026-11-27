@@ -28,11 +28,18 @@ def fingerprint(conn: sqlite3.Connection) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 def compare_snapshots(before: dict, after: dict) -> dict:
-    before_names = {(o[0], o[1]) for o in before.get("objects", [])}
-    after_names = {(o[0], o[1]) for o in after.get("objects", [])}
+    before_objects = {(o[0], o[1]): tuple(o) for o in before.get("objects", [])}
+    after_objects = {(o[0], o[1]): tuple(o) for o in after.get("objects", [])}
+    common = before_objects.keys() & after_objects.keys()
+    changed = [
+        {"type": key[0], "name": key[1], "before": list(before_objects[key]), "after": list(after_objects[key])}
+        for key in sorted(common)
+        if before_objects[key] != after_objects[key]
+    ]
     return {
-        "added_objects": sorted([list(x) for x in after_names - before_names]),
-        "removed_objects": sorted([list(x) for x in before_names - after_names]),
+        "added_objects": sorted([list(x) for x in after_objects.keys() - before_objects.keys()]),
+        "removed_objects": sorted([list(x) for x in before_objects.keys() - after_objects.keys()]),
+        "changed_objects": changed,
         "changed_tables": sorted(name for name in set(before.get("tables", {})) & set(after.get("tables", {}))
                                   if before["tables"][name] != after["tables"][name]),
     }
