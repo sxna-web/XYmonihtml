@@ -3,7 +3,7 @@
 - 批次：第六十批
 - 版本：V2.5-DEV-B1-APP-PROTOCOL-60
 - 日期：2026-11-27
-- 状态：代码复核与隔离回归测试已新增；CI 待运行；无隔离 D1 实测；6.00.48 ZIP 未能读取；未接入 Worker；不可部署。
+- 状态：代码复核与隔离回归测试完成；GitHub Actions 通过；无隔离 D1 实测；6.00.48 ZIP 未能读取；未接入 Worker；不可部署。
 
 ## 1. 本批执行边界
 
@@ -47,7 +47,7 @@
 
 ## 5. 测试与 CI
 
-本批新增 20 项 Node 测试（具体以 CI 实际输出为准），复用第五十八/五十九批测试及 SQLite 并发测试。CI 在本报告提交后运行；没有取得成功 Run 前不标记 CI 通过。
+本批新增 19 项 Node 测试，复用第五十八/五十九批测试及 SQLite 并发测试。GitHub Actions Run 45965260408 completed/success：第五十八批 36/36、第五十九批 16/16、第六十批 19/19，SQLite 并发 3/3，语法检查通过，0 失败。\n\nRun：https://github.com/sxna-web/XYmonihtml/actions/runs/45965260408
 
 ## 6. 风险、兼容与回滚
 
@@ -59,7 +59,7 @@
 
 ## 7. 本批结论
 
-完成了多卡密分组组合边界的额外加固与隔离回归测试准备；没有获得隔离 D1 或 6.00.48 二进制，故两项仍未认证。当前为 DEV / NOT_INTEGRATED / NOT_DEPLOYABLE。
+完成了多卡密分组组合边界的额外加固与隔离回归测试准备；没有获得隔离 D1 或 6.00.48 二进制，故两项仍未认证。当前为 DEV / CI_PASSED / D1_NOT_TESTED / NOT_INTEGRATED / NOT_DEPLOYABLE。
 
 ## 8. 第六十一批唯一接手卡
 
