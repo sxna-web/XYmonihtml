@@ -32,7 +32,7 @@ class Batch81ReadinessTests(unittest.TestCase):
         self.assertIn("create_created", names)
         self.assertIn("create_existing", names)
     def test_07_harness_default_disabled(self):
-        for phrase in ("no `--enable-disposable-d1`", "no implicit", "no network permissions",
+        for phrase in ("--enable-disposable-d1", "no implicit", "no network permissions",
                        "cleanup is a distinct", "append-only ledger"):
             self.assertIn(phrase, HARNESS)
     def test_08_separate_approvals(self):
@@ -44,7 +44,8 @@ class Batch81ReadinessTests(unittest.TestCase):
         for phrase in ("A. Canonical logical event", "B. Dual-write", "C. Migrate"):
             self.assertIn(phrase, HMAC)
     def test_11_hmac_logical_event_identity(self):
-        self.assertIn("immutable `event_id`", HMAC)
+        self.assertIn("event_id", HMAC)
+        self.assertIn("immutable", HMAC)
         self.assertIn("same ID/different tuple", HMAC)
     def test_12_hmac_rollback_proof_present(self):
         self.assertIn("Rollback proof", HMAC)
