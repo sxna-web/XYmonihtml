@@ -4,7 +4,7 @@ from placeholder_tokenizer import TokenizerError, placeholders, validate_bind_co
 class PlaceholderTokenizerTests(unittest.TestCase):
     def test_01_anonymous_placeholders_in_order(self):
         p=placeholders("INSERT INTO t(a,b) VALUES (?, ?)")
-        self.assertEqual([(x.ordinal,x.offset) for x in p],[(1,29),(2,32)])
+        self.assertEqual([(x.ordinal,x.offset) for x in p],[(1,27),(2,30)])
 
     def test_02_question_marks_inside_single_string_ignored(self):
         self.assertEqual(len(placeholders("SELECT '?' AS q, ?")),1)
