@@ -123,3 +123,15 @@ CI 证据：Run `46042241488` failed，日志确认 unittest 将带点号目录�
 5. 对 HMAC 候选 A 做 alias completeness / high-water / retry / rollback 反例；不连接 D1。
 6. 继续只做离线检查；除非另获明确授权，不连接 D1、不读取凭证、不执行 SQL/迁移、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare、不部署。
 7. 更新总进度、总方案与第八十三批唯一接手卡。
+
+
+## CI 结果后续补充（2026-11-28）
+
+此前报告记录 Run `46042494745` 在首次核查时 pending。后续 GitHub Actions 已完成：
+- Run：`46042494745`
+- 结论：`completed / success`
+- Job：`140655276165`，`offline-readiness`，completed/success
+- 核心 step：`Validate offline adapter readiness contracts`，success
+- 链接：https://github.com/sxna-web/XYmonihtml/actions/runs/46042494745
+
+更正：第八十一批离线结构检查现已取得通过证据。该结果仍只证明文档/JSON 静态契约检查，不证明 D1、SQL、Worker、APK 行为。
