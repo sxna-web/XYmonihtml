@@ -81,10 +81,10 @@ test("free group SQL requires eligible device grant and free permission", () => 
  assert.match(FREE_GROUPS_SQL,/fg\.device_id = \?/);
 });
 test("node scope query requires explicit group IDs and owner/source checks", () => {
- const r=buildNodeScopePredicate(["group_A","group_B"]);
- assert.equal(r.ok,true);assert.match(r.sql,/g\.id IN \(\?,\?\)/);assert.match(r.sql,/g\.admin_user_id = \?/);assert.match(r.sql,/s\.admin_user_id = g\.admin_user_id/);
+ const r=buildNodeScopePredicate({allowedGroupIds:["group_A","group_B"],entitlementAdminUserId:"admin_A"});
+ assert.equal(r.ok,true);assert.match(r.sql,/g\.id IN \(\?,\?\)/);assert.match(r.sql,/g\.admin_user_id = \?/);assert.match(r.sql,/s\.admin_user_id = g\.admin_user_id/);assert.deepEqual(r.bindings,["group_A","group_B","admin_A"]);
 });
-test("empty node allowlist never creates a broad query", () => assert.equal(buildNodeScopePredicate([]).ok,false));
+test("empty node allowlist never creates a broad query", () => assert.equal(buildNodeScopePredicate({allowedGroupIds:[],entitlementAdminUserId:"admin_A"}).ok,false));
 test("mock D1 only resolves exact entitlement and device", async () => {
  const db=createMockD1({entitlements:[{id:"ent_A",device_id:"device_A"}]});
  const row=await db.prepare("SELECT * FROM app_entitlements WHERE id = ? AND device_id = ? LIMIT 1").bind("ent_A","device_A").first();
@@ -97,13 +97,13 @@ test("handler rejects query-token style and requires Authorization header", asyn
 });
 test("handler returns empty node set for an allowed empty group list", async () => {
  let nodeReads=0;
- const handler=createAppV2ReadHandler({resolveSession:async()=>({ok:true,deviceId:"device_A"}),resolveEntitlement:async()=>({ok:true,entitlement:{id:"entitlement_A"}}),loadGroups:async()=>({ok:true,allowedGroupIds:[],groups:[]}),loadNodes:async()=>{nodeReads++;return {ok:true,nodes:[]};}});
+ const handler=createAppV2ReadHandler({resolveSession:async()=>({ok:true,deviceId:"device_A"}),resolveEntitlement:async()=>({ok:true,entitlement:{id:"entitlement_A",device_id:"device_A",admin_user_id:"admin_A"}}),loadGroups:async()=>({ok:true,allowedGroupIds:[],groups:[]}),loadNodes:async()=>{nodeReads++;return {ok:true,nodes:[]};}});
  const res=await handler(new Request("https://example.test/api/app/v2/entitlements/entitlement_A/nodes",{headers:{authorization:"Bearer 0123456789abcdef"}}));
  assert.equal(res.status,200);assert.equal(nodeReads,0);assert.deepEqual((await res.json()).nodes,[]);
 });
 test("handler passes explicit allowlist to node adapter", async () => {
  let received;
- const handler=createAppV2ReadHandler({resolveSession:async()=>({ok:true,deviceId:"device_A"}),resolveEntitlement:async()=>({ok:true,entitlement:{id:"entitlement_A"}}),loadGroups:async()=>({ok:true,allowedGroupIds:["group_A"],generation:3}),loadNodes:async(args)=>{received=args.allowedGroupIds;return {ok:true,nodes:[{id:"node_A"}]};}});
+ const handler=createAppV2ReadHandler({resolveSession:async()=>({ok:true,deviceId:"device_A"}),resolveEntitlement:async()=>({ok:true,entitlement:{id:"entitlement_A"}}),loadGroups:async()=>({ok:true,allowedGroupIds:["group_A"],generation:3,groups:[]}),loadNodes:async(args)=>{received=args.allowedGroupIds;return {ok:true,nodes:[{id:"node_A",adminUserId:"admin_A",groupId:"group_A"}]};}});
  const res=await handler(new Request("https://example.test/api/app/v2/entitlements/entitlement_A/nodes",{headers:{authorization:"Bearer 0123456789abcdef"}}));
  assert.equal(res.status,200);assert.deepEqual(received,["group_A"]);
 });
