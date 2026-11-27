@@ -1,0 +1,29 @@
+name: Worker APP Identity Batch 82 Offline Review
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/worker/V2.5-DEV-B1-APP-IDENTITY-82/**'
+      - '.github/workflows/worker-app-identity82-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-app-identity82-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run synthetic HMAC alias model tests
+        working-directory: backend/worker/V2.5-DEV-B1-APP-IDENTITY-82
+        run: python -m unittest -v test_hmac_alias_model.py
