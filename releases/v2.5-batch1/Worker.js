@@ -3366,12 +3366,13 @@ async function vipStatus(db, userId) {
       `SELECT
          MAX(CASE WHEN datetime(starts_at) <= datetime('now') AND datetime(ends_at) > datetime('now') THEN ends_at END) AS until,
          MAX(CASE WHEN kind='formal' AND datetime(starts_at) <= datetime('now') AND datetime(ends_at) > datetime('now') THEN 1 ELSE 0 END) AS active_formal,
+         SUM(CASE WHEN kind='formal' THEN 1 ELSE 0 END) AS formal_count,
          SUM(CASE WHEN kind='trial' THEN 1 ELSE 0 END) AS trial_count
        FROM admin_vip_activations WHERE user_id = ?`,
     ).bind(userId).first();
     const until = row?.until || null;
-    return { until, active: !!until, is_formal: Number(row?.active_formal || 0)>0,
-      has_trial: Number(row?.trial_count || 0)>0 };
+    return { until, active: !!until, is_formal: Number(row?.formal_count || 0)>0,
+      active_formal: Number(row?.active_formal || 0)>0, has_trial: Number(row?.trial_count || 0)>0 };
   } catch { return { until:null, active:false, is_formal:false, has_trial:false, unavailable:true }; }
 }
 async function requireActiveVipForManagement(db, ctx) {
