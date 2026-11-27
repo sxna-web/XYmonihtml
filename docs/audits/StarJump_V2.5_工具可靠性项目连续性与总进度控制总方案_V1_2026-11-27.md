@@ -1169,3 +1169,31 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 评估 durable rate-limit 原子计数与旧表适配证据。
 7. 无用户批准的隔离 D1 不连接；不创建/执行 migration，不接 Worker，不改 HTML/APK/Room/Secrets，不部署。
 8. 更新进度、总方案与第七十二批接手卡。
+
+
+## 23. 第七十一批结果与第七十二批接手卡（2026-11-27）
+
+### 第七十一批结果
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-71`。
+- 报告：`docs/backend/StarJump_V2.5_APP_v2_D1语句契约独立安全复核与审计幂等方案报告_第七十一批_V2.5-DEV-B1-APP-IDENTITY-71_2026-11-27.md`。
+- 新增：`backend/worker/V2.5-DEV-B1-APP-IDENTITY-71/D1-SECURITY-REVIEW.md`、README。
+- 静态复核八个 D1 方法，补齐 expected constraint 分类、owner-scoped 零行语义、D1 changes/RETURNING 验证、timeout outcome-unknown、nonce cleanup stable-key 要求。
+- Binding 创建审计提案：同一个 batch 加第三条条件 INSERT-SELECT；仅本次尝试的 binding_id/owner/device/key/created_at 完全匹配才写入；唯一 deterministic event_key 防重；重试复用相同 immutable operation identifiers；audit statement 失败应回滚整个 batch。该方案待隔离 D1 验证，不是现有 schema 或实现。
+- Nonce 边界：若接受规则为 abs(T-now)<=S 且两端包含，最坏可重放区间为 first_seen + 2S；额外 safety margin 必不可少。动态调大 skew 会使旧记录 retention 不足，应冻结配置或版本化签名协议。
+- Legacy share-code：原始 Worker 可见 DDL 仅 admin_user_id/code/created_at，多个旧路由依赖原始 code；必须保持旧字段/路由兼容，不能把公开 code 当身份认证；轮换是否撤销既有绑定仍待用户确认。
+- Durable rate limit：原始 Worker 的 rate_limits 是全局 bucket/count/updated_at；增量与阈值读取分离，错误时 fail-open；不满足 APP identity 的原子、多维、fail-closed 需求，不能直接复用。
+- 本批为静态复核，无新增可执行测试；未连接任何 D1、未执行 SQL/迁移、未接 Worker、未改 HTML/APK/Room/Secrets、未部署。D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 第七十二批唯一接手卡
+
+**APP v2 D1 审计/幂等事件契约与 durable rate-limit 协议冻结审查（设计阶段，不连接 D1）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度及第六十八至七十一批报告。
+2. 将 binding 创建审计提案扩展为完整事件契约：event key、actor/owner/target、不可变 payload、保留策略、重复请求和 timeout 行为。
+3. 为 binding revoke 与 share-code rotation 设计幂等审计契约，不改变尚未确认的轮换业务政策。
+4. 冻结候选 identity rate-limit 算法：维度、窗口、原子判定、Retry-After、清理和 fail-closed；数值阈值保持可配置，不擅自设定最终额度。
+5. 对照 APP 签名协议重新核对 nonce 时间精度、协议版本与 skew 变更行为；不宣称 Android 兼容。
+6. 保留 legacy share-code 分阶段兼容方案，不改路由和 schema。
+7. 不连接 D1、不执行 SQL/迁移，不改 Worker/HTML/APK/Room/Secrets，不部署。
+8. 更新进度、总方案和第七十三批接手卡。
