@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  auth48:
+  auth49:
     name: Authorization adapter and Worker syntax
     runs-on: ubuntu-latest
     timeout-minutes: 10
