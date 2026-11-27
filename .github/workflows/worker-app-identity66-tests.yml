@@ -1,0 +1,32 @@
+name: APP v2 identity binding batch 66 tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-66/**"
+      - ".github/workflows/worker-app-identity66-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-v2-identity66-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax checks
+        run: |
+          node --check backend/worker/V2.5-DEV-B1-APP-IDENTITY-66/identity-token.mjs
+          node --check backend/worker/V2.5-DEV-B1-APP-IDENTITY-66/identity-binding-service.mjs
+          node --check backend/worker/V2.5-DEV-B1-APP-IDENTITY-66/identity-binding-service.test.mjs
+      - name: Identity discovery, binding, token and free-group tests
+        run: node --test backend/worker/V2.5-DEV-B1-APP-IDENTITY-66/identity-binding-service.test.mjs
