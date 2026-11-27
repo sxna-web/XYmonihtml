@@ -1,4 +1,4 @@
-# V2.5 Worker authorization integration — Batch 48
+# V2.5 Worker authorization integration — Batch 49
 
 **Status: OWNER-PREDICATE HARDENING + WORKER HANDLER MOCK TESTS; CI tested; D1/Cloudflare runtime not verified; NOT DEPLOYABLE.**
 
@@ -23,11 +23,12 @@ Important limits:
 - These columns are evidenced by the original Worker migration statements only. The live Cloudflare D1 schema remains unverified.
 - No D1 schema changes or migrations are included.
 - No Worker runtime/Cloudflare compatibility test has been executed.
-- The adapter tests exercise the pre-handler authorization boundary and assert denied decisions do not call mock writes; they are not end-to-end handler tests.
+- Adapter mock tests: 12/12 passed. Worker handler tests call the versioned Worker's actual `fetch()` entrypoint with a mocked D1 binding: 12/12 passed. This is handler-level Node testing, not Cloudflare Workers runtime or real D1 validation.
 - Group UPDATE and association INSERT statements now carry owner predicates in their final SQL. Physical APP group deletion and its 24-hour client cleanup/acknowledgement lifecycle remain a separate unresolved issue.
 - No HTML, Secrets, production D1, Cloudflare settings, or deployment were changed.
 
 Run:
 ```bash
 node --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-auth-adapter.test.mjs
+node --experimental-default-type=module --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-handler.integration.test.mjs
 ```
