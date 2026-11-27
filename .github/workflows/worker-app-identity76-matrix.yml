@@ -1,0 +1,24 @@
+name: APP Identity 76 D1 Validation Matrix Structure
+on:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-76/**"
+      - ".github/workflows/worker-app-identity76-matrix.yml"
+  pull_request:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-76/**"
+      - ".github/workflows/worker-app-identity76-matrix.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Validate offline D1 test matrix only
+        run: python backend/worker/V2.5-DEV-B1-APP-IDENTITY-76/validate_d1_validation_matrix.py
