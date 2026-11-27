@@ -222,7 +222,7 @@ function scopeSatisfies(granted, needed) {
  */
 async function resolveSession(req, env) {
   const header = req.headers.get("Authorization") || "";
-  if (!header) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
+  if (!header) return null;
   if (!/^Bearer\s+/i.test(header)) throw sessionError("INVALID_SESSION", "Authorization 格式无效");
   const token = header.replace(/^Bearer\s+/i, "").trim();
   if (!token) throw sessionError("INVALID_SESSION", "Bearer Token 为空");
