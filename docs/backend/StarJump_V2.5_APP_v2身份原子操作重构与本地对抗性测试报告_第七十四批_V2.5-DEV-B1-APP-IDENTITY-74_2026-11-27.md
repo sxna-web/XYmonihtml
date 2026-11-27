@@ -48,3 +48,11 @@ python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-74 -p 'te
 
 ## 六、第七十五批
 扩展 create/revoke/rotation 共用的 operation receipt + audit assertion 规格；增加 revoke/rotation 审计缺失回滚、event key 同/异 payload、owner-scoped receipt、限流 event_id 幂等、多维 Retry-After、缺失维度及 cleanup 边界的本地测试。仍不连接 D1。
+
+
+## GitHub Actions 复核证据
+- Run: https://github.com/sxna-web/XYmonihtml/actions/runs/45993837077
+- Job: 140488126131（atomic-sqlite-fixture）
+- 状态：completed / success；Python 3.13.18；12 tests / 12 passed / 0 failed。
+- 已核对运行日志，12 个测试方法均显示 ok，最终输出 Ran 12 tests / OK。
+- 证据边界仍为 GitHub Actions 上的内存 SQLite 合成 fixture；不代表 Cloudflare D1 或 APK 通过。
