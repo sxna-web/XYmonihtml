@@ -1,0 +1,27 @@
+name: Worker APP Token52 Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-TOKEN-52/**"
+      - ".github/workflows/worker-app-token52-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app-token52:
+    name: Exact APP entitlement resolver tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check resolver syntax
+        run: node --check backend/worker/V2.5-DEV-B1-APP-TOKEN-52/entitlement-resolver.mjs
+      - name: Run exact entitlement resolver tests
+        run: node --test backend/worker/V2.5-DEV-B1-APP-TOKEN-52/entitlement-resolver.test.mjs
