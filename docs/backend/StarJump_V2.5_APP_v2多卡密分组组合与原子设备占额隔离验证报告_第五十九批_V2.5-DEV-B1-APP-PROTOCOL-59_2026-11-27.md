@@ -3,7 +3,7 @@
 - 批次：第五十九批
 - 版本：V2.5-DEV-B1-APP-PROTOCOL-59
 - 日期：2026-11-27
-- 状态：隔离 DEV helper 已编码；本地 Node/SQLite 测试通过；GitHub Actions 待验证；未接入现有 Worker；不可部署。
+- 状态：隔离 DEV helper 已编码；本地与 GitHub Actions 测试通过；未接入现有 Worker；不可部署。
 
 ## 1. 本批执行范围
 
@@ -60,7 +60,8 @@
 - Node：group-composition.test.mjs，16 passed / 0 failed。
 - SQLite：device_slots_sqlite_test.py，3 passed / 0 failed。
 - 语法检查：group-composition.mjs、group-loader.mjs、device-slot-adapter.mjs 通过。
-- GitHub Actions：待本报告提交后运行；未取得 CI 结果前不得标记 CI 通过。
+- GitHub Actions Run 45963909988：completed / success；Node.js 22 语法检查通过；第五十八批 36/36、第五十九批 16/16；Python 3.12 SQLite 并发测试 3/3；0 失败。
+- 首次 CI 检出 SQL 断言转义错误，修正后再次运行；第二次 CI 的 Python unittest 模块路径因目录名含连字符而失败，改为直接执行测试脚本；最终 Run 45963909988 全部通过。历史失败保留，不作为最终结论。
 
 ## 6. 与第五十八批的接入关系
 
