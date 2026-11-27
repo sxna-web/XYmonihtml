@@ -1294,7 +1294,7 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 新增统一 operation receipt/audit assertion 设计、SQLite fixture、README、GitHub Actions workflow。
 - create/revoke/rotation 统一要求 owner-scoped receipt、operation type/request fingerprint、result/version、audit event key 与最终 CHECK assertion。revoke 使用 generation CAS，rotation 使用 version CAS；missing/mismatched audit 应在同一原子单元回滚。
 - Limiter fixture 覆盖 event_id exact replay/conflict、required dimensions、half-open window、inclusive-left-edge Retry-After、multi-dimension latest release、cleanup retention boundary。
-- Run `45995243015` completed/success；Job `140492878900`；Python 3.13.18；24/24 passed、0 failed、exit 0。日志已读取核对。
+- Run `45995374834` completed/success；Job `140493331634`；Python 3.13.18；24/24 passed、0 failed、exit 0。日志已读取核对。
 - 仅本地合成 SQLite schema；不证明 D1 CHECK/EXISTS/batch rollback、多 isolate 并发、生产 schema、Worker/API 或 Android 兼容。
 - 未连接任何 D1；未执行 SQL/迁移；未改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置；未部署。D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
 
@@ -1303,7 +1303,7 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 | 模块 | 当前状态 | 已有证据 | 未完成/下一步 |
 |---|---|---|---|
 | APP v2 identity service/state machine | 隔离 DEV 测试与协议设计 | 第六十四至七十五批 mock/SQLite CI | 未接真实 D1 adapter/Worker；继续 D1 隔离准入 |
-| Identity operation receipt/audit | 候选逻辑契约 + SQLite 24/24 | Run 45995243015 | D1 CHECK/EXISTS/batch atomicity 未验证 |
+| Identity operation receipt/audit | 候选逻辑契约 + SQLite 24/24 | Run 45995374834 | D1 CHECK/EXISTS/batch atomicity 未验证 |
 | Durable identity limiter | 候选算法 + SQLite 边界测试 | event idempotency、维度、Retry-After、cleanup 24 项集成测试 | D1 并发/共享 NAT/时钟/成本/Secret rotation 未验证 |
 | APP Android compatibility | APP_PENDING | APK 源码尚未完成审计 | 需完整 APK 源码与第三方限制核查 |
 | 生产 D1 / Worker / deployment | 未授权/未验证 | 无本批生产证据 | 需明确隔离环境授权；生产仍禁止擅自操作 |
