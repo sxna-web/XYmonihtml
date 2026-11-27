@@ -72,3 +72,24 @@
 - APP 源码和第三方授权审计仍未完成。
 
 结论：D1 验证准入资料完成，D1 本身仍未测试，本批不可部署。
+
+
+## 8. CI 验证证据
+
+- GitHub Actions Run `45995978023` completed/success：[https://github.com/sxna-web/XYmonihtml/actions/runs/45995978023](https://github.com/sxna-web/XYmonihtml/actions/runs/45995978023)。
+- Job `140495345000`；Python 3.13.18。
+- 日志原文：`Batch 76 D1 matrix structure: PASS (26 cases)`。
+- 同一日志确认：`Network/D1 access: NONE; SQL execution: NONE; migrations: NONE`。
+- 这只证明 26 项矩阵结构校验通过，不证明真实 D1 行为。
+
+## 9. 第七十七批唯一接手卡
+
+**APP v2 D1 原子断言 SQL 候选静态可移植性复核与隔离执行器设计（仍不连接 D1）。**
+
+1. 重读 AGENTS、功能/API/数据库保护基线、总方案、进度和第七十至七十六批文件。
+2. 对第七十四/七十五批 CHECK assertion 候选 SQL 做 SQLite/D1 静态语法边界复核：CHECK 列约束、INSERT-SELECT/CASE WHEN EXISTS、唯一 event_key、精确 payload 比对、NULL 语义、prepared binding 顺序、batch 最终断言位置。
+3. 专门复核 create/revoke/rotation 的 receipt 断言是否存在零行、重复键、owner 错配、payload canonicalization 和状态 CAS 漏洞；发现问题先写反例，不推测已支持。
+4. 设计一个只接受显式隔离配置的未来 D1 harness：默认禁用、无默认 binding/database、环境身份核对、synthetic run namespace、只清理本 run ID、失败立即停止；本批不读取凭证、不连接 D1、不执行 SQL。
+5. 继续完善限流多维并发、共享 NAT、时钟、cleanup race、HMAC key overlap 的静态用例和证据模板，不设生产阈值。
+6. 不生成/执行生产 migration，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
+7. 更新总进度、总方案与第七十八批唯一接手卡。
