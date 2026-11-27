@@ -1381,3 +1381,27 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 7. 更新进度与总方案，给出第七十九批唯一接手卡。
 
 - 第七十七批 CI 后续核验结果：Run `45996975612` completed/success；Job `140498704644`；Python 3.13.18；离线结构检查 PASS，日志明确无 network/D1、无凭证读取、无 SQL 执行。不得将该结果扩大解释为 D1/SQL 测试通过。
+
+
+## 15. 第七十八批结果与第七十九批唯一接手卡（2026-11-27）
+
+### 第七十八批结果
+
+- 版本 `V2.5-DEV-B1-APP-IDENTITY-78`；报告 `docs/backend/StarJump_V2.5_APP_v2身份原子操作协议冲突收敛与离线反例测试报告_第七十八批_V2.5-DEV-B1-APP-IDENTITY-78_2026-11-27.md`。
+- 收敛 Batch 74/75/77 的 created/existing 冲突：created 必须审计 `binding.created`；existing 不得伪造 created，因 challenge consumption 是状态变化，建议记录独立 `binding.existing_resolved`；两种结果都有 owner-scoped receipt 和事件键。
+- operation receipt 与 audit event 唯一范围均定义为 owner-scoped composite key；canonical payload v1 使用版本化 typed length-prefix，明确 NULL/empty/missing/int/bool 和 NFC；拒绝 delimiter 拼接。
+- 新增 bind manifest 静态核对、23 个离线 Python 反例测试、GitHub Actions workflow；测试结果待实际核验。
+- 定义 HMAC 双版本 overlap 和 cleanup/admission 竞态证据要求，不选择生产阈值、密钥、窗口、保留期或轮换时长。
+- 未连接 D1、未读取凭证、未执行 SQL/迁移、未修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、未部署。状态：CONTRACT_DESIGN_COMPLETE / OFFLINE_TESTS_PENDING / D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 第七十九批唯一接手卡
+
+**APP v2 identity adapter 设计前置：三类原子操作完整状态转移与审计矩阵（仍不连接 D1）。**
+
+1. 重读 AGENTS、功能基线、数据库保护规范、总方案、进度及第七十四至七十八批材料和最新 CI。
+2. 将 create-created/create-existing/revoke/rotation 的前置状态、CAS 条件、成功状态、失败分类、receipt、audit exact-match 谓词、重试/超时恢复整理为逐字段矩阵。
+3. 检查 canonicalization v1 字段清单和事件 envelope 是否覆盖 actor/owner/target/outcome/reason/schema version；缺项列为待确认，不擅自补业务语义。
+4. 设计 bind manifest 示例与静态校验器反例；覆盖 SQL 字符串、注释、转义、问号及占位符顺序。
+5. 完善 HMAC key overlap 状态机、cleanup/admission 原子性前置条件及证据表；不设生产阈值。
+6. 仍不连接 D1、不读取凭证、不执行 SQL、不创建 migration、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
+7. 更新总进度、总方案和第八十批唯一接手卡。
