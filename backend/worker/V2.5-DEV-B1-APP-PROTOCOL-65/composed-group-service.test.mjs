@@ -122,6 +122,16 @@ test("invalid server-side entitlement classification fails closed",async()=>{
  assert.equal((await service({deviceId:DEVICE,credentials:credentials(A)})).code,"ENTITLEMENT_CLASSIFICATION_INVALID");
 });
 
+test("server-side classifier cannot rebind a card entitlement to another card",async()=>{
+ const service=createComposedEntitlementGroupService({
+  resolveEntitlement:async()=>({ok:true,entitlement:A}),
+  classifyEntitlement:async()=>({kind:"CARD",cardId:"card_other"}),
+  loadGroupsForEntitlement:async()=>({ok:true,allowedGroupIds:[],cardGroups:[],freeGroups:[]}),
+  loadCardSerialLabel:async()=>"1 序列号",
+ });
+ assert.equal((await service({deviceId:DEVICE,credentials:credentials(A)})).code,"ENTITLEMENT_CLASSIFICATION_INVALID");
+});
+
 test("resolver outage fails closed",async()=>{
  const {service}=setup({resolveError:true});
  assert.equal((await service({deviceId:DEVICE,credentials:credentials(A)})).code,"ENTITLEMENT_RESOLUTION_UNAVAILABLE");
