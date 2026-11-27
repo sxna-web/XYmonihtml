@@ -583,3 +583,32 @@
 8. 更新第五十一批报告、开发进度和下一批接手卡。
 
 **部署闸门：**第四十九批 Worker 仍不可部署。必须完成 entitlement/status token 安全、APP 客户端兼容、真实 D1/runtime 验证和独立复核后，才能形成候选部署包；用户明确授权前不部署。
+
+
+## 第五十一批完成与第五十二批接手卡（2026-11-27）
+
+### 第五十一批状态：STATIC_AUDIT_COMPLETE / TEST_DESIGN_COMPLETE / NOT_IMPLEMENTED
+
+- 批次：`V2.5-DEV-B1-APP-TOKEN-51`
+- 报告：`docs/audits/StarJump_V2.5_APP授权Token与多管理员隔离只读审计_第五十一批_V2.5-DEV-B1-APP-TOKEN-51_2026-11-27.md`
+- 报告 Commit：`e0c1e7749fbaa513484c5225aaac52054eb17937`
+- Worker 基线：第四十九批版本，Blob SHA `a4689380215e95c1c9f605fc974cc553b3e7037f`。
+- 核心发现：status 缺 Token 校验；groups 免费 grant 分支只按 device_id；free 允许 admin ID/share code 直接取节点；Token HMAC Secret 固定回退；nodes/groups/links latest-only；Token 通过 URL query；nodes 未按 APP 分组实际授权范围过滤。
+- 多管理员原则：每份 entitlement 独立验证、独立管理员数据范围；不能把多个管理员来源无边界合并。
+- APK ZIP 尚未解包，旧客户端实际协议未核实；不能贸然移除 query Token 或更改响应结构。
+- 本批未修改 Worker/HTML/D1/Secrets/APK；未访问生产 D1/Cloudflare；未部署。
+
+### 第五十二批唯一首要任务
+
+**建立 APP entitlement 精确选择与多授权 Handler 测试基础。**
+
+1. 重读 AGENTS、功能基线、进度、总方案、第五十一批报告及第四十九/五十批代码。
+2. 在新版本目录建立 exact entitlement resolver；使用明确 entitlement_id + device_id + Token 验证，不隐式选择最新授权。
+3. 建立 Worker.fetch + mock D1 Handler 测试：同设备两管理员两份授权分别成功，且只能读取各自管理员数据。
+4. 覆盖 status 缺 Token、free grant 仅凭 device_id、share code 直接读取节点、Token/entitlement/device 错配、过期/撤销、查询失败等拒绝分支。
+5. 节点和分组返回必须限制在对应 entitlement 的 APP 分组/来源授权范围；与 Token 认证分开验证。
+6. APP HMAC Secret 固定回退需设计 fail-closed 与旧 Token 兼容；不操作生产 Secret，不在无迁移方案时令旧 Token 全失效。
+7. query Token→Header 迁移保持待 APK 源码确认，不得宣称旧 APK 兼容。
+8. 不改 D1 schema、不调用生产 API、不操作 Secrets、不部署。
+9. 完成后更新批次报告、进度和第五十三批接手卡。
+
