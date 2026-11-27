@@ -808,10 +808,10 @@
 
 - 批次：V2.5-DEV-B1-APP-PROTOCOL-59
 - 范围：多卡密 entitlement 分组组合、同管理员免费分组去重、同名分组序列号标识、card/free loader owner 复核、条件单语句设备占额、handler 与 sync 反例测试。
-- 本地结果：Node 16/16 passed；SQLite 并发 3/3 passed；GitHub Actions 待本批提交后核验。
+- 本地结果：Node 16/16 passed；SQLite 并发 3/3 passed；GitHub Actions Run 45963909988 completed/success（第五十八批 36/36、第五十九批 16/16、SQLite 3/3）。
 - 设备模型：单条条件 INSERT...SELECT + (card_id, device_id) 唯一键；仅完成本地 SQLite 并发模型验证。不得将其视为 Cloudflare D1 已验证。
 - 生产保护：未访问 Cloudflare/生产 D1，未建 migration，未改 Worker/HTML/APK/Secrets，未部署。
-- 当前状态：隔离 DEV 已编码；CI_PENDING；NOT_INTEGRATED；NOT_DEPLOYABLE。
+- 当前状态：隔离 DEV 已编码；CI_PASSED；NOT_INTEGRATED；NOT_DEPLOYABLE。
 - 风险：真实 schema、slot 回填、设备释放策略、D1 并发语义和 APK serial label 协议仍待验证。
 
 ### 第六十批唯一接手卡
