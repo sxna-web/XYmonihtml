@@ -1087,3 +1087,29 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 不接 Worker、不改 HTML/APK/Room/Secrets、不连接生产/staging、不部署。
 7. 免费分组特殊卡密仍为条件性备选。
 8. 更新进度、总方案和第六十九批接手卡。
+
+
+---
+
+## 第六十八批连续性更新（2026-11-27）
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-68`；报告见 `docs/backend/StarJump_V2.5_APP_v2身份持久化Adapter与真实D1Schema前置差距核查报告_第六十八批_V2.5-DEV-B1-APP-IDENTITY-68_2026-11-27.md`。
+- 只读检查原始 Worker 与 CORE-AUTH-49 DDL：legacy `admin_share_codes` 仅 admin_user_id/code/created_at；`app_free_grants` 是 device/admin free grant，不是 identity binding；未见 identity challenge/nonce/binding 表。
+- 当前仓库未找到 Wrangler 配置或 APP v2 专用隔离 D1 binding/database ID；本地 migration runner 明确只允许 disposable temp SQLite，不是 D1 runner；仓库可见 migrations 是 CORE/NTF，没有 APP identity migration。不能据此推断 Cloudflare Dashboard 当前线上配置。
+- 新增 `backend/worker/V2.5-DEV-B1-APP-IDENTITY-68/D1-ADAPTER-CONTRACT.md`，将 8 个 store 方法映射为参数化 SQL、条件 UPDATE、UNIQUE、CAS、bounded cleanup；明确不可使用 read-then-write/INSERT OR REPLACE/Worker 内存锁。
+- Cloudflare 官方 D1 文档：`prepare().bind()` 参数化 SQL；`batch()` 顺序事务批次，失败回滚；此为平台能力，不是本项目真实 D1 验证。D1_NOT_TESTED。
+- 本批没有运行代码/D1 测试；未连接 D1，未执行 SQL/创建 migration，未修改 Worker/HTML/APK/Room/Secrets，未部署。APP_PENDING；不可部署。
+- 免费分组仍优先管理员身份授权；特殊免费分组卡密仅为冲突时条件性备选。
+
+### 第六十九批唯一接手卡
+
+**APP v2 D1 adapter 的隔离可执行性验证计划与 SQL 语义测试设计（不接生产、不部署）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度和第五十一至六十八批报告。
+2. 对照 D1-ADAPTER-CONTRACT 细化 8 个 store 方法成功/冲突/过期/重试/并发结果矩阵。
+3. 用本地 disposable SQLite fixture 验证 SQL 语义，并标明不代表 D1。
+4. 制定 Cloudflare 隔离 D1 验证清单：DB ID、binding、迁移历史、schema、batch rollback、RETURNING/meta changes、并发唯一冲突、限流。
+5. 无明确批准隔离 D1 环境时，不连接 staging/production，不猜 binding。
+6. 不创建/执行 D1 migration，不接 Worker，不改 HTML/APK/Room/Secrets，不部署。
+7. 免费组身份授权优先；特殊免费分组卡密保持条件性备选。
+8. 更新进度、总方案和第七十批接手卡。
