@@ -1,0 +1,31 @@
+name: APP v2 identity durable state machine batch 67 tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-67/**"
+      - ".github/workflows/worker-app-identity67-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-v2-identity67-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax checks
+        run: |
+          node --check backend/worker/V2.5-DEV-B1-APP-IDENTITY-67/identity-durable-state-machine.mjs
+          node --check backend/worker/V2.5-DEV-B1-APP-IDENTITY-67/identity-durable-state-machine.test.mjs
+      - name: Durable state machine and concurrency contract tests
+        run: node --test backend/worker/V2.5-DEV-B1-APP-IDENTITY-67/identity-durable-state-machine.test.mjs
