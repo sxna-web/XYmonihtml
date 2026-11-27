@@ -1418,7 +1418,7 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - canonical request fingerprint 与 audit envelope 分离；通用 canonical_v1 不足以保证 operation-specific field coverage。actor mapping、reason_code enum/nullability、payload allow-list、target ID audit permission、canonical ordered field list 均标记为 adapter freeze blockers。
 - bind manifest linter 扩展 exact SQL SHA-256、statement ID、placeholder 顺序、唯一 semantic name、source/storage/nullability/missing policy/sensitivity；扫描单/双引号、backtick、bracket identifier、双写转义、行/块注释，拒绝 named/numbered placeholders。
 - HMAC overlap 新增关键反例：分散在 old/new key-version buckets 的历史事件，逐桶独立比较会 undercount；必须基于 immutable event_id 做跨版本 union/dedupe 后原子准入，或证明某一桶有完整历史覆盖。不可简单 sum（双写会重复）或 max(bucket count)。
-- 首轮 Run `45998840209` success，34/34；后续 manifest linter 加强中有失败修订 Run `45998985251`、`45999030188`、`45999045868`，测试夹具已修正，最终 Run `45999063646` 待核验。以最终 Run 日志作为最终测试状态。
+- 首轮 Run `45998840209` success，34/34；后续 manifest linter 加强中有失败修订 Run `45998985251`、`45999030188`、`45999045868`，测试夹具已修正，最终 Run `45999063646` completed/success；Job `140505777656`；Python 3.13.18；36/36 tests passed（日志 `Ran 36 tests ... OK`）。仅离线参考测试，不代表 D1/SQL/Worker/APP 验证。
 - 本批仅 DEV 文档、离线测试与 workflow；未连接 D1、未读取凭证、未执行 SQL/迁移、未改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、未部署。仍为 `D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE`。
 - **第八十批唯一接手卡：APP v2 adapter contract freeze checklist 与 disposable D1 证据缺口关闭计划（仍不连接 D1）。**
   1. 重读 AGENTS、功能基线、总方案、进度和第七十四至七十九批材料/最新 CI。
