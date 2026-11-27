@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "batch": "V2.5-DEV-B1-APP-IDENTITY-80",
+  "status": "SPEC_ONLY_NO_D1_EXECUTION",
+  "cases": [
+    {
+      "id": "D1-027",
+      "area": "create_existing_resolution",
+      "mode": "disposable_write",
+      "requires_user_decision": [
+        "U80-01",
+        "U80-02",
+        "U80-03",
+        "U80-04"
+      ],
+      "expected": "Existing active binding identity fields unchanged; no created event; resolution audit only if approved; receipt exact and owner-scoped."
+    },
+    {
+      "id": "D1-028",
+      "area": "receipt_operation_type_fingerprint_conflict",
+      "mode": "disposable_write",
+      "requires_user_decision": [],
+      "expected": "Same owner+operation_id with changed operation type or canonical fingerprint is integrity conflict; no second mutation."
+    },
+    {
+      "id": "D1-029",
+      "area": "audit_exact_match_field_mutation",
+      "mode": "disposable_write",
+      "requires_user_decision": [
+        "U80-02",
+        "U80-03",
+        "U80-04",
+        "U80-07"
+      ],
+      "expected": "Any changed owner/actor/target/op/outcome/reason/payload field causes assertion failure and atomic rollback."
+    },
+    {
+      "id": "D1-030",
+      "area": "revoke_owner_boundary_non_disclosure",
+      "mode": "disposable_write",
+      "requires_user_decision": [],
+      "expected": "Foreign owner cannot read or mutate binding; foreign and absent resources are externally indistinguishable."
+    },
+    {
+      "id": "D1-031",
+      "area": "rotation_side_effect_policy",
+      "mode": "disposable_write",
+      "requires_user_decision": [
+        "U80-05",
+        "U80-06"
+      ],
+      "expected": "Test only the explicitly approved effect on bindings, sessions, pending challenges and free grants; no implicit policy."
+    },
+    {
+      "id": "D1-032",
+      "area": "hmac_cross_version_union_dedupe",
+      "mode": "disposable_write",
+      "requires_user_decision": [],
+      "expected": "Same event_id in K1/K2 counts once; distinct IDs across versions count together; changed tuple under same ID fails closed."
+    },
+    {
+      "id": "D1-033",
+      "area": "limiter_cleanup_union_history_race",
+      "mode": "concurrent_disposable_requests",
+      "requires_user_decision": [],
+      "expected": "Cleanup cannot remove events needed by active windows/retry horizon; cross-version union remains complete."
+    },
+    {
+      "id": "D1-034",
+      "area": "hmac_index_and_migration_coverage",
+      "mode": "read_only_after_fixture",
+      "requires_user_decision": [],
+      "expected": "Indexes cover every accepted key version/dimension during cutover; query plans and high-water reconciliation prove no coverage gap."
+    }
+  ]
+}
