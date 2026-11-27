@@ -1465,6 +1465,6 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 新增 HMAC overlap 三方案比较。目标模型工程偏好 canonical logical event + per-version aliases，但不构成生产架构批准；dual-write 与 single authoritative namespace migration 的风险、coverage 和 rollback proof 已列出。
 - 历史 Worker/HTML share-code caller 静态盘点完成；APK ZIP 不可检查，客户端调用清单不完整；APP v2 handler 未证明接入历史 Worker或被 APK 调用，保持 feature flag OFF。
 - U80-01..08 仍待用户决策；不为缺失业务语义填入默认值。
-- 首轮 CI Run `46042241488` 因 workflow 用 unittest module path 解析带点目录失败，已修正启动命令为 unittest discovery，并修订两项文本断言。修订 Run `46042353787` 待最终核验。
+- 首轮 CI Run `46042241488` 因 workflow 用 unittest module path 解析带点目录失败，已修正启动命令为 unittest discovery，并修订两项文本断言。后续 Run `46042360351`、`46042474036` 因新提交而 cancelled；最新 Run `46042494745`（head `d6861056ff6a206783167f09edca5a5fe8e806e7`）核查时仍 pending，尚无 job/log，离线测试不标记通过。
 - 本批无 D1/SQL/migration/credentials/Worker/HTML/APK/Room/Secrets/Cloudflare 变更，无部署。
 - **第八十二批唯一接手卡：**复核 U80-01..08；如 APK ZIP 可读，完成 HTTP/deep-link/token storage 全量调用审计；对 statement matrix 做独立负面复核；验证 HMAC aliases 在 partial backfill/high-water/late retry/rollback 下无 undercount；继续离线，不连接 D1、不部署。
