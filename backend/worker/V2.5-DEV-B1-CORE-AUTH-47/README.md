@@ -17,6 +17,7 @@ node --test backend/worker/V2.5-DEV-B1-CORE-AUTH-47/authorization.test.mjs
 - Trial expiry becomes read-only; it does not permit historical deletion.
 - Formal VIP expiry permits deletion only of owned history created no later than the latest expired formal activation cutoff; it does not permit create/update/associate/disable/generate.
 - VIP status query failure or malformed activation rows fail closed for sensitive operations.
+- Future-dated activations are treated as pending; expired-formal historical deletion is not granted before a scheduled activation starts.
 - L0 basic conversion remains available with a server-resolved stable guest identity; advanced filters require active VIP.
 - Direct super-admin sessions are independent of VIP.
 - Super-admin assist sessions must satisfy both the delegated scope and the effective user's VIP rules.
