@@ -392,3 +392,43 @@
 | 前端接入 | 原始 HTML 有 API 接入但路径/环境错配；1.4.61 为模拟版 | 随 Worker 修复同步调整 |
 | 通知/邮箱 | 规则和架构已记录，用户决定后置 | 核心主线稳定后再实施 |
 | 生产 D1/部署 | 未核实、未授权 | 禁止生产操作 |
+
+
+## 14. 第四十七批完成与第四十八批接手卡（2026-11-27）
+
+### 第四十七批状态：TESTED_PASS / NOT_INTEGRATED
+
+- 批次：`V2.5-DEV-B1-CORE-AUTH-47`
+- 报告：`docs/backend/StarJump_V2.5_身份VIP状态与动作级权限模型实施及测试报告_第四十七批_V2.5-DEV-B1-CORE-AUTH-47_2026-11-27.md`
+- 报告 Commit：`4849a3b2b5f92a10109d8add61700d4d6e52cb98`
+- 进度日志 Commit：`6d61b0c3994cf88bfed1d2c4281cd1d86eafb296`
+- 新增隔离纯函数模型和 Node.js 测试；Node.js v22.16.0，26/26 passed，exit code 0。
+- Blob SHA：authorization.mjs `6dc7ed5656bb3d2bcdd01674c2ee36d0db3863a5`；authorization.test.mjs `71369d5add228b8988f06a57635559b155f4cb9a`；README `bd6b12154c43a0d68c987caacdcb58a8d1c42302`。
+- 状态边界包含 active_trial/formal、expired_trial/formal、pending、none、unavailable；formal 到期历史删除要求资源归属和创建时间截止；超管协助必须同时通过 scope 与目标 VIP 规则。
+- 本批尚未接入 Worker；调用方认证、资源归属、tenant 隔离和审计仍未实现；未连接 D1/Cloudflare、未修改原始 Worker/HTML/Secrets、未部署。
+
+### 第四十八批唯一首要任务
+
+1. 重新读取当前 AGENTS、功能基线、第四十六/四十七批报告、当前 main 的原始 Worker/HTML Blob SHA。
+2. 在独立版本目录复制用户指定的 Worker 基线，不覆盖原始 Worker；只修改版本化副本。
+3. 核对 D1 激活表字段和现有查询语义（只依据仓库源码/文档，生产 schema 未核实要明确标注）。
+4. 实现 Worker adapter：服务端从 Session 解析 actor/effective 身份；按 effective user 读取全部 activation rows；调用纯函数模型；资源归属必须由 SQL 条件验证。
+5. 先接 APP 分组 POST/PUT/DELETE/sources/members、APP links POST/DELETE、APP cards POST/disable/DELETE 等操作；按操作细分，不得一刀切封锁 GET。
+6. 对正式 VIP 到期历史删除，必须在同一查询中校验 owner/admin_user_id 与资源创建时间不晚于正式 VIP 截止；体验到期禁止删除；超管本人独立授权；协助会话同时检查 scope 和目标用户规则。
+7. 建立 handler 级 mock tests：L1/体验有效/体验过期/正式有效/正式过期/超管本人/协助 scope/查询失败；每个拒绝分支断言 D1 mock 未调用任何写操作。
+8. 真实 Worker runtime 测试条件不足时，标记未验证；不得把 Node helper 单测等同 Worker 集成通过。
+9. 不改 D1 schema、不调用生产 API、不操作 Secrets、不部署。
+10. 提交批次报告、更新进度和接手卡。
+
+### 当前主线状态
+
+| 模块 | 状态 | 下一步 |
+|---|---|---|
+| 本地迁移工具 | 第四十五批 24/24 SQLite 通过 | D1 兼容仍待隔离验证 |
+| 核心业务差距 | 第四十六批只读审计完成 | 按风险推进 |
+| 身份/VIP 权限模型 | 第四十七批纯函数 26/26 Node 测试通过 | 第四十八批接入 Worker adapter/handlers |
+| 转换/匿名归属 | 已发现共享匿名 owner、固定密钥、filters/限流问题 | 权限门禁后续分批修复 |
+| APP 授权/分组 | 已发现 status token、latest-only、写门禁、物理删除问题 | 先写门禁，再 entitlement/清理闭环 |
+| 前端接入 | 原始 index.html API 路径与环境错配 | Worker 接口稳定后修正 |
+| 通知/邮箱 | 用户决定后置，需求已留档 | 核心主线完成后再做 |
+| 生产环境 | 线上版本与 D1 schema 未核实 | 不操作、不部署 |
