@@ -33,7 +33,7 @@ class Batch81ReadinessTests(unittest.TestCase):
         self.assertIn("create_existing", names)
     def test_07_harness_default_disabled(self):
         for phrase in ("--enable-disposable-d1", "no implicit", "no network permissions",
-                       "cleanup is a distinct", "append-only ledger"):
+                       "Cleanup is a distinct", "append-only ledger"):
             self.assertIn(phrase, HARNESS)
     def test_08_separate_approvals(self):
         for phrase in ("identity-read", "synthetic-write", "cleanup"):
