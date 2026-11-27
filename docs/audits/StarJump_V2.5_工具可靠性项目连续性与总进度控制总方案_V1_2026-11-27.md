@@ -974,3 +974,47 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 若 loader 所需 schema 字段仍未在真实隔离 D1 核实，只做 mock contract 测试并标记 D1_NOT_TESTED；不得编造生产 SQL 或 migration。
 7. 不修改 Worker/HTML/APK/D1/Secrets，不连接生产/staging，不部署。
 8. 更新进度、总方案和第六十六批接手卡。
+
+
+
+
+## 17. 第六十五批结果与第六十六批接手卡（2026-11-27）
+
+### 第六十五批结果
+
+- 版本：`V2.5-DEV-B1-APP-PROTOCOL-65`
+- 报告：`docs/backend/StarJump_V2.5_APP_v2多卡密分组组合与精确授权Handler集成报告_第六十五批_V2.5-DEV-B1-APP-PROTOCOL-65_2026-11-27.md`
+- 最终 CI Run `45976476574` completed/success；Node 22 语法检查通过，26/26 tests passed，0 failed。首次 Run `45975792137` 因测试括号语法错误失败，保留历史；后续修正并补充端到端/分类器/响应最小化测试后最终通过。
+- 新增隔离多 entitlement 组合 service 与 POST Handler：每个 entitlement ID + device ID + Token 单独解析；同一请求全部 credential 必须有效；不使用 latest fallback；请求体不放 URL，限制 32 KiB / 20 份凭证，响应 no-store。
+- 分组组合复用第五十九/六十批 loader/composition 契约：同管理员免费组按 ID 去重、不同管理员隔离、同名卡密组追加服务端序列号、空卡密组不扩大范围；最小响应不输出 cardId/entitlementId/卡密原文/任意 DB 列。
+- 强制注入服务端 entitlement 分类器。已观察的旧 entitlement schema 未证明存在 kind 字段，因此禁止从客户端推断或把 kind 当作已存在数据库列；CARD 分类还必须与已解析 entitlement.card_id 一致。
+- IDENTITY 服务层测试仅验证抽象组合契约；实际身份 ID/share-code resolver 尚未实现，不能宣称真实身份 ID 免费组链路已接通。
+- 新 endpoint 未注册 Worker；所有 resolver/classifier/loader/serial label 都是注入依赖，真实 D1 SQL 尚未实现。未连接 D1、未执行 SQL/创建 migration、未改 Worker/HTML/APK/Room/Secrets、未部署。D1_NOT_TESTED；APP_PENDING。
+
+### APP v2 当前状态（第六十五批后）
+
+| 层级 | 状态 | 说明 |
+|---|---|---|
+| 精确 entitlement resolver / Token adapter | 隔离实现、23/23 CI 通过 | 未接入 Worker；Secret 未配置 |
+| 单 entitlement groups/nodes/links/status handler | mock 测试通过 | loaders 仍注入，真实 D1 未核实 |
+| 多 entitlement 分组组合 service | 隔离实现、26/26 CI 通过 | 逐份 Token 精确解析；无 latest fallback |
+| composed groups HTTP handler | 隔离实现、端到端 mock 通过 | 未注册 Worker 路由；客户端未验证 |
+| entitlement kind 分类 | 强制 server-side adapter 接口 | 现有 schema 是否有分类字段未证实 |
+| IDENTITY 免费组 resolver | 未完成 | 身份 ID/share-code 只能作为发现/绑定，不得直接授权读取 |
+| D1 schema/SQL/migration/并发 | 未验证 | D1_NOT_TESTED |
+| 6.00.48 第三方源码与客户端兼容 | 受阻 | APP_PENDING |
+| Android Room/API v2 与真机测试 | 未实施 | 6.00.47 仅为结构参考 |
+| 生产部署 | 未授权/未执行 | 不可部署 |
+
+### 第六十六批唯一首要任务
+
+**APP v2 身份 ID 免费组发现/绑定 resolver 与卡密 entitlement 组合边界审查（隔离设计 + mock 测试，不接 Worker）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度及第五十一至六十五批报告。
+2. 只读核对原始 Worker 的 `/api/app/resolve`、`/api/app/free`、`admin_share_codes`、`app_free_grants`、`admin_app_perms` 实际调用链和数据边界。
+3. 明确身份 ID/share code 只负责发现/绑定，不能仅凭公开 ID 读取节点/分组；必须有服务端绑定状态、设备绑定、限流/防枚举和管理员授权检查。
+4. 设计独立 IDENTITY credential resolver；不把 identity ID 当 entitlement ID，不复用卡密 HMAC 语义，除非存在可信服务端签发凭证方案。
+5. mock 覆盖同管理员免费组只一份、不同管理员隔离、重复绑定幂等、禁用免费组拒绝、share code 轮换/撤销、跨设备/跨管理员拒绝。
+6. 不读取或泄露真实 share code、卡密、Token；不执行 SQL、不创建 migration。
+7. 不修改 Worker/HTML/APK/D1/Secrets，不接生产路由、不部署。
+8. 更新进度、总方案和第六十七批接手卡。
