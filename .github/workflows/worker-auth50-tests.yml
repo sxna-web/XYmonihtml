@@ -1,0 +1,35 @@
+name: Worker Auth50 Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/worker/V2.5-DEV-B1-CORE-AUTH-50/**"
+      - "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/**"
+      - "backend/worker/V2.5-DEV-B1-CORE-AUTH-47/authorization.mjs"
+      - ".github/workflows/worker-auth50-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  auth50:
+    name: APP links/cards handler authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check versioned Worker syntax as ES module
+        run: node --experimental-default-type=module --check backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js
+      - name: Check adapter syntax
+        run: node --check backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-auth-adapter.mjs
+      - name: Run adapter mock tests
+        run: node --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-auth-adapter.test.mjs
+      - name: Run APP group handler tests
+        run: node --experimental-default-type=module --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-handler.integration.test.mjs
+      - name: Run APP links and cards handler tests
+        run: node --experimental-default-type=module --test backend/worker/V2.5-DEV-B1-CORE-AUTH-50/app-links-cards-handler.test.mjs
