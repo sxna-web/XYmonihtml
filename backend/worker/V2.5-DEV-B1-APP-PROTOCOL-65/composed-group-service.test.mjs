@@ -21,6 +21,7 @@ function setup({ entitlements=[A,B], scopes={}, serials={}, resolveError, groupE
       if(resolveError) throw Error("resolver unavailable");
       return {ok:true,entitlement:entitlements.find(e=>e.id===args.entitlementId && e.device_id===args.deviceId) || null};
     },
+    classifyEntitlement:async ent=>({kind:ent.kind,cardId:ent.card_id ?? null}),
     loadGroupsForEntitlement:async ent=>{
       loadCalls.push(ent.id);
       if(groupError) throw Error("loader unavailable");
@@ -101,6 +102,24 @@ test("all credentials must belong to the same device",async()=>{
  const {service}=setup({entitlements:[A,{...B,device_id:"device_other_123"}]});
  const r=await service({deviceId:DEVICE,credentials:credentials(A,{...B,device_id:"device_other_123"})});
  assert.equal(r.ok,false);assert.equal(r.code,"ENTITLEMENT_SCOPE_DENIED");
+});
+
+test("missing server-side entitlement classifier fails closed at service creation",()=>{
+ assert.throws(()=>createComposedEntitlementGroupService({
+  resolveEntitlement:async()=>({ok:false}),
+  loadGroupsForEntitlement:async()=>({ok:true,allowedGroupIds:[],cardGroups:[],freeGroups:[]}),
+  loadCardSerialLabel:async()=>"1 序列号",
+ }),/classifyEntitlement/);
+});
+
+test("invalid server-side entitlement classification fails closed",async()=>{
+ const service=createComposedEntitlementGroupService({
+  resolveEntitlement:async()=>({ok:true,entitlement:A}),
+  classifyEntitlement:async()=>({kind:"UNKNOWN"}),
+  loadGroupsForEntitlement:async()=>({ok:true,allowedGroupIds:[],cardGroups:[],freeGroups:[]}),
+  loadCardSerialLabel:async()=>"1 序列号",
+ });
+ assert.equal((await service({deviceId:DEVICE,credentials:credentials(A)})).code,"ENTITLEMENT_CLASSIFICATION_INVALID");
 });
 
 test("resolver outage fails closed",async()=>{
