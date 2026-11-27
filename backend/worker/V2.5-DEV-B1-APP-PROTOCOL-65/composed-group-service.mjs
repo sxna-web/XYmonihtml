@@ -105,8 +105,10 @@ export function createComposedEntitlementGroupService({
         return fail("ENTITLEMENT_CLASSIFICATION_UNAVAILABLE");
       }
       if (!classification || !["CARD", "IDENTITY"].includes(classification.kind) ||
-          (classification.kind === "CARD" && !ID_RE.test(classification.cardId || "")) ||
-          (classification.kind === "IDENTITY" && classification.cardId != null)) {
+          (classification.kind === "CARD" && (!ID_RE.test(classification.cardId || "") ||
+            (entitlement.card_id != null && classification.cardId !== entitlement.card_id))) ||
+          (classification.kind === "IDENTITY" &&
+            (classification.cardId != null || entitlement.card_id != null))) {
         return fail("ENTITLEMENT_CLASSIFICATION_INVALID");
       }
       const scopedEntitlement = {
