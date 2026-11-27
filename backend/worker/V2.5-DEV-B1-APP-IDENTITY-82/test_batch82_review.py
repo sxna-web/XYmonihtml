@@ -62,7 +62,7 @@ class Batch82StaticReviewTests(unittest.TestCase):
 
     def test_12_no_runtime_claims(self):
         self.assertIn("No APK binary was installed or dynamically instrumented", APK)
-        self.assertIn("no SQL or D1 execution", NEGATIVE.lower())
+        self.assertIn("no sql or d1 execution", NEGATIVE.lower())
 
 if __name__ == "__main__":
     unittest.main()
