@@ -24,7 +24,7 @@
 | `worker-auth-adapter.mjs` | `2f91941c68082a44d5e23e1e25b416ae2901e0f0` | 服务端 Session/VIP 动作门禁 |
 | `worker-auth-adapter.test.mjs` | `86e226e1a14c00359f7e23ce08913830f1435814` | 12 项 adapter tests |
 | `worker-handler.integration.test.mjs` | `d0303a2ed5a9e84d938fb95b9d46711444050abd` | 12 项实际 Worker.fetch + mock D1 测试 |
-| `README.md` | `b2497b360f67118233a8084547c18e890582661b` | 版本说明和测试边界 |
+| `README.md` | `e3b124c9e9977b4eba57fabcb08ac7fb0c943928` | 版本说明和测试边界 |
 
 CI：`.github/workflows/worker-auth49-tests.yml`。
 
@@ -59,8 +59,8 @@ CI：`.github/workflows/worker-auth49-tests.yml`。
 
 GitHub Actions：
 - Workflow：`Worker Auth49 Tests`
-- Run ID：`45954074365`
-- 测试提交：`c988459cad010dba3197bed7d10e90de6f8c3736`
+- Run ID：`45954269528`
+- 测试提交：`8aebec32e652de1cbe95a2c70d2c6f1f8f59d77b`
 - Node.js：`v22.23.5`
 - 结果：**成功**
 - Worker ESM syntax check：通过
