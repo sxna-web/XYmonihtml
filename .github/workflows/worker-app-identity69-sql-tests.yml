@@ -1,0 +1,25 @@
+name: APP Identity 69 SQLite SQL Semantics
+on:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-69/**"
+      - ".github/workflows/worker-app-identity69-sql-tests.yml"
+  pull_request:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-69/**"
+      - ".github/workflows/worker-app-identity69-sql-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sqlite-semantic-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run disposable SQLite semantic fixture
+        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-69 -p '*_test.py' -v
