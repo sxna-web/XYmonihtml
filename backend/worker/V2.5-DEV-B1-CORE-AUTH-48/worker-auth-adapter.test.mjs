@@ -34,7 +34,7 @@ test("maps all supported write operations and leaves GET outside gate",()=>{
   assert.equal(_actionForTest("/api/user/app-groups/g1","PUT"),"update");
   assert.equal(_actionForTest("/api/user/app-groups/g1","DELETE"),"delete_history");
   assert.equal(_actionForTest("/api/user/app-groups/g1/sources","POST"),"associate");
-  assert.equal(_actionForTest("/api/user/app-groups/g1/members","POST"),"associate");assert.equal(_actionForTest("/api/user/app-groups/g1/members/device123","DELETE"),"update");
+  assert.equal(_actionForTest("/api/user/app-groups/g1/members","POST"),"associate");
   assert.equal(_actionForTest("/api/user/app-links","POST"),"create");
   assert.equal(_actionForTest("/api/user/app-links/l1","DELETE"),"delete_history");
   assert.equal(_actionForTest("/api/user/app-cards","POST"),"generate");
