@@ -775,3 +775,30 @@
 6. APK 6.00.48 未解包前继续标记 APP_PENDING，不改 APK。
 7. 不创建正式 migration、不连接生产 D1、不修改 Secrets、不部署。
 8. 完成后更新进度、总方案和第五十九批接手卡；没有实际运行的测试不得标记通过。
+
+
+## 第五十八批完成与第五十九批接手卡（2026-11-27）
+
+### 第五十八批：隔离 APP v2 授权实现与测试骨架
+
+- 版本：`V2.5-DEV-B1-APP-PROTOCOL-58`
+- 报告：`docs/backend/StarJump_V2.5_APP_v2授权隔离实现与测试骨架报告_第五十八批_V2.5-DEV-B1-APP-PROTOCOL-58_2026-11-27.md`
+- 报告 Commit：`855a6fd69ce6c4a4835dad4f4e5c0ebd20424a04`
+- CI Run：`45960847230`，Node 22 语法检查通过，36/36 tests 通过。
+- 隔离实现包含设备数策略、card/free allowlist、owner guard、generation/tombstone/ack/lease、SQL query contract、注入式 v2 read-handler scaffold、mock D1 fixture。
+- 本批未接入现有 Worker、未核验生产 D1、未创建正式 migration、未修改 HTML/APK/Secrets、未连接生产 Cloudflare、未部署。
+- 真实 D1 原子占额、持久化 sync event、Android 本地删除/ack、离线租约真机测试仍未实现。APK_PENDING；6.00.48 源码和第三方限制未审计。
+
+### 第五十九批唯一首要任务
+
+**APP v2 隔离集成测试与原子设备占额模型验证（不接生产、不部署）。**
+
+1. 重读 AGENTS、功能基线、API 规范、数据库结构与变更保护规范、总方案、进度、第五十七/五十八批报告。
+2. 复核第五十八批 handler 与 36 项测试，补充伪造 entitlement、跨设备/管理员、恶意 group rows、乱序 ack、lease 到期边界反例。
+3. 为设备占额设计 D1 原子更新/事务适配器；只在 mock 或本地隔离 SQLite/兼容测试库验证并发语义，不触碰生产 D1。
+4. 为 card/free group loader 设计依赖注入 adapter，验证 owner/card/group 三方一致性及空组规则。
+5. 核对 nodes 查询绑定参数顺序、SQL owner 条件和来源审批字段，字段需有版本源码/隔离 schema 证据。
+6. 评估 resolver、read policy 与 v2 scaffold 的最小接入边界，不修改现有 Worker handler。
+7. 如能取得 6.00.48 ZIP 二进制，单独做只读源码/第三方授权审计；ZIP 元数据不等于源码审计完成。
+8. 不创建正式 migration、不连接生产 D1、不修改 Secrets、不部署。
+9. 实际运行全部测试后更新进度、总方案和第六十批接手卡。
