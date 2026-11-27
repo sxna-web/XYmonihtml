@@ -32,9 +32,8 @@ def db():
     return c
 
 def receipt(c,op,owner,kind,request):
-    row=c.execute("SELECT owner,operation_type,request_hash,result_id,result_version,audit_event_key FROM operations WHERE operation_id=?",(op,)).fetchone()
+    row=c.execute("SELECT owner,operation_type,request_hash,result_id,result_version,audit_event_key FROM operations WHERE operation_id=? AND owner=?",(op,owner)).fetchone()
     if not row: return None
-    if row[0]!=owner: raise NotFound("operation not found")
     if row[1]!=kind or row[2]!=request: raise Conflict("operation id reused with different request")
     return {"kind":"replay","result_id":row[3],"version":row[4],"event_key":row[5]}
 
@@ -203,7 +202,8 @@ class IdentityOperationTests(unittest.TestCase):
                          ("b2","b2|ownerA|deviceB|thumbB|1|created"))
     def test_15_operation_receipt_is_owner_scoped(self):
         create_binding(self.c)
-        with self.assertRaises(NotFound): receipt(self.c,"create-1","ownerB","binding.create","ownerA|deviceB|thumbB")
+        self.assertIsNone(receipt(self.c,"create-1","ownerB","binding.create","ownerA|deviceB|thumbB"))
+        self.assertEqual(receipt(self.c,"create-1","ownerA","binding.create","ownerA|deviceB|thumbB")["result_id"],"b2")
         self.assertEqual(self.c.execute("SELECT COUNT(*) FROM operations").fetchone()[0],1)
     def test_16_same_operation_id_different_payload_conflicts(self):
         create_binding(self.c)
