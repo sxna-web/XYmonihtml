@@ -1256,3 +1256,31 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 5. SQLite 仅作为本地语义测试，不得宣称 D1 多 isolate 并发通过；真实 D1 仍须隔离环境与用户明确批准。
 6. 不连接任何 D1，不执行 SQL/迁移，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
 7. 更新进度、总方案和第七十五批唯一接手卡。
+
+
+---
+
+## 第七十四批结果与第七十五批唯一接手卡（2026-11-27）
+
+### 第七十四批结果
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-74`；报告：`docs/backend/StarJump_V2.5_APP_v2身份原子操作重构与本地对抗性测试报告_第七十四批_V2.5-DEV-B1-APP-IDENTITY-74_2026-11-27.md`。
+- 新增 atomic operation redesign、SQLite fixture、README 和 GitHub Actions workflow。
+- 修正第六十七批 challenge consume 与 binding create 分离调用的逻辑缺口：下一版 adapter 必须把 challenge 条件消费、binding insert/既有绑定解析、必要审计和 operation receipt 放入同一原子逻辑单元。
+- 必需审计不能依赖条件 INSERT-SELECT 零行来触发失败；提出最终 operation receipt 的 CHECK(audit_assert=1) 断言候选。若 challenge/binding/audit 任一必要状态缺失，最终 CHECK 应抛错并使同批次回滚。该 operation receipt 表和 CHECK 约束是候选设计，不是已核实生产 schema；D1 验证与用户批准前不得迁移。
+- 幂等：同 operation ID + 同 canonical payload 为重放；同 ID 不同 payload 为完整性冲突；同 event key 不同 payload 必须因最终审计断言失败而回滚。超时仍是 outcome-unknown，复用原 IDs 并 owner-scoped 核实。
+- GitHub Actions Run `45993837077`：completed/success；Job `140488126131`；Python 3.13.18；12/12 passed、0 failed。测试为内存 SQLite 合成 schema。
+- 12 项覆盖成功绑定/审计、binding SQL 失败回滚、audit zero-row 回滚、audit SQL error 回滚、同 ID 同 payload 重放、同 ID 异 payload 冲突、timeout-after-commit retry、既有 binding 去重、revoke CAS、rotation CAS、limiter window/Retry-After、event key 异 payload 回滚。
+- 不代表 D1 compatibility、多 Worker isolate 并发、生产 schema、APK 兼容或线上部署通过。
+- 未连接任何 D1；未执行 D1 SQL/迁移；未修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置；未部署。D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 第七十五批唯一接手卡
+
+**APP v2 identity create/revoke/rotation 统一 operation receipt + audit assertion，以及限流幂等边界本地测试（仍不连接 D1）。**
+
+1. 重读 AGENTS、功能/API/数据库保护基线、总方案、进度和第六十七至七十四批资料。
+2. 设计 create/revoke/rotation 共用 operation receipt 与审计 CHECK assertion，不假设生产已有对应表或字段。
+3. 增加本地 SQLite 测试：revoke/rotation audit missing/mismatch rollback；event key 同 payload 与异 payload；owner-scoped operation receipt；duplicate limiter event_id；缺失必需维度；多维 Retry-After 取最晚释放点；cleanup 与窗口边界。
+4. 明确 SQLite 仅是本地语义测试，不宣称 D1 多 isolate 并发通过。
+5. 不连接任何 D1，不执行 SQL/迁移，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
+6. 更新进度、总方案和第七十六批唯一接手卡。
