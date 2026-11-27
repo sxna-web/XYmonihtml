@@ -177,100 +177,100 @@ class Batch79Tests(unittest.TestCase):
         for prefix in (":", "@", "$"):
             with self.assertRaises(ValueError): scan_placeholders(f"SELECT {prefix}1")
 
-    def test_35_unterminated_single_quote_rejected(self):
+    def test_13_unterminated_single_quote_rejected(self):
         with self.assertRaises(ValueError): scan_placeholders("SELECT 'abc ?")
 
-    def test_13_unterminated_block_comment_rejected(self):
+    def test_14_unterminated_block_comment_rejected(self):
         with self.assertRaises(ValueError): scan_placeholders("SELECT ? /* ?")
 
-    def test_14_manifest_count_mismatch_rejected(self):
+    def test_15_manifest_count_mismatch_rejected(self):
         with self.assertRaises(ValueError):
             validate_manifest("SELECT ?, ?", self.manifest(1, "SELECT ?, ?"), ["a", "b"])
 
-    def test_15_manifest_order_mismatch_rejected(self):
+    def test_16_manifest_order_mismatch_rejected(self):
         m = self.manifest(2, "SELECT ?, ?"); m[0]["ordinal"], m[1]["ordinal"] = 2, 1
         with self.assertRaises(ValueError): validate_manifest("SELECT ?, ?", m, ["a", "b"])
 
-    def test_16_duplicate_semantic_names_rejected(self):
+    def test_17_duplicate_semantic_names_rejected(self):
         m = self.manifest(2, "SELECT ?, ?"); m[1]["semantic_name"] = m[0]["semantic_name"]
         with self.assertRaises(ValueError): validate_manifest("SELECT ?, ?", m, ["a", "b"])
 
-    def test_17_undefined_bind_rejected(self):
+    def test_18_undefined_bind_rejected(self):
         with self.assertRaises(ValueError):
             validate_manifest("SELECT ?", self.manifest(1, "SELECT ?"), [...])
 
-    def test_18_text_type_mismatch_rejected(self):
+    def test_19_text_type_mismatch_rejected(self):
         with self.assertRaises(ValueError):
             validate_manifest("SELECT ?", self.manifest(1, "SELECT ?"), [123])
 
-    def test_19_boolean_is_not_integer_bind(self):
+    def test_20_boolean_is_not_integer_bind(self):
         m = self.manifest(1, "SELECT ?"); m[0]["storage_class"] = "integer"
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, [True])
 
-    def test_20_null_requires_explicit_null_contract(self):
+    def test_21_null_requires_explicit_null_contract(self):
         m = self.manifest(1, "SELECT ?"); m[0].update(storage_class="null", nullable=True, missing_policy="bind_null")
         self.assertTrue(validate_manifest("SELECT ?", m, [None]))
 
-    def test_21_null_without_nullable_rejected(self):
+    def test_22_null_without_nullable_rejected(self):
         m = self.manifest(1); m[0].update(storage_class="null", nullable=False, missing_policy="bind_null")
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, [None])
 
-    def test_22_invalid_manifest_enum_rejected(self):
+    def test_23_invalid_manifest_enum_rejected(self):
         m = self.manifest(1); m[0]["source"] = "client_claimed_owner"
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, ["x"])
 
-    def test_23_sql_hash_changes_with_exact_whitespace(self):
+    def test_24_sql_hash_changes_with_exact_whitespace(self):
         a = validate_manifest("SELECT ?", self.manifest(1, "SELECT ?"), ["x"])
         b = validate_manifest("SELECT  ?", self.manifest(1), ["x"])
         self.assertNotEqual(a, b)
 
-    def test_24_manifest_rejects_wrong_exact_sql_hash(self):
+    def test_25_manifest_rejects_wrong_exact_sql_hash(self):
         sql = "SELECT ?"
         m = self.manifest(1, sql)
         m[0]["sql_sha256"] = "0" * 64
         with self.assertRaises(ValueError): validate_manifest(sql, m, ["x"])
 
-    def test_25_audit_envelope_required_fields_complete(self):
+    def test_26_audit_envelope_required_fields_complete(self):
         self.assertEqual(audit_envelope_missing({k: None for k in REQUIRED_AUDIT_FIELDS}), set())
 
-    def test_25_audit_envelope_missing_actor_owner_target_detected(self):
+    def test_27_audit_envelope_missing_actor_owner_target_detected(self):
         envelope = {k: None for k in REQUIRED_AUDIT_FIELDS}
         for k in ("actor_type", "actor_id", "owner_admin_id", "target_type", "target_id"):
             envelope.pop(k)
         self.assertEqual(audit_envelope_missing(envelope),
                          {"actor_type", "actor_id", "owner_admin_id", "target_type", "target_id"})
 
-    def test_26_audit_envelope_missing_schema_outcome_reason_detected(self):
+    def test_28_audit_envelope_missing_schema_outcome_reason_detected(self):
         envelope = {k: None for k in REQUIRED_AUDIT_FIELDS}
         for k in ("schema_version", "outcome", "reason_code"): envelope.pop(k)
         self.assertEqual(audit_envelope_missing(envelope), {"schema_version", "outcome", "reason_code"})
 
-    def test_27_split_key_history_cannot_undercount(self):
+    def test_29_split_key_history_cannot_undercount(self):
         events = {"old": {f"e{i}": "same" for i in range(3)},
                   "new": {f"e{i}": "same" for i in range(3, 6)}}
         self.assertFalse(overlap_admit(events, 5))
 
-    def test_28_dual_written_same_event_counts_once(self):
+    def test_30_dual_written_same_event_counts_once(self):
         events = {"old": {"e1": "fp1"}, "new": {"e1": "fp1"}}
         self.assertTrue(overlap_admit(events, 2))
 
-    def test_29_cross_version_same_event_different_payload_conflicts(self):
+    def test_31_cross_version_same_event_different_payload_conflicts(self):
         events = {"old": {"e1": "fp1"}, "new": {"e1": "changed"}}
         with self.assertRaises(ValueError): overlap_admit(events, 5)
 
-    def test_30_missing_event_id_rejected(self):
+    def test_32_missing_event_id_rejected(self):
         with self.assertRaises(ValueError): overlap_admit({"old": {"": "fp"}}, 5)
 
-    def test_31_cleanup_strictly_before_all_horizons(self):
+    def test_33_cleanup_strictly_before_all_horizons(self):
         self.assertTrue(cleanup_eligible(10, 11, 12, 13))
 
-    def test_32_cleanup_exact_boundary_retained(self):
+    def test_34_cleanup_exact_boundary_retained(self):
         self.assertFalse(cleanup_eligible(10, 10, 12, 13))
 
-    def test_33_cleanup_active_window_protected(self):
+    def test_35_cleanup_active_window_protected(self):
         self.assertFalse(cleanup_eligible(11, 12, 11, 20))
 
-    def test_34_cleanup_retry_horizon_protected(self):
+    def test_36_cleanup_retry_horizon_protected(self):
         self.assertFalse(cleanup_eligible(11, 12, 20, 11))
 
 
