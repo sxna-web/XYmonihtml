@@ -905,3 +905,30 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 槽位释放/解绑审批未确认项继续保留，不擅自冻结。
 7. 若无 6.00.48 ZIP 与隔离 D1，保持 APK_PENDING / D1_NOT_TESTED；不创建 migration、不操作 Secrets、不部署。
 8. 更新总进度和第六十四批接手卡。
+
+
+## 15. 第六十三批进度与第六十四批接手卡（2026-11-27）
+
+### 第六十三批状态
+
+- 版本：`V2.5-DEV-B1-APP-PROTOCOL-63`
+- 报告：`docs/backend/StarJump_V2.5_APP_v2真实Worker接口差距与最小集成边界审查_第六十三批_V2.5-DEV-B1-APP-PROTOCOL-63_2026-11-27.md`
+- CI Run `45970232967` completed/success；Node 22 语法检查通过，6/6 tests passed，0 failed。首次 Run `45970083786` 因测试预期计数写错失败，修正后重跑通过，失败历史保留。
+- 原始 Worker 与 HTML 1.4.61 已按 blob SHA 复核。HTML 1.4.61 不含 `/api/`、fetch、XHR、Authorization/Bearer 调用，仍是本地模拟界面。
+- 16 项旧 APP/管理路由矩阵已形成。关键缺陷包括：status 无 Token；nodes/groups/links 取 latest entitlement；nodes 越过卡密分组范围；free 公开链路直接下发节点；缺 card_id-group_id 关联；管理端卡密/分组写操作未见有效 VIP gate；HMAC 固定 fallback；batch58 handler 混淆 Session Token 与 entitlement Token。
+- v2 建议采用新增 namespace + 默认关闭 flags，exact resolver -> group loader -> composition -> slot adapter；不直接改写旧路由。
+- 未连接 D1、未执行 SQL、未创建 migration；未改 Worker/HTML/APK/Secrets；未部署。线上两文件版本未读取，不能由仓库文件推断线上。
+- 6.00.48 未审计，APP_PENDING。
+
+### 第六十四批唯一首要任务
+
+**APP v2 entitlement Token 认证适配器与精确读取 Handler（隔离编码 + mock 测试，不接 Worker）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度及第五十一至六十三批报告。
+2. 修正第五十八批 handler 的 Session/entitlement token 语义冲突；建立独立 adapter：显式 entitlementId + deviceId + HMAC Token -> 第五十二批 resolver。
+3. Secret 缺失、Token 验证失败、entitlement 过期、device 绑定不匹配、D1 异常统一 fail closed。
+4. groups/nodes/links/status 只允许使用解析出的 entitlement context；客户端 adminId 不得成为查询依据。
+5. 加入精确 entitlement 请求、同设备多 entitlement、不允许 latest fallback、跨管理员隔离、空分组和异常状态测试。
+6. 保留 legacy API 不变；不接入生产 Worker，不改 HTML/APK/D1/Secrets，不部署。
+7. 若 6.00.48 或隔离 D1 仍不可用，继续记录 APK_PENDING/D1_NOT_TESTED，不虚报联调完成。
+8. 更新进度、总方案和第六十五批接手卡。
