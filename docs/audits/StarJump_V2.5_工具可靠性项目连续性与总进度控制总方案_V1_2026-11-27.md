@@ -1405,3 +1405,5 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 5. 完善 HMAC key overlap 状态机、cleanup/admission 原子性前置条件及证据表；不设生产阈值。
 6. 仍不连接 D1、不读取凭证、不执行 SQL、不创建 migration、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
 7. 更新总进度、总方案和第八十批唯一接手卡。
+
+- 第七十八批离线 CI 实际证据：Run `45997564796` completed/success；Job `140500692553`；Python 3.13.18；23/23 tests passed。范围仅 Python 参考模型/边界反例，不证明 D1、SQL、Worker 或 APP 行为。
