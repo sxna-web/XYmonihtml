@@ -168,6 +168,13 @@ test("revoked binding cannot be used even when the share code remains active",as
  assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"})).code,"IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
 });
 
+test("valid token without matching device proof is rejected",async()=>{
+ const h=harness();
+ const issued=await bind(h);
+ const result=await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"wrong-device-signature-000"});
+ assert.equal(result.code,"IDENTITY_DEVICE_PROOF_INVALID");
+});
+
 test("credential cannot be replayed on a different device",async()=>{
  const h=harness();
  const issued=await bind(h);
