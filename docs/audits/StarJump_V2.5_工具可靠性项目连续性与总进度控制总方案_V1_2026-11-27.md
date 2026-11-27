@@ -1484,3 +1484,5 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - Batch 81 Run `46042494745` 后续已完成 success（Job `140655276165`）；只证明离线静态结构。
 - 本批仅新增 DEV 文档、JSON review metadata、Python model/tests 和 workflow；未修改 APK/Worker/HTML/Room/D1/Secrets/Cloudflare，未部署。
 - **第八十三批唯一接手卡：**查找可读 6.00.48 源码；按用户确认业务规则建立 APK 现状缺口矩阵；拆分 APP v2 discovery/bind、card activation、status、composed catalog、generation/tombstone/ack 契约；设计 Keystore/backup/deep-link；分离 identity/limiter/harness statement manifests；继续 HMAC cross-key dimension consistency proof。U80-01..08 未确认项继续阻断；不连接 D1、不执行 SQL、不部署。
+
+- Batch 82 CI final Run `46048673912` completed/success，Job `140674247202` success，23 tests OK（11 HMAC model + 12 static review）；prior Run `46048497935` one case-sensitive assertion failure was corrected and superseded. Offline only; no D1/SQL.
