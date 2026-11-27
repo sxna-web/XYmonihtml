@@ -79,10 +79,10 @@ test("loader fails closed on adapter outage",async()=>{
 });
 
 test("atomic reservation SQL is one conditional insert with uniqueness idempotency",()=>{
- assert.match(RESERVE_CARD_DEVICE_SQL,/SELECT \\?, \\?, \\?/);
- assert.match(RESERVE_CARD_DEVICE_SQL,/COUNT\\(\\*\\).*card_id = \\?/s);
- assert.match(RESERVE_CARD_DEVICE_SQL,/ON CONFLICT\\(card_id, device_id\\) DO NOTHING/);
- assert.match(RESERVE_CARD_DEVICE_SQL,/RETURNING/);
+ assert.ok(RESERVE_CARD_DEVICE_SQL.includes("SELECT ?, ?, ?"));
+ assert.ok(RESERVE_CARD_DEVICE_SQL.includes("COUNT(*) FROM app_card_device_slots WHERE card_id = ?"));
+ assert.ok(RESERVE_CARD_DEVICE_SQL.includes("ON CONFLICT(card_id, device_id) DO NOTHING"));
+ assert.ok(RESERVE_CARD_DEVICE_SQL.includes("RETURNING"));
 });
 
 test("reservation adapter binds card, device, timestamp, card, limit in exact order",async()=>{
