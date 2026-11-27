@@ -43,6 +43,9 @@ export function classifyVip(activations, now = new Date().toISOString()) {
     return { state: 'active_trial', active: true, kind: 'trial', formalCutoff: null,
       until: new Date(Math.max(...activeTrial.map(x => x.end))).toISOString() };
   }
+  if (normalized.some(x => x.start > nowMs)) {
+    return { state: 'pending', active: false, kind: null, formalCutoff: null };
+  }
   const expiredFormal = normalized.filter(x => x.kind === 'formal' && x.end <= nowMs);
   if (expiredFormal.length) {
     const cutoff = Math.max(...expiredFormal.map(x => x.end));
