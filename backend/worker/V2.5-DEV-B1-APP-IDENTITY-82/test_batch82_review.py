@@ -48,7 +48,7 @@ class Batch82StaticReviewTests(unittest.TestCase):
         self.assertIn("Only slot 01 has a configured HTTPS upstream", APK)
         self.assertIn("Slots 02–05 are literal placeholders", APK)
 
-    def test_09_device_key_backup caveat(self):
+    def test_09_device_key_backup_caveat(self):
         self.assertIn('android:allowBackup="true"', APK)
         self.assertIn("Android Keystore", APK)
 
