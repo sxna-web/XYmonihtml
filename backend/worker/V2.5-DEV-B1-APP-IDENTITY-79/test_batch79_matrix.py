@@ -212,16 +212,16 @@ class Batch79Tests(unittest.TestCase):
         self.assertTrue(validate_manifest("SELECT ?", m, [None]))
 
     def test_22_null_without_nullable_rejected(self):
-        m = self.manifest(1); m[0].update(storage_class="null", nullable=False, missing_policy="bind_null")
+        m = self.manifest(1, "SELECT ?"); m[0].update(storage_class="null", nullable=False, missing_policy="bind_null")
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, [None])
 
     def test_23_invalid_manifest_enum_rejected(self):
-        m = self.manifest(1); m[0]["source"] = "client_claimed_owner"
+        m = self.manifest(1, "SELECT ?"); m[0]["source"] = "client_claimed_owner"
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, ["x"])
 
     def test_24_sql_hash_changes_with_exact_whitespace(self):
         a = validate_manifest("SELECT ?", self.manifest(1, "SELECT ?"), ["x"])
-        b = validate_manifest("SELECT  ?", self.manifest(1), ["x"])
+        b = validate_manifest("SELECT  ?", self.manifest(1, "SELECT  ?"), ["x"])
         self.assertNotEqual(a, b)
 
     def test_25_manifest_rejects_wrong_exact_sql_hash(self):
