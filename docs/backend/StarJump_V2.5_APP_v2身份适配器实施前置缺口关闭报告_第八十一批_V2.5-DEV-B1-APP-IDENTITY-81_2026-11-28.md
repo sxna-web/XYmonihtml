@@ -98,7 +98,7 @@ APK source ZIP was not available as an inspectable source tree. Therefore HTTP m
 - 三种 HMAC 候选及 rollback proof 存在；
 - Worker/HTML caller references 与 APK 缺口明确。
 
-CI Run: `46042241488`（提交后自动触发，状态以最终 GitHub Actions 结果为准；本报告初次提交时尚在运行）。
+CI 证据：Run `46042241488` failed，日志确认 unittest 将带点号目录误解析为模块名（`No module named 'backend.worker.V2'`）；已改为 unittest discovery。后续 Run `46042360351`、`46042474036` 因新提交而 cancelled；当前最新 Run `46042494745`（head `d6861056ff6a206783167f09edca5a5fe8e806e7`）在本轮核查时仍为 pending，尚无 job/log 可核验。因此本批离线测试**未取得通过证据**，不标记 PASS。
 
 即使离线测试通过，也只证明文档/JSON 结构，不证明 SQL、D1、Worker、APP 行为。
 
