@@ -5598,7 +5598,7 @@ var qrcode = function() {
       }).filter(Boolean),
     };
     const btn = $$('cvGo'); btn.disabled = true; setStatus('正在抓取并转换…', '');
-    const base = (localStorage.getItem('sj-api') || 'https://starjump-api-staging.synahcooo.workers.dev').replace(/\/+$/, '');
+    const base = apiBase();
     try {
       const res = await fetch(base + '/api/convert', {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-key': guestKey() },
