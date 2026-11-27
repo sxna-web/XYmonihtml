@@ -1141,3 +1141,31 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 7. 无批准环境时只做规格/mock contract，不连接 staging/production。
 8. 不创建/执行 migration，不接 Worker，不改 HTML/APK/Room/Secrets，不部署。
 9. 更新总进度、总方案和第七十一批接手卡。
+
+
+---
+
+## 第七十批连续性更新（2026-11-27）
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-70`；报告：`docs/backend/StarJump_V2.5_APP_v2_D1Adapter语句契约与隔离环境准入规格报告_第七十批_V2.5-DEV-B1-APP-IDENTITY-70_2026-11-27.md`。
+- 新增 `backend/worker/V2.5-DEV-B1-APP-IDENTITY-70/D1-STATEMENT-CONTRACT.md`、`D1-ISOLATED-ENV-ADMISSION.md`、README。
+- 八个 D1 store 方法现在有具体 SQL 形状、bind 参数顺序、零行/冲突/异常分类、重试边界和 owner-scoped 查询要求。
+- upsertBinding 的两条 statement 必须预先准备后由 D1.batch 顺序执行；batch 返回后 JS 检查 winner；unique(admin,device) 是并发唯一性约束，不能覆盖 key 或复活 revoked。
+- nonce retention 推导：若服务端 timestamp 只接受 `abs(ts-now) <= S`，首次接收时可能处于未来边缘，nonce 最短保留至少 `first_seen + 2*S + safety margin`；具体 S 与 margin 必须由服务端配置冻结。
+- durable rate limit 仍为独立前置依赖；旧 rate_limits schema 未核实，不假定兼容。
+- 已查阅 Cloudflare 官方 prepared statements、return object、D1 batch 文档；batch 按顺序执行，语句失败会中止/回滚批次；D1Result 包含 success/meta/results。该平台文档不证明本项目真实 D1 schema/binding/runtime，也不替代目标 SQL 实测。
+- 本批仅规格文档，无新增代码测试；未连接 D1、未执行 SQL/创建 migration、未接 Worker、未修改 HTML/APK/Room/Secrets/Cloudflare 配置、未部署。D1_NOT_TESTED / APP_PENDING / 不可部署。
+- 下一批第七十一批：独立复核八方法 SQL、审计幂等、nonce 时间边界、legacy share-code 兼容和 durable rate limit；不连接 D1。
+
+### 第七十一批唯一接手卡
+
+**APP v2 D1 statement contract 独立安全复核与审计幂等方案（不连接 D1）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度及第六十八至七十批报告。
+2. 静态审查八方法 SQL 参数、schema 假设、条件、冲突、零行和异常语义。
+3. 审查 upsertBinding winner SELECT 并发正确性与审计追加幂等，不在 batch 内使用 JS 分支。
+4. nonce retention 边界矩阵：未来/过去最大偏移、时间边界、重放、清理前后。
+5. 审查 share-code rotation 与 legacy routes 兼容，不更改未确认政策。
+6. 评估 durable rate-limit 原子计数与旧表适配证据。
+7. 无用户批准的隔离 D1 不连接；不创建/执行 migration，不接 Worker，不改 HTML/APK/Room/Secrets，不部署。
+8. 更新进度、总方案与第七十二批接手卡。
