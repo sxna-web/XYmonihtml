@@ -26,6 +26,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
               if (sql.includes("FROM app_groups WHERE id = ? AND admin_user_id = ?")) return resource;
+              if (sql.includes("FROM subscription_sources s JOIN source_ownership")) return {id:"src1"};
               return null;
             },
             async all() {
@@ -46,7 +47,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
   };
 }
 function businessWrites(db) {
-  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT INTO app_group_sources|DELETE FROM app_group_sources|INSERT INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards)/i.test(x.sql.trim()));
+  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards)/i.test(x.sql.trim()));
 }
 async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"}}={}) {
   const req=new Request("https://worker.test"+path,{
@@ -106,4 +107,32 @@ test("activation query failure fails closed in actual Worker handler",async()=>{
   const db=mockDb({activationFailure:true});
   const {res,json}=await call(db);
   assert.equal(res.status,403);assert.equal(json.code,"VIP_STATUS_UNAVAILABLE");assert.equal(businessWrites(db).length,0);
+});
+
+test("Worker handler rejects cross-owner group update before business write",async()=>{
+  const db=mockDb({activations:activeTrial,resource:null});
+  const {res}=await call(db,{path:"/api/user/app-groups/g1",method:"PUT",body:{name:"Hijack",mode:"assigned"}});
+  assert.equal(res.status,404);assert.equal(businessWrites(db).length,0);
+});
+
+test("Worker handler rejects cross-owner source association before business write",async()=>{
+  const db=mockDb({activations:activeTrial,resource:null});
+  const {res}=await call(db,{path:"/api/user/app-groups/g1/sources",method:"POST",body:{source_id:"src1"}});
+  assert.equal(res.status,404);assert.equal(businessWrites(db).length,0);
+});
+
+test("Worker handler associates only through group-owner and source-owner SQL predicates",async()=>{
+  const db=mockDb({activations:activeTrial});
+  const {res}=await call(db,{path:"/api/user/app-groups/g1/sources",method:"POST",body:{source_id:"src1"}});
+  assert.equal(res.status,201);
+  const write=businessWrites(db).find(x=>x.sql.includes("app_group_sources"));
+  assert.ok(write);assert.match(write.sql,/app_groups WHERE id = \? AND admin_user_id = \?/);assert.match(write.sql,/source_ownership WHERE source_id = \? AND user_id = \?/);
+});
+
+test("Worker handler associates APP member only through group-owner SQL predicate",async()=>{
+  const db=mockDb({activations:activeTrial});
+  const {res}=await call(db,{path:"/api/user/app-groups/g1/members",method:"POST",body:{device_id:"device12345678"}});
+  assert.equal(res.status,201);
+  const write=businessWrites(db).find(x=>x.sql.includes("app_group_members"));
+  assert.ok(write);assert.match(write.sql,/app_groups WHERE id = \? AND admin_user_id = \?/);
 });
