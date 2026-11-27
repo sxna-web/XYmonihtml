@@ -126,3 +126,16 @@ Batch 82 新增独立 workflow：`.github/workflows/worker-app-identity82-review
 6. 将 SQL manifest 要求拆为 identity、limiter、harness 三个接口；补充 placeholder tokenizer 设计与负面向量，不写生产 SQL。
 7. 继续 HMAC A 的跨 key 维度一致性证明方案比较；未冻结前不选生产密钥/阈值/retention，不连接 D1。
 8. 更新总进度、总方案和第八十四批唯一接手卡。
+
+
+## CI 结果后续补充（2026-11-28）
+
+Batch 82 最新离线 workflow 已完成：
+- Run：`46048673912`
+- 结论：`completed / success`
+- Job：`140674247202`，`offline-review`，completed/success
+- Step：`Run synthetic HMAC alias model tests`，success
+- 日志：`Ran 23 tests in 0.034s / OK`（11 个 HMAC 模型测试 + 12 个静态审查测试）
+- 链接：https://github.com/sxna-web/XYmonihtml/actions/runs/46048673912
+
+此前 Run `46048497935` 的 1 项失败仅为测试断言大小写比较错误，已修正；最终 Run 通过。CI 仍然完全离线，不连接 D1、不执行 SQL、不验证真实 HMAC、Worker 或 APK 运行行为。
