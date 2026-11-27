@@ -4,8 +4,8 @@ import { createAppV2ReadHandler } from "./app-v2-read-handler.mjs";
 import { createEntitlementTokenVerifier, createEntitlementTokenAdapter } from "./entitlement-token-adapter.mjs";
 
 const SECRET = "unit-test-secret-that-is-at-least-32-characters";
-const ENT_A = { id: "entitlement_A123", admin_user_id: "admin_A", device_id: "device_12345678", expires_at: "2026-12-01T00:00:00Z" };
-const ENT_B = { id: "entitlement_B456", admin_user_id: "admin_B", device_id: "device_12345678", expires_at: "2026-12-02T00:00:00Z" };
+const ENT_A = { id: "entitlement_A123", admin_user_id: "admin_A", device_id: "device_12345678", status:"active", expires_at: "2026-12-01T00:00:00Z" };
+const ENT_B = { id: "entitlement_B456", admin_user_id: "admin_B", device_id: "device_12345678", status:"active", expires_at: "2026-12-02T00:00:00Z" };
 const GROUP_A = { id: "group_A", adminUserId: "admin_A", enabled: true, mode: "card" };
 const GROUP_B = { id: "group_B", adminUserId: "admin_B", enabled: true, mode: "card" };
 
@@ -65,7 +65,7 @@ test("A token cannot authenticate B entitlement", async () => {
   assert.equal(res.status,403);
 });
 test("missing dedicated secret fails closed", async () => {
-  const { handler } = setup({ secret: undefined });
+  const { handler } = setup({ secret: null });
   const res = await request(handler);
   assert.equal(res.status,503);
   assert.equal((await res.json()).code,"ENTITLEMENT_SECRET_UNAVAILABLE");
