@@ -1,0 +1,35 @@
+name: APP v2 Identity Batch 80 Freeze Checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-80/**"
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-76/d1_validation_matrix.json"
+      - ".github/workflows/worker-app-identity80-freeze.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-80/**"
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-76/d1_validation_matrix.json"
+      - ".github/workflows/worker-app-identity80-freeze.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-identity80-freeze-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-freeze-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run offline contract freeze checks
+        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-80 -p 'test_*.py' -v
