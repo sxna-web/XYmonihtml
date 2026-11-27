@@ -9,7 +9,6 @@ function actionFor(path, method) {
     if (p.length === 4 && method === "DELETE") return "delete_history";
     if (p.length === 5 && p[4] === "sources" && method === "POST") return "associate";
     if (p.length === 5 && p[4] === "members" && method === "POST") return "associate";
-    if (p.length === 6 && p[4] === "members" && method === "DELETE") return "update";
   }
   if (p[2] === "app-links") {
     if (p.length === 3 && method === "POST") return "create";
