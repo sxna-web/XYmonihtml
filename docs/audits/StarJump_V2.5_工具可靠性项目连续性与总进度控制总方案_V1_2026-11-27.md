@@ -802,3 +802,18 @@
 7. 如能取得 6.00.48 ZIP 二进制，单独做只读源码/第三方授权审计；ZIP 元数据不等于源码审计完成。
 8. 不创建正式 migration、不连接生产 D1、不修改 Secrets、不部署。
 9. 实际运行全部测试后更新进度、总方案和第六十批接手卡。
+
+
+## 第五十九批记录与第六十批接手卡（2026-11-27）
+
+- 批次：V2.5-DEV-B1-APP-PROTOCOL-59
+- 范围：多卡密 entitlement 分组组合、同管理员免费分组去重、同名分组序列号标识、card/free loader owner 复核、条件单语句设备占额、handler 与 sync 反例测试。
+- 本地结果：Node 16/16 passed；SQLite 并发 3/3 passed；GitHub Actions 待本批提交后核验。
+- 设备模型：单条条件 INSERT...SELECT + (card_id, device_id) 唯一键；仅完成本地 SQLite 并发模型验证。不得将其视为 Cloudflare D1 已验证。
+- 生产保护：未访问 Cloudflare/生产 D1，未建 migration，未改 Worker/HTML/APK/Secrets，未部署。
+- 当前状态：隔离 DEV 已编码；CI_PENDING；NOT_INTEGRATED；NOT_DEPLOYABLE。
+- 风险：真实 schema、slot 回填、设备释放策略、D1 并发语义和 APK serial label 协议仍待验证。
+
+### 第六十批唯一接手卡
+
+APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不部署）。检查本批 CI；复核重复 entitlement/group ID/name/free 去重；设计 slot migration/backfill/release 但不创建正式 migration；如有明确隔离 D1 才验证并发；只读审计 6.00.48 ZIP 与第三方授权；保持 APK_PENDING；不接入 Worker、不部署。
