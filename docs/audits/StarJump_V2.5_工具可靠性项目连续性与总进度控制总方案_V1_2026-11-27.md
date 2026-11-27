@@ -1407,3 +1407,25 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 7. 更新总进度、总方案和第八十批唯一接手卡。
 
 - 第七十八批离线 CI 实际证据：Run `45997564796` completed/success；Job `140500692553`；Python 3.13.18；23/23 tests passed。范围仅 Python 参考模型/边界反例，不证明 D1、SQL、Worker 或 APP 行为。
+
+
+---
+
+## 第七十九批连续性更新（2026-11-27）
+
+- 批次：`V2.5-DEV-B1-APP-IDENTITY-79`；报告：`docs/backend/StarJump_V2.5_APP_v2身份完整状态转移审计矩阵与限流轮换反例报告_第七十九批_V2.5-DEV-B1-APP-IDENTITY-79_2026-11-27.md`。
+- 新增操作状态矩阵：create-created、create-existing、revoke、share-code rotation 的 preconditions、CAS、成功状态、audit exact-match、失败分类、幂等重试、timeout recovery、rollback 逐项定义。
+- canonical request fingerprint 与 audit envelope 分离；通用 canonical_v1 不足以保证 operation-specific field coverage。actor mapping、reason_code enum/nullability、payload allow-list、target ID audit permission、canonical ordered field list 均标记为 adapter freeze blockers。
+- bind manifest linter 扩展 exact SQL SHA-256、statement ID、placeholder 顺序、唯一 semantic name、source/storage/nullability/missing policy/sensitivity；扫描单/双引号、backtick、bracket identifier、双写转义、行/块注释，拒绝 named/numbered placeholders。
+- HMAC overlap 新增关键反例：分散在 old/new key-version buckets 的历史事件，逐桶独立比较会 undercount；必须基于 immutable event_id 做跨版本 union/dedupe 后原子准入，或证明某一桶有完整历史覆盖。不可简单 sum（双写会重复）或 max(bucket count)。
+- 首轮 Run `45998840209` success，34/34；后续 manifest linter 加强中有失败修订 Run `45998985251`、`45999030188`、`45999045868`，测试夹具已修正，最终 Run `45999063646` 待核验。以最终 Run 日志作为最终测试状态。
+- 本批仅 DEV 文档、离线测试与 workflow；未连接 D1、未读取凭证、未执行 SQL/迁移、未改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、未部署。仍为 `D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE`。
+- **第八十批唯一接手卡：APP v2 adapter contract freeze checklist 与 disposable D1 证据缺口关闭计划（仍不连接 D1）。**
+  1. 重读 AGENTS、功能基线、总方案、进度和第七十四至七十九批材料/最新 CI。
+  2. 对 Batch 79 的 actor mapping、reason enums/nullability、payload allow-list、canonical field order、rotation side effects 分类“已确认/待用户确认/技术验证”，不得自行冻结业务语义。
+  3. 核验 Batch 79 最终 CI；失败先修测试并保留失败记录。
+  4. 将 disposable D1 每个 case 映射到 schema capability、statement、result vector、rollback proof、cleanup evidence，不执行。
+  5. 设计 HMAC event_id union/dedupe 索引/查询成本与 key migration coverage 验证，不设生产阈值。
+  6. 复核 legacy share-code 调用方与 rotation side-effect 兼容风险，不改旧路由/schema。
+  7. 不连接 D1、不读取凭证、不执行 SQL/迁移、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
+  8. 更新总进度、总方案和第八十一批接手卡。
