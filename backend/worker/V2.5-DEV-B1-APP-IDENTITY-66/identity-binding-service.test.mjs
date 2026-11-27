@@ -154,7 +154,7 @@ test("rotated share code blocks old code for new binds but does not silently era
  h.codes.set(CODE_A,{adminUserId:"admin_A",codeVersion:2,active:false});
  h.codes.set("QWER2345",{adminUserId:"admin_A",codeVersion:2,active:true});
  assert.equal((await bind(h,CODE_A,DEVICE_A,"challenge_0002")).code,"IDENTITY_NOT_AVAILABLE");
- const existing=await h.service.resolveCredential({token:old.token,deviceId:DEVICE_A});
+ const existing=await h.service.resolveCredential({token:old.token,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"});
  assert.equal(existing.ok,true);
  const fresh=await bind(h,"QWER2345",DEVICE_A,"challenge_0003");
  assert.equal(fresh.ok,true);
@@ -186,7 +186,7 @@ test("identity credential cannot be used to impersonate another admin",async()=>
  const h=harness();
  const issued=await bind(h);
  const claims=await h.tokenAdapter.verify({token:issued.token,deviceId:DEVICE_A});
- const forged=await h.tokenAdapter.issue({bindingId:claims.bindingId,adminUserId:"admin_B",deviceId:DEVICE_A});
+ const forged=await h.tokenAdapter.issue({bindingId:claims.bindingId,adminUserId:"admin_B",deviceId:DEVICE_A,deviceKeyThumbprint:"key_thumbprint_01"});
  assert.equal((await h.service.resolveCredential({token:forged,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"})).code,"IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
 });
 
@@ -203,7 +203,7 @@ test("group loader must return only enabled free groups owned by exact admin",as
   loadFreeGroups:async()=>[group("bad","admin_B","越权组")],
   identityTokenAdapter:h.tokenAdapter,
  });
- assert.equal((await h.service.resolveManyAndLoadFreeGroups({credentials:[{token:issued.token}],deviceId:DEVICE_A})).code,"IDENTITY_GROUP_SCOPE_MISMATCH");
+ assert.equal((await h.service.resolveManyAndLoadFreeGroups({credentials:[{token:issued.token,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"}],deviceId:DEVICE_A})).code,"IDENTITY_GROUP_SCOPE_MISMATCH");
 });
 
 test("free groups are merged with card groups by admin plus group ID only",()=>{
