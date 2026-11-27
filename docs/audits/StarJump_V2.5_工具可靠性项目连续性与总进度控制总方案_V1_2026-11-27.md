@@ -1468,3 +1468,19 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 首轮 CI Run `46042241488` 因 workflow 用 unittest module path 解析带点目录失败，已修正启动命令为 unittest discovery，并修订两项文本断言。后续 Run `46042360351`、`46042474036` 因新提交而 cancelled；最新 Run `46042494745`（head `d6861056ff6a206783167f09edca5a5fe8e806e7`）核查时仍 pending，尚无 job/log，离线测试不标记通过。
 - 本批无 D1/SQL/migration/credentials/Worker/HTML/APK/Room/Secrets/Cloudflare 变更，无部署。
 - **第八十二批唯一接手卡：**复核 U80-01..08；如 APK ZIP 可读，完成 HTTP/deep-link/token storage 全量调用审计；对 statement matrix 做独立负面复核；验证 HMAC aliases 在 partial backfill/high-water/late retry/rollback 下无 undercount；继续离线，不连接 D1、不部署。
+
+
+---
+
+## 第八十二批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-IDENTITY-82`；报告：`docs/backend/StarJump_V2.5_APP_v2客户端源码调用审计与适配器矩阵负面复核及HMAC别名覆盖反例报告_第八十二批_V2.5-DEV-B1-APP-IDENTITY-82_2026-11-28.md`。
+- 已从 Library 读取并解包 `StarJump-6.00.47-source.zip`，SHA-256 `5a45da3d6e6e42a6aabf776336fdfff8424af0e9c7d756a8fea17f882459f7ab`；完成 Kotlin/Java/XML/config/doc 静态扫描。
+- 6.00.47 未发现 APP 直接调用 legacy APP Worker routes 或 `/v1/*` identity/catalog API；身份绑定、卡密激活、entitlement token、device proof、nonce 与服务端设备槽位尚无客户端实现证据。当前是 APK 内置上游订阅直连 + 五个本地保留组；仅 slot 01 配置，其他四个为占位符。
+- 普通 `sn://subscription`、`clash://install-config` 与代理 profile deep link 只处理导入，不是身份绑定 callback。未发现稳定设备 ID/Keystore key；`allowBackup=true` 且数据库进入备份范围，未来 device credential 必须另行设计不可导出密钥和备份排除。
+- 审计只覆盖 Library 的 6.00.47；仓库树虽有 6.00.48 ZIP，但本轮无法通过文本接口读取二进制，不能将结论外推到 6.00.48/当前安装版本。
+- 独立负面复核认定 Batch 81 JSON 只是 method-level outline，不是 statement-level manifest；limiter/HMAC cases 未完整映射方法；harness cleanup 与产品 adapter 应分离；nonce 与 digest storage contract 未冻结。
+- HMAC candidate A 需要分离 logical event tuple 与 key-version fingerprint aliases；否则 K1/K2 不同 fingerprint 会造成误判。新增 H82-01..14 反例，Python 合成模型本地 11/11 passed；无 D1/SQL 证据。
+- Batch 81 Run `46042494745` 后续已完成 success（Job `140655276165`）；只证明离线静态结构。
+- 本批仅新增 DEV 文档、JSON review metadata、Python model/tests 和 workflow；未修改 APK/Worker/HTML/Room/D1/Secrets/Cloudflare，未部署。
+- **第八十三批唯一接手卡：**查找可读 6.00.48 源码；按用户确认业务规则建立 APK 现状缺口矩阵；拆分 APP v2 discovery/bind、card activation、status、composed catalog、generation/tombstone/ack 契约；设计 Keystore/backup/deep-link；分离 identity/limiter/harness statement manifests；继续 HMAC cross-key dimension consistency proof。U80-01..08 未确认项继续阻断；不连接 D1、不执行 SQL、不部署。
