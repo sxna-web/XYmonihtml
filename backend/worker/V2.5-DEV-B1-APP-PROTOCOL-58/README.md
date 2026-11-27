@@ -32,3 +32,11 @@ node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-58/app-v2-policy.test.mjs
 6. A 23-hour maximum lease is used as a conservative initial policy, subject to device and clock-behavior validation.
 7. This does not implement Android persistence, background scheduling, Room migrations, client acknowledgements, or 24-hour cleanup end-to-end.
 8. Do not deploy or attach this scaffold to production.
+
+
+## CI evidence
+
+- GitHub Actions run: https://github.com/sxna-web/XYmonihtml/actions/runs/45960847230
+- Node.js 22 syntax checks: passed for all `.mjs` files in this folder.
+- Node test result: 36 passed, 0 failed.
+- This validates only isolated DEV policy/contract behavior, not Cloudflare Workers runtime, production D1 schema, Android client behavior, or deployment readiness.
