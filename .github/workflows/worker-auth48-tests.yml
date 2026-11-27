@@ -28,3 +28,5 @@ jobs:
         run: node --check backend/worker/V2.5-DEV-B1-CORE-AUTH-48/worker-auth-adapter.mjs
       - name: Run adapter mock tests
         run: node --test backend/worker/V2.5-DEV-B1-CORE-AUTH-48/worker-auth-adapter.test.mjs
+      - name: Run Worker handler integration tests
+        run: node --experimental-default-type=module --test backend/worker/V2.5-DEV-B1-CORE-AUTH-48/worker-handler.integration.test.mjs
