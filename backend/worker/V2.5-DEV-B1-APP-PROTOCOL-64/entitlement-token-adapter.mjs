@@ -40,9 +40,10 @@ export function createEntitlementTokenAdapter({ db, env, now }) {
   if (typeof secret !== "string" || secret.length < 32) {
     return async () => ({ ok: false, code: "ENTITLEMENT_SECRET_UNAVAILABLE" });
   }
+  const verifierPromise = createEntitlementTokenVerifier(secret);
   return async ({ entitlementId, deviceId, token }) => {
     let verifyToken;
-    try { verifyToken = await createEntitlementTokenVerifier(secret); }
+    try { verifyToken = await verifierPromise; }
     catch { return { ok: false, code: "TOKEN_VERIFIER_UNAVAILABLE" }; }
     if (!verifyToken) return { ok: false, code: "ENTITLEMENT_SECRET_UNAVAILABLE" };
     return resolveAppEntitlement({ db, entitlementId, deviceId, token, verifyToken, ...(now ? { now } : {}) });
