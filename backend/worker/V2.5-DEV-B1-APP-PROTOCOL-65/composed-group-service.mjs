@@ -157,9 +157,19 @@ export function createComposedEntitlementGroupService({
 
     const composed = composeEntitlementGroups({ entitlements, groupsByEntitlement });
     if (!composed.ok) return fail(composed.code);
+    const groups = composed.groups.map(group => ({
+      id: group.id,
+      name: group.name,
+      adminUserId: group.adminUserId,
+      mode: group.mode,
+      enabled: group.enabled,
+      origin: group.origin,
+      displayName: group.displayName,
+      ...(group.origin === "CARD" ? { cardSerialLabel: group.cardSerialLabel } : {}),
+    }));
     return {
       ok: true,
-      groups: composed.groups,
+      groups,
       entitlementCount: entitlements.length,
       deviceId,
     };
