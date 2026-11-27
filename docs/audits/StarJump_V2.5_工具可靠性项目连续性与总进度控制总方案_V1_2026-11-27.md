@@ -612,3 +612,31 @@
 8. 不改 D1 schema、不调用生产 API、不操作 Secrets、不部署。
 9. 完成后更新批次报告、进度和第五十三批接手卡。
 
+
+
+## 第五十二批完成与第五十三批接手卡（2026-11-27）
+
+### 第五十二批状态：HELPER_IMPLEMENTED / CI_PASSED / NOT_INTEGRATED / NOT_DEPLOYABLE
+
+- 批次：`V2.5-DEV-B1-APP-TOKEN-52`
+- 报告：`docs/backend/StarJump_V2.5_APP精确授权解析器与多授权隔离测试报告_第五十二批_V2.5-DEV-B1-APP-TOKEN-52_2026-11-27.md`
+- 报告 Commit：`ce818b307769b0d5b6b44b8d6a0d12deec1ee9d4`
+- 新增独立 helper：`backend/worker/V2.5-DEV-B1-APP-TOKEN-52/entitlement-resolver.mjs`；按 entitlement_id + device_id 精确选择，不取最新记录；服务端返回 admin_user_id；检查状态、时间和 Token；异常 fail closed。
+- CI Run `45955817050` completed/success；语法检查和 resolver 测试步骤成功；测试文件有 14 个用例。
+- 本批没有接入现有 Worker，未修改 APK 协议、D1、Secrets、HTML；未访问生产 Cloudflare/D1；未部署。
+- status/free grant/share code/nodes 授权范围等旧 Worker 风险仍存在，不能误报修复。
+
+### 第五十三批唯一首要任务
+
+**APP 读取接口认证边界与分组数据范围的隔离 Handler 验证。**
+
+1. 重读 AGENTS、功能基线、API 规范、总方案、进度、第五十一/五十二批报告。
+2. 检查第五十二批 resolver 与 CI 结果，保留历史版本。
+3. 在新版本目录建立只读 APP read-handler 测试 harness，覆盖 status、groups、free、links、nodes。
+4. 每个接口测试无 Token、错误 Token、entitlement/device 错配、同设备两个管理员授权、过期/撤销、D1 异常。
+5. 明确 free share code 的绑定入口与受保护节点数据读取边界；无可信设备凭证不得下发受保护节点数据。
+6. 对 nodes/groups 建立 APP 分组/来源授权范围测试；真实关联字段未核实前，不改生产 SQL。
+7. 不改变 APK 请求协议，不接入旧 Worker，不改 D1 schema，不操作 Secrets，不部署。
+8. APK 源码继续标记未解包；不得宣称 Header Token 或多授权客户端兼容。
+9. 完成后更新批次报告、进度和第五十四批接手卡。
+
