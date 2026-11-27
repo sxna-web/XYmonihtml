@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "interface",
+    "status",
+    "policy",
+    "statements"
+  ],
+  "properties": {
+    "manifest_version": {
+      "const": "1.0"
+    },
+    "interface": {
+      "enum": [
+        "identity_adapter",
+        "limiter_adapter",
+        "disposable_harness"
+      ]
+    },
+    "status": {
+      "const": "DESIGN_ONLY_NO_SQL"
+    },
+    "policy": {
+      "type": "object"
+    },
+    "statements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/statement"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "statement": {
+      "type": "object",
+      "required": [
+        "statement_id",
+        "method",
+        "purpose",
+        "sql_state",
+        "sql_sha256",
+        "placeholders",
+        "binds",
+        "result_contract",
+        "evidence_cases"
+      ],
+      "properties": {
+        "statement_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{2,95}$"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sql_state": {
+          "const": "NOT_FROZEN"
+        },
+        "sql_sha256": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "placeholders": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "binds": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "result_contract": {
+          "type": "object"
+        },
+        "evidence_cases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
