@@ -53,13 +53,15 @@ class AliasRegistryConcurrencyTests(unittest.TestCase):
         self.assertEqual(r.event_aliases[("old","K2","device")],"new-fp")
         self.assertEqual(r.dimension_aliases[("K2","device","new-fp")],"dim-old")
 
-    def test_11_backfill_cannot_split_dimension_identity(self):
+    def test_11_backfill_bridges_same_dimension_but_rejects_conflicting_alias(self):
         r=AliasRegistry()
         r.import_legacy_event("old","read","device","K1","old-fp","dim-old",10,"w1","allow")
-        with self.assertRaises(IntegrityConflict): r.backfill_event("old",{"K1":"old-fp","K2":"new-fp"})
-        # If K2 alias was previously claimed by a different dimension, it is a hard conflict.
-        r.dimension_aliases[("K2","device","new-fp")]="dim-other"
-        with self.assertRaises(IntegrityConflict): r.backfill_event("old",{"K1":"old-fp","K2":"new-fp"})
+        r.backfill_event("old",{"K1":"old-fp","K2":"new-fp"})
+        self.assertEqual(r.dimension_aliases[("K2","device","new-fp")],"dim-old")
+        r2=AliasRegistry()
+        r2.import_legacy_event("old","read","device","K1","old-fp","dim-old",10,"w1","allow")
+        r2.dimension_aliases[("K2","device","new-fp")]="dim-other"
+        with self.assertRaises(IntegrityConflict): r2.backfill_event("old",{"K1":"old-fp","K2":"new-fp"})
 
     def test_12_partial_backfill_blocks_retirement(self):
         r=AliasRegistry()
