@@ -3,7 +3,7 @@
 - 批次：`V2.5-DEV-B1-APP-IDENTITY-79`
 - 日期：2026-11-27
 - 范围：create-created / create-existing / revoke / rotation 状态矩阵、审计 envelope 覆盖、prepared bind manifest 静态校验、HMAC overlap 与 cleanup 反例。
-- 状态：`DESIGN_MATRIX_COMPLETE / OFFLINE_CI_PENDING_FINAL_RETRY / D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE`。
+- 状态：`DESIGN_MATRIX_COMPLETE / OFFLINE_CI_PASS / D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE`。
 
 ## 一、本批交付
 
@@ -42,9 +42,9 @@ Cleanup 必须保护活动窗口、重试/幂等 horizon；只允许在 retain_u
 ## 三、CI 与修订记录
 
 - 首轮 CI Run `45998840209`：completed/success，Python 3.13.18，34/34 tests passed。
-- 后续加强 manifest SQL hash 与数字型 named-placeholder 检查时，出现连续修订中的失败 Run `45998985251`、`45999030188`、`45999045868`；这些失败发生在测试夹具变更阶段，未涉及应用代码或 D1。
-- 已修正测试编号、SQL hash fixture 与 manifest 参数；最终修订 Run `45999063646` 尚待完成核验，不能提前把最终修订标记为通过。
-- 首轮 34/34 仅证明当时版本的离线参考测试通过；最终修订须以最新 CI Run 日志为准。
+- 后续加强 manifest SQL hash 与数字型 named-placeholder 检查时，出现修订失败 Run `45998985251`、`45999030188`、`45999045868`；失败来自测试夹具/编号修订，不涉及应用代码或 D1，均已修正并保留记录。
+- 最终修订 CI Run `45999063646` completed/success；Job `140505777656`；Python `3.13.18`；日志 `Ran 36 tests in 0.002s`、`OK`，36/36 通过。
+- Run：https://github.com/sxna-web/XYmonihtml/actions/runs/45999063646。该结果仅为离线静态参考测试，不是 D1/SQL/Worker/APP 测试。
 
 ## 四、影响与安全边界
 
