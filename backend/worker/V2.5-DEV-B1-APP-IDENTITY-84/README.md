@@ -2,7 +2,7 @@
 
 - Batch: V2.5-DEV-B1-APP-IDENTITY-84
 - Date: 2026-11-28
-- Status: MODEL_AND_MANIFESTS_IMPLEMENTED / OFFLINE_REFERENCE_CHECKS_PASS_17_OF_17 / REPOSITORY_SUITE_NOT_RUN / ACTIONS_NOT_VERIFIED / D1_NOT_TESTED / NOT_DEPLOYABLE
+- Status: MODEL_AND_MANIFESTS_IMPLEMENTED / OFFLINE_CI_PASS_29_OF_29 / D1_NOT_TESTED / NOT_DEPLOYABLE
 
 ## Files
 - alias_registry_model.py / test_alias_registry_model.py: in-memory atomicity reference model and concurrency/adversarial tests. Synthetic IDs only; no HMAC cryptography, SQL or D1.
@@ -15,7 +15,7 @@ python -m unittest -v test_alias_registry_model test_manifest_validator
 
 ## Test evidence boundary
 
-17 local reference checks were executed in this session (8 alias/concurrency/backfill scenarios and 9 manifest-boundary scenarios), all passed. The checked-in unittest files were not executed from the repository runtime; GitHub Actions status is not verified. These checks do not prove D1 transaction semantics, HMAC cryptography or production behavior.
+GitHub Actions Run 46057517659 / Job 140703508367 completed successfully on commit d595a08b72fc6e14e7f24dfaa6939a900403aa43. Python 3.13.18 ran the checked-in unittest suite: 29/29 passed (20 alias registry model tests + 9 manifest validator tests). This is synthetic/offline evidence only; it does not prove D1 transaction semantics, HMAC cryptography or production behavior.
 
 ## Critical model rule
 During a multi-key overlap, a dimension mapping must be resolved with aliases for every active key version in one atomic operation. K1-only or K2-only first-seen requests are rejected. The model simulates atomicity with a process lock; this is not proof of D1 transaction/index behavior. Production must enforce equivalent uniqueness and all-or-nothing semantics with separately reviewed SQL in an authorized disposable environment.
