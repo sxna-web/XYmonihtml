@@ -866,3 +866,42 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 5. 若出现明确隔离 D1，先只读核对 schema 并生成 backfill dry-run 冲突报告；否则仅完善 fixture/冲突报告测试，不接生产或 staging。
 6. 继续评估 resolver、group loader、group composition、slot adapter 接入 Worker 的最小影响方案；不修改原始 Worker。
 7. 更新总进度和第六十三批接手卡；不创建正式 migration、不改 HTML/APK/Secrets、不部署。
+
+
+## 14. 第六十二批进度与第六十三批接手卡（2026-11-27）
+
+### 第六十二批状态
+
+- 版本：`V2.5-DEV-B1-APP-PROTOCOL-62`
+- 报告：`docs/backend/StarJump_V2.5_APP_v2回填冲突报告与隔离D1可用性核查_第六十二批_V2.5-DEV-B1-APP-PROTOCOL-62_2026-11-27.md`
+- CI Run：`45967697304` completed/success；Node 22 语法检查通过，5/5 tests passed，0 failed。
+- 当前 main tree 180 entries，未截断；没有 Wrangler 配置或可核实的 APP v2 隔离 D1 binding/database ID。未将生产或 staging 当作隔离测试目标。
+- 新增脱敏 backfill dry-run 报告器；只接受规范化输入，不执行 SQL；报告不输出 deviceKey/entitlementId，固定标注 schema UNVERIFIED、sqlExecuted=false、migrationCreated=false、approvalRequired=true。
+- Library 仍只有 6.00.47，6.00.48 无可读取副本，APP_PENDING。
+- 设备过期/撤销释放和解绑审批人仍待用户确认；保守 hold 仅为提案。
+- 未连接 D1、未创建 migration、未修改 Worker/HTML/APK/Secrets、未部署。
+
+### APP v2 当前状态补充
+
+| 项目 | 当前状态 |
+|---|---|
+| 槽位生命周期纯函数 | 已编码、CI 通过；未接入 |
+| Backfill 冲突 dry-run 报告器 | 已编码、CI 通过；无真实数据输入 |
+| 隔离 D1 兼容/并发 | 未验证；未发现明确隔离 binding |
+| 6.00.48 第三方源码审计 | 受阻；二进制不可读取 |
+| Worker v2 实际路由接入 | 未实施 |
+| APK Room/API v2 | 未实施；6.00.47 显示 destructive migration 风险 |
+| 真实 APP 联调/部署 | 未进行 |
+
+### 第六十三批唯一首要任务
+
+**APP v2 真实 Worker 接入前置差距与最小集成边界审查（继续隔离，不部署）。**
+
+1. 重读 AGENTS、功能基线、API、D1 保护规范、总方案、进度及第五十一至六十二批相关报告。
+2. 复核第六十二批 CI Run 45967697304、脱敏输出与 backfill planner 组合边界。
+3. 对照用户指定的原始 Worker/HTML 两份基准文件，绘制旧 APP 路由、鉴权、卡密/分组/节点查询与新 resolver/loader/composition/slot helper 的逐路由差距矩阵；只读，不改原始文件。
+4. 明确旧 API 的 fail-closed 边界和兼容窗口；6.00.48 未审计前不得宣称 Header Token 或多 entitlement 客户端兼容。
+5. 形成最小 Worker 集成文件布局、适配器接口、feature flag 与回滚顺序；不接入生产 Worker。
+6. 槽位释放/解绑审批未确认项继续保留，不擅自冻结。
+7. 若无 6.00.48 ZIP 与隔离 D1，保持 APK_PENDING / D1_NOT_TESTED；不创建 migration、不操作 Secrets、不部署。
+8. 更新总进度和第六十四批接手卡。
