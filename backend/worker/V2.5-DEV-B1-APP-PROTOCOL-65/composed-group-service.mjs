@@ -53,11 +53,12 @@ function validateLoadedScope(loaded, entitlement) {
  */
 export function createComposedEntitlementGroupService({
   resolveEntitlement,
+  classifyEntitlement,
   loadGroupsForEntitlement,
   loadCardSerialLabel,
 }) {
   for (const [name, fn] of Object.entries({
-    resolveEntitlement, loadGroupsForEntitlement, loadCardSerialLabel,
+    resolveEntitlement, classifyEntitlement, loadGroupsForEntitlement, loadCardSerialLabel,
   })) {
     if (typeof fn !== "function") throw new TypeError(`Missing service dependency: ${name}`);
   }
@@ -93,16 +94,30 @@ export function createComposedEntitlementGroupService({
       if (!resolved || resolved.ok !== true || !entitlement ||
           entitlement.id !== credential.entitlementId ||
           entitlement.device_id !== deviceId ||
-          !ID_RE.test(entitlement.admin_user_id || "") ||
-          !["CARD", "IDENTITY"].includes(entitlement.kind) ||
-          (entitlement.kind === "CARD" && !ID_RE.test(entitlement.card_id || "")) ||
-          (entitlement.kind === "IDENTITY" && entitlement.card_id != null)) {
+          !ID_RE.test(entitlement.admin_user_id || "")) {
         return fail(resolved?.code || "ENTITLEMENT_SCOPE_DENIED");
       }
 
+      let classification;
+      try {
+        classification = await classifyEntitlement(entitlement);
+      } catch {
+        return fail("ENTITLEMENT_CLASSIFICATION_UNAVAILABLE");
+      }
+      if (!classification || !["CARD", "IDENTITY"].includes(classification.kind) ||
+          (classification.kind === "CARD" && !ID_RE.test(classification.cardId || "")) ||
+          (classification.kind === "IDENTITY" && classification.cardId != null)) {
+        return fail("ENTITLEMENT_CLASSIFICATION_INVALID");
+      }
+      const scopedEntitlement = {
+        ...entitlement,
+        kind: classification.kind,
+        card_id: classification.cardId ?? null,
+      };
+
       let loaded;
       try {
-        loaded = await loadGroupsForEntitlement(entitlement);
+        loaded = await loadGroupsForEntitlement(scopedEntitlement);
       } catch {
         return fail("GROUP_SCOPE_UNAVAILABLE");
       }
@@ -111,9 +126,9 @@ export function createComposedEntitlementGroupService({
       }
 
       let cardSerialLabel = null;
-      if (entitlement.kind === "CARD") {
+      if (classification.kind === "CARD") {
         try {
-          cardSerialLabel = await loadCardSerialLabel(entitlement);
+          cardSerialLabel = await loadCardSerialLabel(scopedEntitlement);
         } catch {
           return fail("CARD_SERIAL_LABEL_UNAVAILABLE");
         }
@@ -125,9 +140,9 @@ export function createComposedEntitlementGroupService({
       entitlements.push({
         id: entitlement.id,
         adminUserId: entitlement.admin_user_id,
-        kind: entitlement.kind,
-        ...(entitlement.kind === "CARD" ? {
-          cardId: entitlement.card_id,
+        kind: classification.kind,
+        ...(classification.kind === "CARD" ? {
+          cardId: classification.cardId,
           cardSerialLabel: cardSerialLabel.trim(),
         } : {}),
       });
