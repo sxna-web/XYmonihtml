@@ -1,0 +1,25 @@
+name: APP Protocol 63 Integration Boundary Tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-63/**"
+      - ".github/workflows/worker-app-protocol63-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-integration-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check
+        run: node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-63/integration-boundary.mjs
+      - name: Integration boundary tests
+        run: node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-63/integration-boundary.test.mjs
