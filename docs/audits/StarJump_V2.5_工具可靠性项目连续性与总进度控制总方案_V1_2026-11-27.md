@@ -640,3 +640,30 @@
 8. APK 源码继续标记未解包；不得宣称 Header Token 或多授权客户端兼容。
 9. 完成后更新批次报告、进度和第五十四批接手卡。
 
+
+
+## 第五十三批完成与第五十四批接手卡（2026-11-27）
+
+### 第五十三批状态：POLICY_HELPER_IMPLEMENTED / CI_PASSED / NOT_INTEGRATED / NOT_DEPLOYABLE
+
+- 批次：`V2.5-DEV-B1-APP-READ-53`
+- 报告：`docs/backend/StarJump_V2.5_APP读取接口认证边界与分组范围隔离策略测试报告_第五十三批_V2.5-DEV-B1-APP-READ-53_2026-11-27.md`
+- 报告 Commit：`ebe08239f56674c916d9a4c155e7d32c88344023`
+- 新增隔离策略 helper：`backend/worker/V2.5-DEV-B1-APP-READ-53/read-access-policy.mjs`，复用第五十二批精确 entitlement resolver；free share-code 只作为绑定入口，不授予节点/分组读取；分组范围 predicate 同时验证管理员归属和显式 groupId allowlist。
+- CI Run `45956257572` completed/success；Node 22 语法检查和 23 项 mock policy tests 通过。
+- 本批未接入 Worker handler；未修改 Worker/HTML/D1/Secrets/APK；未访问生产环境；未部署。
+- 旧 Worker 的 status/free/groups/nodes/links 风险仍未修复；不得把策略 helper 的测试通过等同于实际接口安全修复。
+
+### 第五十四批唯一首要任务
+
+**APP 读取接口与分组授权关系的源码/数据契约核实及最小接入方案。**
+
+1. 重读 AGENTS、功能基线、API 规范、目录规范、总方案、进度和第五十一至五十三批报告。
+2. 只读核对仓库内 DDL/migrations 与 Worker APP SQL，明确 app_entitlements、app_groups、app_group_sources、app_group_members、app_free_grants、admin_share_codes 字段和关系；不推断生产 D1。
+3. 检查是否存在卡密到分组授权关联表/字段，不预设名称。
+4. 明确 entitlement 与 public/assigned/free 分组可见规则的关联方式；卡密分组必须按卡密管理员及配置组范围过滤。
+5. 输出 status/groups/free/links/nodes 最小兼容接入方案、响应结构影响、APK 协议风险。
+6. 若关联字段证据充分，可在新版本 Worker 副本实施单一读取 handler 并 Worker.fetch + mock D1 测试；否则明确阻塞，不编造 SQL。
+7. 不改 D1 schema、不访问生产、不操作 Secrets、不部署；不擅自修改 APK query Token 协议。
+8. 完成后更新报告、进度、总方案与第五十五批接手卡。
+
