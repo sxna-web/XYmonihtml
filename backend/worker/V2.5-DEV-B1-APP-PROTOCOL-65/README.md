@@ -35,7 +35,7 @@ Tokens are placed in the POST body, not the URL or logs. Each credential is inde
 
 ## Integration boundary
 
-The service accepts injected `resolveEntitlement`, `loadGroupsForEntitlement`, and `loadCardSerialLabel` dependencies. The expected group loader is compatible with the Batch 59 dependency-injected loader, while composition reuses Batch 60's hardened projection. The real SQL adapters are not implemented here because the production D1 schema and isolated D1 binding have not been verified.
+The service accepts injected `resolveEntitlement`, `classifyEntitlement`, `loadGroupsForEntitlement`, and `loadCardSerialLabel` dependencies. Classification is a mandatory server-side adapter: it must derive CARD vs IDENTITY from verified server records and must not trust request fields. For CARD, the classified card ID must match the resolved entitlement's card_id whenever present. This is intentionally explicit because the existing observed entitlement schema does not establish a universal `kind` column. The expected group loader is compatible with the Batch 59 dependency-injected loader, while composition reuses Batch 60's hardened projection. The real SQL adapters are not implemented here because the production D1 schema and isolated D1 binding have not been verified.
 
 The batch 64 single-entitlement `groups/nodes/links/status` routes remain unchanged. This new composed endpoint is a separately isolated proposal for the APP multi-card group-list use case. Node reads remain scoped to the exact entitlement and must not use the union of groups from other cards.
 
