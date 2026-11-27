@@ -2,7 +2,7 @@
 
 - 批次：`V2.5-DEV-B1-APP-IDENTITY-80`
 - 日期：2026-11-27
-- 状态：`PRE_IMPLEMENTATION_REVIEW / BUSINESS_FREEZE_BLOCKED / OFFLINE_CI_PENDING_FINAL / D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE`
+- 状态：`PRE_IMPLEMENTATION_REVIEW / BUSINESS_FREEZE_BLOCKED / OFFLINE_CI_PASS_24_OF_24_FINAL / D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE`
 - 范围：业务规则与技术提案分层、D1-001..034 证据映射、HMAC key-version union/dedupe 索引和迁移证明、legacy caller 兼容清单。
 
 ## 一、本批结论
@@ -68,7 +68,7 @@ Batch 76 的 D1-001..026 全部逐项映射到必须观察的数据库行为；�
 
 - 首轮 Run `46000337282`：24 项结构测试中 4 项失败，均为测试断言文案与实际文档措辞不一致；不是 D1 或业务实现测试。
 - 第二轮 Run `46000406826`：24 项中 1 项因大小写不一致失败；测试断言已修正。
-- 最终修订 Run `46000471562`：等待最终日志确认；未确认前不标记通过。
+- 最终修订 Run `46000471562` completed/success；Job `140510520667`；Python 3.13；`Ran 24 tests ... OK`，24/24 通过。Run：https://github.com/sxna-web/XYmonihtml/actions/runs/46000471562。
 - 测试只验证本批静态清单/矩阵/兼容文档结构，不连接网络或 D1，不执行 SQL，不验证 Worker/APP 行为。
 
 ## 七、影响、安全与回滚
