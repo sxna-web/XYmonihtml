@@ -1354,3 +1354,28 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 5. 继续完善限流多维并发、共享 NAT、时钟、cleanup race、HMAC key overlap 的静态用例和证据模板，不设生产阈值。
 6. 不生成/执行生产 migration，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
 7. 更新总进度、总方案与第七十八批唯一接手卡。
+
+
+## 14. 第七十七批结果与第七十八批唯一接手卡（2026-11-27）
+
+### 第七十七批结果
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-77`；报告：`docs/backend/StarJump_V2.5_APP_v2_D1原子断言SQL静态复核与隔离执行器准入契约报告_第七十七批_V2.5-DEV-B1-APP-IDENTITY-77_2026-11-27.md`。
+- 新增 `SQL-PORTABILITY-AND-ASSERTION-REVIEW.md`、`D1-HARNESS-ADMISSION-CONTRACT.md`、README、离线结构 validator 和 workflow。
+- 核心静态发现：CHECK(NULL) 语义要求 assertion 同时 NOT NULL + CHECK=1；条件 INSERT-SELECT 零行不触发 SQL error；最终 receipt 必须是同 batch 最后一个无条件写入，并以 CASE 产生 0/1 后触发 CHECK；DO NOTHING 必须由完整 envelope assertion 兜底。
+- 发现 Batch 74 existing-binding receipt 允许无 created audit / nullable key，与 Batch 75 NOT NULL audit_event_key fixture 不一致；owner-scoped receipt lookup 与全局 operation_id 主键作用域也未冻结；payload delimiter 拼接不具备无歧义 canonicalization。列入第七十八批优先收敛。
+- Harness 只形成准入契约：默认禁用、无默认 DB/binding/credential、独立核实 database ID 与 binding、只读/写入/cleanup 分开授权、run namespace 严格隔离、失败停止。未创建可连接 D1 的 runner。
+- CI workflow 已提交，结果待实际运行核验；不宣称通过。
+- 未连接任何 D1、未读取凭证、未执行 SQL/迁移、未修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、未部署。状态：STATIC_REVIEW_COMPLETE / D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 第七十八批唯一接手卡
+
+**APP v2 identity 原子操作候选协议冲突收敛与离线反例测试（仍不连接 D1）。**
+
+1. 重新读取 AGENTS、功能基线、数据库保护规范、总方案、进度、第七十四至七十七批文件和最新 CI 结果。
+2. 冻结 created/existing binding 两种 operation receipt/audit 语义，补充既有绑定路径反例测试；不得为旧绑定伪造 created 审计。
+3. 为 operation_id owner scope、audit event key scope、canonical payload 编码、NULL/空串/缺失字段差异建立明确契约与反例测试。
+4. 复核 create/revoke/rotation 三种 final assertion 的每个必需谓词及 CAS 输入输出；建立占位符数量/顺序静态检查。
+5. 完善 limiter HMAC 双 key overlap 和 cleanup/admission 竞态证据规格，不设生产阈值。
+6. 仍不连接 D1、不读取凭证、不执行 SQL、不创建 migration、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
+7. 更新进度与总方案，给出第七十九批唯一接手卡。
