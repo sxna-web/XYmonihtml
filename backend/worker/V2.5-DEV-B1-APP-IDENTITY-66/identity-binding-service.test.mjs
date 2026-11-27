@@ -51,7 +51,7 @@ function harness() {
       groupCalls.push(adminId);
       return adminId==="admin_A"?[group("free_A","admin_A")]:adminId==="admin_B"?[group("free_B","admin_B")]:[];
     },
-    identityTokenAdapter,
+    identityTokenAdapter: tokenAdapter,
     now:()=>NOW,
   });
   return {service,codes,eligibility,bindings,rateCalls,challengeCalls,createCalls,groupCalls,tokenAdapter};
