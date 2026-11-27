@@ -1,7 +1,7 @@
 # StarJump APP v2 isolated integration validation — Batch 59
 
 - Version: V2.5-DEV-B1-APP-PROTOCOL-59
-- Status: isolated DEV code and local tests; CI pending until workflow completes; not wired into the existing Worker; not deployable.
+- Status: isolated DEV code; GitHub Actions passed; not wired into the existing Worker; not deployable.
 - Runtime: Node.js 22 and Python 3 SQLite.
 
 ## Implemented in this isolated batch
@@ -34,6 +34,13 @@ Before any future production proposal, the project must decide how existing acti
 
 - Node tests: node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/group-composition.test.mjs
 - SQLite concurrency tests: python -m unittest backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/device_slots_sqlite_test.py
+
+## CI evidence
+
+- GitHub Actions run: https://github.com/sxna-web/XYmonihtml/actions/runs/45963909988
+- Node.js 22: fifth-eighth batch 36/36 and fifth-ninth batch 16/16 passed.
+- Python 3.12 SQLite concurrency tests: 3/3 passed.
+- All `.mjs` syntax checks passed. This does not establish D1 runtime compatibility or production readiness.
 
 ## Boundaries
 
