@@ -428,3 +428,43 @@ APK 兼容要求：
 ## 12. 变更记录
 
 - 2026-11-27：基于归档 Worker 和已提交权限矩阵，形成正式修复影响分析、分阶段实施、数据库影响、API/客户端兼容、测试和回滚计划。只读检查，无代码和生产变更。
+
+
+## 13. 补充：旧版管理 HTML API 调用方静态核对
+
+核对文件：
+`原始StarJump_V1点0_Final-zip-26-11-25-14:56/index.html`
+
+Blob：`（本轮读取到文件内容；此处不以归档 HTML 代表线上当前后台版本）`
+
+本轮静态检索结果：
+- 文件约 276 KB；
+- 发现约 20 处 `fetch(`；
+- 引用了 `/api/user/app-groups`、`/api/user/app-links`、`/api/user/app-cards`、`/api/convert`、`/api/convert/groups`、`/api/convert/links`、`/api/convert/groups/rename`、`/api/user/sources` 等路径；
+- 未发现该 HTML 直接调用 `/api/app/status`、`/api/app/nodes`、`/api/app/groups`、`/api/app/links`、`/api/app/free`；这些属于 APK/APP 客户端调用范围，必须另行解包核对，不能据此认为 APK 不调用。
+
+发现的兼容风险：
+1. 该 HTML 用户面板的“立即同步”按钮调用 `/api/admin/sync`，而用户态来源同步的正确 API 是 `/api/user/sources/:id/sync`。此前审计已登记该差异；修复前需确认线上当前 HTML 是否仍有该调用。
+2. 普通转换页面将 guest_key 放在 `/api/convert/groups?guest_key=...` 和 `/api/convert/links?guest_key=...` 的 URL query；rename/revoke 使用 `x-guest-key` 请求头。修复匿名凭证时必须同时迁移这些调用点，不能只改 Worker。
+3. HTML 的用户态管理请求使用 `Authorization: Bearer <token>`；导出 APP 卡密的请求也通过 Bearer Header，但当前前端代码对导出响应没有先验证 `res.ok`/错误 JSON，可能把错误响应当 CSV 下载（此前已登记）。
+4. HTML 的 API base 默认值包含 staging Worker URL。它是归档页面中的默认值，不构成当前生产 API 地址或生产部署配置的证明。
+5. HTML 调用 APP 管理端点，但没有 APP 客户端授权 Token 传递逻辑；APP entitlement Token/device_id 的真实调用端仍须从 APK 源码核实。
+
+**结论：** 本轮只核对了归档 HTML，未核对当前线上管理后台/最新前端版本。任何接口鉴权或字段修改前，必须再次对照实际部署 HTML 和当前 APK 客户端，建立 endpoint→caller→request fields→response fields 的完整兼容清单。
+
+## 14. 阶段 0 核查状态更新
+
+| 项目 | 当前状态 | 是否允许进入生产修复 |
+|---|---|---|
+| AGENTS.md / V2.5 功能基线 | 已读取 | 是（规范已明确） |
+| 动作级权限矩阵 / 第三批审计 | 已读取 | 是（需求与差异已有基线） |
+| 仓库归档 Worker | 已读取 | 否（不能证明是线上版本） |
+| 仓库归档 HTML | 已读取部分 API 调用点 | 否（不能证明是线上 HTML） |
+| 当前线上 Worker 版本 | 未核实 | **阻塞** |
+| 当前线上 HTML 版本 | 未核实 | **阻塞** |
+| APK API 调用与 Token 存储 | 未解包核验 | **阻塞 APP Token 改造** |
+| 正式 D1 schema/迁移账本 | 未核实 | **阻塞所有生产 D1 变更** |
+| Secret 配置状态 | 未核实 | **阻塞密钥 fail-closed 上线** |
+| 独立测试 Worker/D1 | 未核实 | **阻塞集成测试** |
+
+因此下一步仍然是补齐当前部署基线和客户端调用证据。不能因为已有归档 Worker/HTML 静态检查就直接开始生产代码替换。
