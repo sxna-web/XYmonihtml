@@ -1,0 +1,44 @@
+name: APP Protocol 60 Isolated Regression Tests
+
+on:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-58/**"
+      - ".github/workflows/worker-app-protocol60-tests.yml"
+  pull_request:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-58/**"
+      - ".github/workflows/worker-app-protocol60-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax check
+        run: |
+          for file in backend/worker/V2.5-DEV-B1-APP-PROTOCOL-58/*.mjs backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/*.mjs backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/*.mjs; do
+            node --check "$file"
+          done
+      - name: APP protocol regression tests
+        run: |
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-58/app-v2-policy.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/group-composition.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/group-composition.test.mjs
+      - name: Atomic device reservation SQLite tests
+        run: python backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/device_slots_sqlite_test.py
