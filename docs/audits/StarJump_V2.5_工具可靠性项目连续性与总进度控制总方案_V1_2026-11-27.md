@@ -492,12 +492,12 @@
 
 - 批次：`V2.5-DEV-B1-CORE-AUTH-49`
 - 报告：`docs/backend/StarJump_V2.5_Worker_APP管理路由对象归属加固与Handler集成测试报告_第四十九批_V2.5-DEV-B1-CORE-AUTH-49_2026-11-27.md`
-- 报告 Commit：`c501249b98751aef5326e56f320bf428d5e04d72`
+- 报告 Commit：`e77228f22dac3e1e8e880a0758adce963a7a9440`
 - 版本 Worker：`backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js`，Blob SHA `a4689380215e95c1c9f605fc974cc553b3e7037f`。
 - adapter：`worker-auth-adapter.mjs`，Blob SHA `2f91941c68082a44d5e23e1e25b416ae2901e0f0`。
 - adapter tests：`worker-auth-adapter.test.mjs`，Blob SHA `86e226e1a14c00359f7e23ce08913830f1435814`。
 - handler tests：`worker-handler.integration.test.mjs`，Blob SHA `d0303a2ed5a9e84d938fb95b9d46711444050abd`。
-- README：`b2497b360f67118233a8084547c18e890582661b`。
+- README：`e3b124c9e9977b4eba57fabcb08ac7fb0c943928`。
 - CI Workflow：`.github/workflows/worker-auth49-tests.yml`；Run ID `45954203952`；Node.js v22.23.5；Worker ESM syntax、adapter syntax均通过；adapter tests 12/12、Worker.fetch handler tests 12/12，均 0 failed。
 - handler tests 实际调用版本 Worker `fetch()` 入口并使用 mock D1；这比纯函数测试更接近路由，但不等于 Cloudflare Workers runtime 或真实 D1 集成。
 - 已加固 APP 分组 PUT、sources POST、members POST 最终 SQL 的 owner predicates；正式 VIP 到期历史删除仍在最终 DELETE SQL 限定 owner + created_at cutoff。
