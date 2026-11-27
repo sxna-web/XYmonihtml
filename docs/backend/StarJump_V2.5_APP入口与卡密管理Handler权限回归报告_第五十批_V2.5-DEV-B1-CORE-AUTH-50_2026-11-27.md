@@ -13,6 +13,7 @@
 - adapter Blob SHA：`2f91941c68082a44d5e23e1e25b416ae2901e0f0`
 - 新增测试：`backend/worker/V2.5-DEV-B1-CORE-AUTH-50/app-links-cards-handler.test.mjs`
 - 测试 Blob SHA：`4a59fd2c5cb1f2f63ff23042799f775069407fd1`
+- README Blob SHA：`410173b28941710cc961707bbac8d068785fcf6a`
 - CI：`.github/workflows/worker-auth50-tests.yml`
 
 测试直接 import 第四十九批 Worker 并调用 `worker.fetch(request, env)`，通过 mock D1 模拟 Session、VIP activation、资源归属、D1 batch 和 SQL 执行。
@@ -40,8 +41,8 @@
 ## 3. CI 测试证据
 
 - Workflow：`Worker Auth50 Tests`
-- Run ID：`45954434345`
-- 测试提交：`63f7c0bae48953e746a94f6fb19031daac2376dc`
+- Run ID：`45954510215`
+- 测试提交：`a898f451bed0b33fec3d292bd85c770d1da53ec5`
 - Node.js：`v22.23.5`
 - 结果：**成功**
 - Worker ESM syntax check：通过
