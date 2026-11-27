@@ -24,7 +24,7 @@ class Batch83ContractTests(unittest.TestCase):
 
     def test_05_keystore_and_backup(self):
         self.assertIn("Android Keystore",DOC)
-        self.assertIn("excluded from backup",DOC)
+        self.assertIn("Exclude all reusable auth/session/device credential material from cloud backup",DOC)
 
     def test_06_statement_manifests_split(self):
         for term in ("Identity adapter","Limiter adapter","Disposable harness"):
@@ -39,8 +39,8 @@ class Batch83ContractTests(unittest.TestCase):
         self.assertIn("feature flag remains OFF",DOC)
 
     def test_09_no_d1_or_deployment_claim(self):
-        self.assertIn("No D1 was connected",DOC)
-        self.assertIn("No production deployment occurred",DOC)
+        self.assertIn("no D1 was connected",DOC.lower())
+        self.assertIn("no production deployment occurred",DOC.lower())
 
 if __name__=="__main__":
     unittest.main()
