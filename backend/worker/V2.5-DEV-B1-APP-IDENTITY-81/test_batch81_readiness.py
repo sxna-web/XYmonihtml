@@ -60,7 +60,7 @@ class Batch81ReadinessTests(unittest.TestCase):
         self.assertIn("no complete method/path/header/query/body/response inventory", CALLERS)
     def test_15_legacy_and_v2_are_not_conflated(self):
         self.assertIn("feature flag OFF", CALLERS)
-        self.assertIn("not proof", CALLERS)
+        self.assertIn("does not show the handler registered", CALLERS)
 
 if __name__ == "__main__":
     unittest.main()
