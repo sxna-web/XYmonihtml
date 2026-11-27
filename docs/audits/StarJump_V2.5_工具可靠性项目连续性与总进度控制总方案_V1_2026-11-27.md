@@ -339,3 +339,56 @@
 7. 更新进度与接手卡。
 
 用户无需提供新的通知说明、邮箱或执行 SQL。当前也不要求用户在手机上做任何操作。
+
+
+## 13. 第四十六批完成与第四十七批接手卡（2026-11-27）
+
+### 第四十六批状态：REVIEWED / READ-ONLY
+
+- 批次：`V2.5-DEV-B1-CORE-GAP-46`
+- 报告：`docs/audits/StarJump_V2.5_核心业务源码差距盘点与实施优先级_第四十六批_V2.5-DEV-B1-CORE-GAP-46_2026-11-27.md`
+- 报告 Commit：`57ac035c33d810e6b99d41e1463c999d9160567c`
+- 进度记录 Commit：`15ede4ffa7f692fdf22012334fc4898312d348a3`
+- 仓库 main 树：91 个 tracked blobs。
+- 核对用户指定基线：Worker.js `5da7aa3582558d9da2c2a0ad25a63c5e95e9fe63`；index.html `ab98aecd4c8546eda197bbb4d5a9f5ec0db82613`。
+- 已确认 1.4.61 HTML 为本地模拟版，没有 API fetch；不可误作正式后端接入版。
+- 主要风险已登记：共享匿名 owner、固定密钥回退、APP status token、latest-only entitlement、APP 写接口 VIP 门禁、filters 权限、VIP 状态聚合、分组撤销/24h ack、迁移入口安全、HTML sync 路由和 staging 环境错配。
+- 本批只读核查；未修改 Worker/HTML/D1/Secrets；未做线上测试；未部署。
+
+### 用户最新主线决策
+
+通知网页/邮箱、VIP 用户反馈和超管双通知域保留为后续需求；当前不实施，不阻塞核心后台进度。
+
+### 第四十七批唯一首要任务
+
+**建立身份/VIP 状态与动作级权限模型的可测试实现基础。**
+
+1. 重新读取当前 AGENTS、功能基线、目录规范、总方案、进度、第四十六批报告及最新 Worker 源码 SHA。
+2. 不直接修改原始 Worker；在 `backend/worker/` 下建立新版本修订副本，原件保留。
+3. 先设计纯函数输入/输出：身份角色、当前有效 activation rows、时间、操作类型、资源创建时间/归属、协助会话 actor/effective/scope。
+4. 明确决策规则：
+   - L0：基础转换可用，高级 filters 不可用；
+   - L1：按普通注册用户权益；
+   - 有效 trial/formal：按用户已确认的有效 VIP 权益；
+   - trial 到期：历史只读，不得删除；
+   - formal 到期：历史可查看/删除，但不得创建/编辑/关联/生成新资源；
+   - super_admin：独立最高角色，不依赖 VIP；
+   - assist session：scope 与目标用户业务权限取交集，不能提升目标用户权限。
+5. 纯函数和表驱动测试先覆盖状态边界、多 activation、时钟边界、查询 unavailable、资源创建时间、协助 scope。
+6. 对 Worker 现有 vipStatus() 聚合缺陷给出向后兼容返回结构方案；不能简单以 MAX(ends_at) 和历史 is_formal 授权。
+7. 之后将 helper 接入 APP groups/links/cards 的写操作前，逐个检查实际业务动作和到期历史数据规则；不一刀切封锁整个 API。
+8. 本批不改 D1 schema、不调用生产 API、不运行迁移、不改 Secrets、不部署。
+9. 实际运行 Node/兼容运行时单元测试，记录版本、命令、结果；更新进度和接手卡。
+
+### 当前总进度摘要
+
+| 模块 | 状态 | 下一步 |
+|---|---|---|
+| 工具可靠性 | 规范已建立，第四十五批 24/24 SQLite 通过 | 持续更新 |
+| 本地迁移工具 | CORE bootstrap/schema diff 已修复 | D1 兼容仍待隔离验证 |
+| 身份/VIP/权限 | Worker 有实现但存在状态聚合和动作门禁差距 | 第四十七批纯函数授权模型与测试 |
+| 转换/归档 | Worker 有核心实现但匿名归属、密钥、filters、限流风险 | 后续第二阶段 |
+| APP 授权/分组 | Worker 有路由但 token/多授权/删除清理/门禁风险 | 后续第三阶段 |
+| 前端接入 | 原始 HTML 有 API 接入但路径/环境错配；1.4.61 为模拟版 | 随 Worker 修复同步调整 |
+| 通知/邮箱 | 规则和架构已记录，用户决定后置 | 核心主线稳定后再实施 |
+| 生产 D1/部署 | 未核实、未授权 | 禁止生产操作 |
