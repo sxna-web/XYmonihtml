@@ -16,3 +16,7 @@ python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-75 -p 'te
 The local fixture passed 24/24 under Python 3.13.5 / SQLite 3.46.1. It does not prove D1 compatibility, D1 batch rollback, multi-isolate concurrency, production schema, Worker integration or Android compatibility.
 
 No D1 connection, SQL/migration, Worker/HTML/APK/Room/Secret/config change or deployment occurred.
+
+
+## GitHub Actions evidence
+Run [45994897776](${run}) completed/success. Job 140491746184; Python 3.13.18; 24/24 tests passed, 0 failed. D1 remains untested.
