@@ -536,3 +536,50 @@
 8. 更新第五十批报告、开发进度和下一批接手卡。
 
 **部署闸门：**第四十九批仍不可部署。需完成 APP links/cards handler 测试、完整 APP 管理 API 独立复核、Worker runtime 兼容验证、回滚和 D1 兼容评估后，才可形成候选发布包；用户明确授权前不部署。
+
+
+## 17. 第五十批完成与第五十一批接手卡（2026-11-27）
+
+### 第五十批状态：CI_TESTED / APP_LINKS_CARDS_HANDLER_MOCK_PASS
+
+- 批次：`V2.5-DEV-B1-CORE-AUTH-50`
+- 报告：`docs/backend/StarJump_V2.5_APP入口与卡密管理Handler权限回归报告_第五十批_V2.5-DEV-B1-CORE-AUTH-50_2026-11-27.md`
+- 报告 Commit：`b1b56c0003d351273d81f01c21a580daf70ff690`
+- 测试文件：`backend/worker/V2.5-DEV-B1-CORE-AUTH-50/app-links-cards-handler.test.mjs`，Blob SHA `4a59fd2c5cb1f2f63ff23042799f775069407fd1`。
+- README：Blob SHA `410173b28941710cc961707bbac8d068785fcf6a`。
+- 被测 Worker：第四十九批 `Worker.js`，Blob SHA `a4689380215e95c1c9f605fc974cc553b3e7037f`。
+- CI Workflow：`.github/workflows/worker-auth50-tests.yml`；Run ID `45954510215`；Node.js v22.23.5；Worker ESM syntax、adapter syntax均通过；adapter tests 12/12、APP group handler tests 12/12、APP links/cards handler tests 12/12，全部 0 failed。
+- handler 测试调用实际版本 Worker `fetch()` 入口，使用 mock D1；不等于 Cloudflare Workers runtime 或真实 D1 集成。
+- 确认 APP card DELETE 是软停用，按 disable 授权；正式 VIP 到期不允许继续停用。APP links 历史删除最终 SQL 限定 owner + created_at cutoff。
+- 本批无 Worker 业务代码改动；未修改 D1 schema/数据、Secrets、原始 Worker/HTML；未连接生产 Cloudflare/D1；未部署。
+- 第四十八/四十九/五十批的版本目录和测试目录分别保留，未覆盖历史版本。
+
+### 当前总进度摘要
+
+| 模块 | 当前状态 | 下一步 |
+|---|---|---|
+| 项目基线/业务规则 | 已建立并持续维护 | 按批次更新 |
+| 本地迁移工具 | 第四十五批 24/24 SQLite 测试通过 | D1 隔离兼容仍待验证 |
+| 核心身份/VIP 权限 | 第四十七批 helper 26/26；第四十八批 adapter 12/12；第四十九批 Worker group handler 12/12；第五十批全套 CI 36/36 | 进入 APP entitlement 授权链路审计 |
+| APP 分组/入口/卡密写门禁 | adapter 和 mock handler 测试通过；分组 owner SQL 已加固 | 完整独立安全复核、真实 D1/runtime 验证 |
+| APP entitlement | status token、多管理员 latest-only、token query 风险已登记 | 第五十一批只读核查与测试设计 |
+| APP 分组撤销 | 仍为物理删除，无 24h ack 闭环 | 设计 tombstone/generation/ack |
+| 转换/匿名归属 | 共享匿名 owner、固定密钥、filters/限流风险已登记 | 后续独立修复 |
+| 前端接入 | 原始 HTML API 路径/环境错配已登记 | Worker API 稳定后调整 |
+| 通知/邮箱 | 用户决定后置 | 核心主线完成后再做 |
+| 生产 D1/部署 | 未核实、未授权 | 不操作、不部署 |
+
+### 第五十一批唯一首要任务
+
+**只读核查 APP entitlement token 与多管理员授权隔离链路，并建立可复现测试设计。**
+
+1. 重读当前 main、AGENTS、功能基线、本方案、开发进度、第四十六批差距报告及第四十九/五十批报告。
+2. 重新核对第四十九批 Worker 当前 SHA；不假定线上 Cloudflare 与仓库源码一致。
+3. 逐一追踪 `/api/app/status`、`/api/app/nodes`、`/api/app/groups`、`/api/app/links` 的 token 提取、验证、设备绑定、entitlement 选择和 owner 隔离。
+4. 重点确认 status 是否只凭 device_id、是否校验 token；groups/nodes/links 是否 latest-only；token 是否仍放 URL query；多个管理员授权能否独立呈现。
+5. 对照 APK 源码可读性和客户端请求协议；ZIP 尚未成功解包前，不假设客户端支持 header token 或多授权实例。
+6. 先形成兼容方案和测试矩阵；不改变 APP 客户端协议，不修改 D1 schema，不删除旧 token 路径。
+7. 不连接生产 D1、不调用生产 API、不读取/修改 Secrets、不部署。
+8. 更新第五十一批报告、开发进度和下一批接手卡。
+
+**部署闸门：**第四十九批 Worker 仍不可部署。必须完成 entitlement/status token 安全、APP 客户端兼容、真实 D1/runtime 验证和独立复核后，才能形成候选部署包；用户明确授权前不部署。
