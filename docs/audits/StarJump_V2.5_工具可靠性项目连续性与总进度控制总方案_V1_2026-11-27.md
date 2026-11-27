@@ -1063,3 +1063,27 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 真实 D1 schema 未核实前，不生成可执行 migration，不执行 SQL。
 7. 不修改 Worker/HTML/APK/Room/D1/Secrets，不接生产路由、不部署。
 8. 更新进度、总方案和第六十八批接手卡。
+
+
+---
+
+## 第六十七批连续性更新（2026-11-27）
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-67`；报告见 `docs/backend/StarJump_V2.5_APP_v2身份绑定挑战Nonce持久化状态机与并发契约测试报告_第六十七批_V2.5-DEV-B1-APP-IDENTITY-67_2026-11-27.md`。
+- CI Run `45978995116` completed/success，Node 22.23.5，14/14 tests passed，0 failed；https://github.com/sxna-web/XYmonihtml/actions/runs/45978995116
+- 隔离状态机契约覆盖 challenge 单次消费、nonce 防重放、binding 唯一幂等/撤销、share-code version CAS 轮换及 transient cleanup。所有 store 方法仍是注入接口；mock Map 不等于 D1/多 Worker 原子性证明。
+- 未连接 D1，未执行 SQL/创建 migration，未改 Worker/HTML/APK/Room/Secrets，未注册路由，未部署。D1_NOT_TESTED / APP_PENDING / 不可部署。
+- 免费分组仍以管理员身份免费授权为当前优先规则；特殊免费分组卡密是冲突时的条件性备选，不得提前替换当前模型。
+
+### 第六十八批唯一接手卡
+
+**APP v2 身份持久化 adapter 与真实 schema 前置差距核查（只读 + SQL 契约设计，不执行 SQL、不接 Worker）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度及第五十一至六十七批 APP 报告。
+2. 复核 Run `45978995116` 和第六十六批接口。
+3. 只读检查仓库 Worker/D1 schema 来源、迁移目录、绑定配置；不得将原始 Worker DDL 当线上 schema。
+4. 映射 8 个 store 方法到 SQLite/D1 条件更新、唯一约束、事务及冲突语义，标注现有/未知/新增字段。
+5. 评估 D1 原子性和需隔离环境验证的部分；不生成 migration、不执行 SQL。
+6. 不接 Worker、不改 HTML/APK/Room/Secrets、不连接生产/staging、不部署。
+7. 免费分组特殊卡密仍为条件性备选。
+8. 更新进度、总方案和第六十九批接手卡。
