@@ -33,8 +33,8 @@ def validate_local_test_path(raw: str) -> Path:
     current = Path(candidate.anchor)
     for part in candidate.parts[1:]:
         current = current / part
-        if current.exists() and current.is_symlink():
-            raise SafetyError("symlink database paths are forbidden")
+        if current.is_symlink():
+            raise SafetyError("symlink database paths or parent directories are forbidden")
     resolved = candidate.resolve(strict=False)
     temp_root = Path(tempfile.gettempdir()).resolve()
     if not _is_within(resolved, temp_root):
@@ -73,16 +73,41 @@ def _statements(sql: str):
         raise ValueError("incomplete SQL statement at end of migration")
 
 def apply_one(conn: sqlite3.Connection, migration: dict) -> str:
-    existing = conn.execute(
-        "SELECT checksum FROM schema_migrations WHERE migration_id=?",
-        (migration["migration_id"],),
-    ).fetchone()
-    if existing:
-        if existing[0] != migration["checksum"]:
-            raise SafetyError(f"checksum drift: {migration['migration_id']}")
-        return "already-applied"
+    """Apply one migration atomically, including the bootstrap ledger migration."""
+    ledger_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+    ).fetchone() is not None
+    if ledger_exists:
+        existing = conn.execute(
+            "SELECT checksum FROM schema_migrations WHERE migration_id=?",
+            (migration["migration_id"],),
+        ).fetchone()
+        if existing:
+            if existing[0] != migration["checksum"]:
+                raise SafetyError(f"checksum drift: {migration['migration_id']}")
+            return "already-applied"
+    elif migration["migration_id"] != "CORE-MIG-001":
+        raise SafetyError("migration ledger is missing; CORE-MIG-001 must be applied first")
+
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # Re-check inside the write transaction to guard concurrent runners.
+        ledger_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        ).fetchone() is not None
+        if ledger_exists:
+            existing = conn.execute(
+                "SELECT checksum FROM schema_migrations WHERE migration_id=?",
+                (migration["migration_id"],),
+            ).fetchone()
+            if existing:
+                if existing[0] != migration["checksum"]:
+                    raise SafetyError(f"checksum drift: {migration['migration_id']}")
+                conn.commit()
+                return "already-applied"
+        elif migration["migration_id"] != "CORE-MIG-001":
+            raise SafetyError("migration ledger is missing; CORE-MIG-001 must be applied first")
+
         for statement in _statements(migration["sql"]):
             conn.execute(statement)
         conn.execute(
@@ -102,37 +127,12 @@ def run_apply_local(raw_path: str) -> dict:
     conn = sqlite3.connect(str(db_path), timeout=5)
     try:
         conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations ("
-            "migration_id TEXT PRIMARY KEY, checksum TEXT NOT NULL, "
-            "applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-        )
-        conn.commit()
         results = []
         for migration in load_migrations():
-            if migration["migration_id"] == "CORE-MIG-001":
-                checksum = migration["checksum"]
-                row = conn.execute(
-                    "SELECT checksum FROM schema_migrations WHERE migration_id=?",
-                    (migration["migration_id"],),
-                ).fetchone()
-                if row and row[0] != checksum:
-                    raise SafetyError("checksum drift: CORE-MIG-001")
-                if not row:
-                    conn.execute(
-                        "INSERT INTO schema_migrations(migration_id, checksum) VALUES (?, ?)",
-                        (migration["migration_id"], checksum),
-                    )
-                    conn.commit()
-                results.append({
-                    "id": migration["migration_id"],
-                    "status": "applied" if not row else "already-applied",
-                })
-            else:
-                results.append({
-                    "id": migration["migration_id"],
-                    "status": apply_one(conn, migration),
-                })
+            results.append({
+                "id": migration["migration_id"],
+                "status": apply_one(conn, migration),
+            })
         return {
             "database": str(db_path),
             "mode": "LOCAL_TEMP_SQLITE_ONLY",
@@ -142,9 +142,7 @@ def run_apply_local(raw_path: str) -> dict:
         conn.close()
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Local-only migration verifier; not a D1 tool"
-    )
+    parser = argparse.ArgumentParser(description="Local-only migration verifier; not a D1 tool")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("plan", help="show migration IDs and checksums without opening a database")
     check = sub.add_parser("check", help="read-only schema fingerprint of an isolated temporary SQLite DB")
@@ -165,10 +163,7 @@ def main(argv=None) -> int:
             from schema_diff import schema_snapshot, fingerprint
             conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
             try:
-                print(json.dumps({
-                    "fingerprint": fingerprint(conn),
-                    "schema": schema_snapshot(conn),
-                }, indent=2))
+                print(json.dumps({"fingerprint": fingerprint(conn), "schema": schema_snapshot(conn)}, indent=2))
             finally:
                 conn.close()
         else:
