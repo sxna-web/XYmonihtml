@@ -31,7 +31,8 @@ Tokens are placed in the POST body, not the URL or logs. Each credential is inde
 - Same-name card groups are decorated with their own server-derived serial label, e.g. `香港节点（1 序列号）`; actual redeemable card codes are never returned.
 - IDENTITY entitlement may contribute free groups but cannot contribute card groups.
 - Empty card group mappings remain empty; no widening to all admin groups.
-- Any duplicate, owner/mode mismatch, allowlist mismatch, or loader/resolver failure fails closed for the whole response.
+- Any duplicate, owner/mode mismatch, allowlist mismatch, invalid server-side entitlement classification, or loader/resolver failure fails closed for the whole response.
+- The response is a minimal projection: group ID/name/owner/mode/enabled/origin/displayName and safe card serial label only; internal card IDs, entitlement IDs, raw card codes and arbitrary DB columns are omitted.
 
 ## Integration boundary
 
