@@ -192,6 +192,8 @@ class IdentityOperationTests(unittest.TestCase):
         self.assertEqual(self.c.execute("SELECT COUNT(*) FROM audit").fetchone()[0],1)
     def test_13_same_event_key_same_payload_is_exact_replay(self):
         create_binding(self.c)
+        # Exact event-key + canonical-envelope replay is a no-op, not a second audit row.
+        write_audit(self.c,"binding.created:b2","binding.created","ownerA","b2","create-1","b2|ownerA|deviceB|thumbB|1|created")
         self.assertTrue(audit_exact(self.c,"binding.created:b2","binding.created","ownerA","b2","create-1","b2|ownerA|deviceB|thumbB|1|created"))
         self.assertEqual(self.c.execute("SELECT COUNT(*) FROM audit WHERE event_key='binding.created:b2'").fetchone()[0],1)
     def test_14_same_event_key_different_payload_fails_assertion_and_rolls_back(self):
