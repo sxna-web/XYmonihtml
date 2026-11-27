@@ -39,7 +39,7 @@ Binding requires a one-time server challenge bound to:
 
 The injected `verifyAndConsumeChallenge` must atomically verify challenge expiry, single-use state, proof signature, device key and code version. The injected `getOrCreateBinding` must enforce a unique (admin_user_id, device_id) binding and be transactionally idempotent. A repeat bind for the same admin/device returns the existing binding; another admin remains a separate binding.
 
-The current Worker has no such challenge/binding table or device-key protocol. These adapters are contracts only; do not infer that the existing client can produce a device proof.
+The current Worker has no such challenge/binding table or device-key protocol. These adapters are contracts only; do not infer that the existing client can produce a device proof. Android Keystore key generation, challenge acquisition, request signing, key backup/restore behavior and APK compatibility remain unverified until the 6.00.48 source is audited.
 
 ### 3. Independent identity credential
 
@@ -72,7 +72,8 @@ The old direct `/api/app/free` node response must not be used as the new flow. T
 - `lookupShareCode(code)`: must resolve only the current active code version.
 - `checkAdminEligibility(adminUserId)`: must derive account/VIP/free-group state from trusted server data.
 - `consumeRateLimit(action,key)`: must use durable server-side rate limiting, not Worker instance memory.
-- `verifyAndConsumeChallenge(...)`: must atomically verify and consume a one-time device proof.
+- `verifyAndConsumeChallenge(...)`: must atomically verify and consume the one-time bind challenge.
+- `verifyDeviceRequestProof(...)`: must verify each protected read's signature using the enrolled device key and consume a fresh request nonce atomically.
 - `getOrCreateBinding(...)`: must atomically enforce unique admin/device binding.
 - `loadBinding(bindingId)`: must return authoritative binding status and scope.
 - `loadFreeGroups(adminUserId)`: parameterized, owner-safe read.
