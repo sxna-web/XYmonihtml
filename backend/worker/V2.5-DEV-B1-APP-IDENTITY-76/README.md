@@ -19,3 +19,11 @@ The validator does not connect to Cloudflare or execute SQL. A passing CI run pr
 A real D1 test requires a user-approved dedicated disposable database, exact database ID and binding match, separate read-only/write approvals, schema snapshot and cleanup plan. Production is prohibited; `starjump-staging` is not an assumed substitute.
 
 No D1 connection, SQL/migration, Worker/HTML/APK/Room/Secret/config change or deployment occurred.
+
+
+## CI evidence
+- GitHub Actions [Run 45995978023](https://github.com/sxna-web/XYmonihtml/actions/runs/45995978023) completed/success.
+- Job 140495345000; Python 3.13.18.
+- Output: `Batch 76 D1 matrix structure: PASS (26 cases)`.
+- Explicitly confirmed by log: `Network/D1 access: NONE; SQL execution: NONE; migrations: NONE`.
+- This is offline matrix validation only, not a D1 test.
