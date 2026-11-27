@@ -17,3 +17,6 @@ python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-74 -p 'te
 12/12 local SQLite tests passed. This does not prove D1 compatibility, D1 batch rollback, multi-isolate concurrency, production schema or Android compatibility.
 
 No D1 connection, SQL/migration, Worker/HTML/APK/Room/Secret/config change or deployment occurred.
+
+
+GitHub Actions: [Run 45993837077](https://github.com/sxna-web/XYmonihtml/actions/runs/45993837077) — Python 3.13.18, 12/12 local SQLite tests passed. D1 remains untested.
