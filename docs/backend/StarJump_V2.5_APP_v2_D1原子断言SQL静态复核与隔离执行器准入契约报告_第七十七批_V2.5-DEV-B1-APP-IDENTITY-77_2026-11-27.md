@@ -68,3 +68,13 @@ SQLite 的 CHECK 表达式为 NULL 时不会按 false 处理，因此 assertion 
 5. 完善 limiter HMAC 双 key overlap 和 cleanup/admission 竞态证据规格，不设生产阈值。
 6. 仍不连接 D1、不读取凭证、不执行 SQL、不创建 migration、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
 7. 更新进度与总方案，给出第七十九批唯一接手卡。
+
+
+## 七、离线 CI 实际结果
+
+- GitHub Actions Run：`45996975612`（completed / success）。
+- Job：`140498704644`（offline-contract，success）。
+- Python：`3.13.18`。
+- 日志原文：`Batch 77 offline contract structure: PASS`；`Network/D1 access: NONE; credentials read: NONE; SQL execution: NONE`。
+- 该 CI 只证明文档门禁标记和 harness 契约结构检查通过，不证明 SQLite/D1 SQL 语法、D1 CHECK、batch rollback、Worker、APP 或生产环境行为。
+- Run 链接：https://github.com/sxna-web/XYmonihtml/actions/runs/45996975612
