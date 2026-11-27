@@ -1,7 +1,7 @@
 # APP v2 D1 compatibility preparation — Batch 60
 
 - Version: V2.5-DEV-B1-APP-PROTOCOL-60
-- Status: isolated review and regression tests; CI pending; not integrated; not deployable.
+- Status: isolated review and regression tests; GitHub Actions passed; not integrated; not deployable.
 
 ## This batch
 
@@ -39,3 +39,4 @@ Library listing currently contains 6.00.47 but no 6.00.48 ZIP. GitHub tree confi
 ## Boundaries
 
 No existing Worker route, HTML, APK, Secrets, D1 schema, migration or Cloudflare deployment changed.
+\n## CI evidence\n\n- Run 45965260408: completed / success.\n- Node.js 22 tests: batch 58 36/36, batch 59 16/16, batch 60 19/19; zero failures.\n- Python 3.12 SQLite concurrency tests: 3/3 passed.\n- Syntax check passed. This does not certify Cloudflare D1 runtime compatibility.\n- Run: https://github.com/sxna-web/XYmonihtml/actions/runs/45965260408\n
