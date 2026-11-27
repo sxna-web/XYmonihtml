@@ -31,3 +31,5 @@ test('assist history delete requires manage scope', () => assert.equal(decideAct
 test('history delete requires ownership', () => assert.equal(decideActionAccess({...base,action:'delete_history',vipActivations:formal,resourceOwned:false,resourceCreatedAt:'2026-10-20T00:00:00Z'}).code, 'RESOURCE_NOT_OWNED'));
 test('missing identity denied', () => assert.equal(decideActionAccess({action:'read'}).code, 'UNAUTHENTICATED'));
 test('stable guest identity can use basic conversion', () => assert.equal(decideActionAccess({actorId:'guest:abc123',effectiveId:'guest:abc123',action:'basic_convert',vipActivations:[]}).allowed, true));
+
+test('future activation blocks expired-formal history-delete classification until start', () => assert.equal(classifyVip([...formal,{kind:'formal',starts_at:'2026-12-01T00:00:00Z',ends_at:'2027-01-01T00:00:00Z'}], now).state, 'pending'));
