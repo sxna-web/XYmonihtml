@@ -1486,3 +1486,14 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - **第八十三批唯一接手卡：**查找可读 6.00.48 源码；按用户确认业务规则建立 APK 现状缺口矩阵；拆分 APP v2 discovery/bind、card activation、status、composed catalog、generation/tombstone/ack 契约；设计 Keystore/backup/deep-link；分离 identity/limiter/harness statement manifests；继续 HMAC cross-key dimension consistency proof。U80-01..08 未确认项继续阻断；不连接 D1、不执行 SQL、不部署。
 
 - Batch 82 CI final Run `46048673912` completed/success，Job `140674247202` success，23 tests OK（11 HMAC model + 12 static review）；prior Run `46048497935` one case-sensitive assertion failure was corrected and superseded. Offline only; no D1/SQL.
+
+
+## 第八十三批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-IDENTITY-83`；报告：`docs/backend/StarJump_V2.5_APP_v2五域协议缺口收敛与客户端兼容设计报告_第八十三批_V2.5-DEV-B1-APP-IDENTITY-83_2026-11-28.md`。
+- 已完成五域 APP v2 逻辑协议契约、6.00.47 客户端能力缺口矩阵、Keystore/backup/deep-link 兼容方案、三类 statement-manifest 分离和 placeholder tokenizer 设计。
+- Library 未找到 6.00.48 源码副本；GitHub 文本接口不能读取仓库 ZIP 二进制。6.00.47 证据不可外推。
+- 本地 tokenizer 16/16、协议文档内容完整性检查 9/9；GitHub Actions run 未取得可核验状态，故不标记 CI 通过。没有 D1/SQL/Worker/APK 集成证据。
+- HMAC opaque dimension_id + version alias registry 仅为待证明候选；并发首次发现、split identity、partial backfill/high-water、rollback、cleanup race 仍是实施阻塞。
+- U80-01..08 继续未确认；APP v2 feature flag OFF。D1_NOT_TESTED / APP_NOT_INTEGRATED / NOT_DEPLOYABLE。
+- **第八十四批接手卡：**建立 HMAC dimension alias registry 的并发一致性参考模型与反例测试；建立 identity/limiter/harness 三类独立 statement-manifest JSON schema/静态检查，不写生产 SQL；继续核查 6.00.48 源码；保持离线，不连接 D1、不读取凭证、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare、不部署。
