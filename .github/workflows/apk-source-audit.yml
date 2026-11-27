@@ -1,0 +1,35 @@
+name: APK Source ZIP Audit (Manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-source-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Inventory and scan source ZIPs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Verify source archives and run read-only scanner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "StarJump-6.00.47-source .zip"
+          test -f "StarJump-6.00.48-source.zip"
+          sha256sum "StarJump-6.00.47-source .zip" "StarJump-6.00.48-source.zip"
+          python3 tools/apk_audit/scan_source_zip.py
+      - name: Upload sanitized audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: starjump-apk-source-audit-report
+          path: apk-source-audit-report.md
+          if-no-files-found: error
+          retention-days: 14
