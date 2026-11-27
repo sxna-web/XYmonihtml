@@ -1,0 +1,33 @@
+name: Worker APP Identity Batch 78 Contract Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-78/**"
+      - ".github/workflows/worker-app-identity78-contract.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-78/**"
+      - ".github/workflows/worker-app-identity78-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-app-identity78-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run offline protocol counterexamples
+        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-78 -p 'test_*.py' -v
