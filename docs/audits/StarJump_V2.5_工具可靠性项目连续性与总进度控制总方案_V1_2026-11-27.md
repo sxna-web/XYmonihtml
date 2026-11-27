@@ -817,3 +817,12 @@
 ### 第六十批唯一接手卡
 
 APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不部署）。检查本批 CI；复核重复 entitlement/group ID/name/free 去重；设计 slot migration/backfill/release 但不创建正式 migration；如有明确隔离 D1 才验证并发；只读审计 6.00.48 ZIP 与第三方授权；保持 APK_PENDING；不接入 Worker、不部署。
+
+
+## 第六十批阶段记录（2026-11-27）
+
+- V2.5-DEV-B1-APP-PROTOCOL-60：隔离代码与回归测试已新增；CI_PENDING；D1_NOT_TESTED；APK_6.00.48_NOT_AUDITED；NOT_INTEGRATED；NOT_DEPLOYABLE。
+- 新版 group composition 拒绝重复 entitlement、额外 loader 结果、同 entitlement 重复 card group；同名序列号只在同管理员内追加；输出采用字段白名单投影。
+- 设备 slot schema/backfill/release 仅为设计提案，没有 migration。未找到可确认的隔离 D1，不用生产或 staging 替代。
+- Library 仅有 6.00.47；GitHub tree 确认 6.00.48 ZIP 存在但二进制无法读取，不能宣称完成源码/第三方许可审计。
+- 第六十一批：继续设备 slot 生命周期与客户端授权协议对照；如有可读取 6.00.48 ZIP 再审计；不接生产、不部署。
