@@ -147,6 +147,21 @@ test("same-name groups belonging to different admins are not serial-decorated",a
  assert.deepEqual(r.groups.map(g=>g.displayName),["香港节点","香港节点"]);
 });
 
+test("end-to-end composed handler authenticates each entitlement and deduplicates free groups",async()=>{
+ const {service,resolveCalls}=setup({scopes:{
+  ent_A:{ok:true,allowedGroupIds:["ga","free_A"],cardGroups:[cardGroup("ga")],freeGroups:[freeA]},
+  ent_B:{ok:true,allowedGroupIds:["gb","free_A"],cardGroups:[cardGroup("gb")],freeGroups:[freeA]},
+ },serials:{ent_A:"1 序列号",ent_B:"2 序列号"}});
+ const handler=createComposedGroupsHandler({composeGroups:service});
+ const res=await handler(new Request("https://unit.test/api/app/v2/groups/composed",{method:"POST",headers:{"x-app-device-id":DEVICE},body:JSON.stringify({credentials:credentials(A,B)})}));
+ const body=await res.json();
+ assert.equal(res.status,200);
+ assert.equal(resolveCalls.length,2);
+ assert.equal(body.groups.filter(g=>g.origin==="CARD").length,2);
+ assert.equal(body.groups.filter(g=>g.origin==="FREE").length,1);
+ assert.deepEqual(body.groups.filter(g=>g.origin==="CARD").map(g=>g.displayName).sort(),["香港节点（1 序列号）","香港节点（2 序列号）"]);
+});
+
 test("handler accepts composed POST and returns no-store response",async()=>{
  const handler=createComposedGroupsHandler({composeGroups:async({deviceId,credentials:creds})=>({ok:true,groups:[{id:"ga",displayName:"香港节点（1 序列号）"}],entitlementCount:creds.length,deviceId})});
  const res=await handler(new Request("https://unit.test/api/app/v2/groups/composed",{method:"POST",headers:{"x-app-device-id":DEVICE,"content-type":"application/json"},body:JSON.stringify({credentials:credentials(A,B)})}));
