@@ -86,6 +86,8 @@ No D1 schema is assumed. The current observed `admin_share_codes` schema cannot 
 node --test backend/worker/V2.5-DEV-B1-APP-IDENTITY-66/identity-binding-service.test.mjs
 ```
 
+Final GitHub Actions Run `45978198685`: completed/success; Node.js 22 syntax checks passed; 23/23 tests passed, 0 failed. Earlier failed runs `45977746012`, `45977930213`, `45977973549`, `45978016789`, and `45978087711` are retained as development failure evidence; the final run includes the corrected fixtures and proof-of-possession checks.
+
 The tests use mock adapters and Node.js WebCrypto. They do not prove D1, Cloudflare Workers runtime, Android key storage, device attestation, or production integration.
 
 ## Prohibited in this batch
