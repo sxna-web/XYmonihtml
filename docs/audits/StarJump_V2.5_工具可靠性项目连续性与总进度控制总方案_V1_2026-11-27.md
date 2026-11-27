@@ -1429,3 +1429,27 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
   6. 复核 legacy share-code 调用方与 rotation side-effect 兼容风险，不改旧路由/schema。
   7. 不连接 D1、不读取凭证、不执行 SQL/迁移、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
   8. 更新总进度、总方案和第八十一批接手卡。
+
+
+---
+
+## 第八十批连续性更新（2026-11-27）
+
+- 批次：`V2.5-DEV-B1-APP-IDENTITY-80`；报告：`docs/backend/StarJump_V2.5_APP_v2适配器契约冻结检查与D1证据缺口计划报告_第八十批_V2.5-DEV-B1-APP-IDENTITY-80_2026-11-27.md`。
+- 交付：adapter freeze checklist、D1 evidence map、D1-027..034 case extension、HMAC union/dedupe index/migration plan、legacy route compatibility inventory、offline Python tests、workflow。
+- 用户已确认的 APP 多管理员、多卡密、管理员免费组去重、同名卡密组序列号隔离、设备默认/上限规则被保留为产品边界；没有将其推断成 DB 字段、actor 或 audit reason 等技术语义。
+- U80-01..08 明确作为待用户决定：existing-resolution audit 是否强制、actor mapping、outcome/reason enum 与 nullability、audit payload allow-list/target ID、rotation 对 binding/session/challenge/free grant 的影响、旧 challenge 失效策略、重试时间戳语义、日志/审计 identifier 范围。
+- D1-001..026 对照 Batch 76 原始矩阵；追加 D1-027..034 补充 create-existing、receipt conflict、audit exact-match、owner isolation、rotation side effects、HMAC cross-version union/dedupe、cleanup race、index migration coverage。仍是计划，未执行。
+- HMAC 方案比较 canonical logical event + version aliases、dual-write union、单一权威 fingerprint namespace migration；要求 event_id union/dedupe、覆盖高水位、索引查询计划、清理与 admission 并发证明。不选择生产架构，不提供 DDL，不设生产阈值/保留期限。
+- Legacy route source inventory：历史 Worker 包含 APP resolve/groups/free/links/redeem/status/nodes 与 user/super-admin share-code 路由；Batch 64 v2 read handler 仍为隔离注入模块，未证明线上注册或 APK 调用。APK 调用点清单不完整，旧路由不得删除/改语义。
+- CI：首轮 Run `46000337282` 4/24 文案断言失败；第二轮 Run `46000406826` 1/24 大小写断言失败；最终 Run `46000471562` completed/success，Job `140510520667`，Python 3.13，24/24 tests passed。最终结果仅证明静态清单/文档结构，不证明 D1/Worker/APP 行为。
+- 未连接 D1、未读取凭证、未执行 SQL/迁移、未修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、未部署。状态：`PRE_IMPLEMENTATION_REVIEW / BUSINESS_FREEZE_BLOCKED / OFFLINE_CI_PASS_24_OF_24 / D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE`。
+- **第八十一批唯一接手卡：APP v2 adapter implementation readiness gap closure（继续不连接 D1，除非另获明确授权）。**
+  1. 重读 AGENTS、功能基线、DB/API 保护规范、总方案、进度和第七十四至八十批相关材料及最新 CI。
+  2. 核查 U80-01..08 是否有用户决定；未决定项保持 fail-closed/不实现。
+  3. 完成 Worker/HTML/APP legacy share-code 调用点盘点；APK ZIP 不可读则明确记录缺失，不声称完成客户端审计。
+  4. 将每个 adapter method 建立 statement-level source/bind/result/receipt/audit assertion 清单，并映射 D1-001..034；不写生产 SQL。
+  5. 设计默认禁用的 disposable harness 实施审查稿，保留无凭证 CI、显式 DB ID/binding 核验、分项授权、run_id namespace 和 ledger-only cleanup。
+  6. 比较 HMAC 三种候选方案，给出选择标准、迁移 coverage 和 rollback proof；不设生产阈值。
+  7. 不连接 D1、不读取凭证、不执行 SQL/迁移、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
+  8. 更新总进度、总方案与第八十二批唯一接手卡。
