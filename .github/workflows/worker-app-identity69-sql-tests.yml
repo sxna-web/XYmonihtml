@@ -22,4 +22,4 @@ jobs:
         with:
           python-version: "3.13"
       - name: Run disposable SQLite semantic fixture
-        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-69 -p '*_test.py' -v
+        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-69 -p 'test_*.py' -v
