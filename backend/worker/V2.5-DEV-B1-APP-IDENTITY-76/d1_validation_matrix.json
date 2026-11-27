@@ -1,0 +1,407 @@
+{
+  "schema_version": "1.0",
+  "batch": "V2.5-DEV-B1-APP-IDENTITY-76",
+  "status": "SPEC_ONLY_NO_D1_EXECUTION",
+  "safety": {
+    "requires_explicit_user_approval": true,
+    "requires_dedicated_disposable_d1": true,
+    "requires_confirmed_database_id_and_binding": true,
+    "production_allowed": false,
+    "starjump_staging_substitute_allowed": false,
+    "run_sql_before_admission": false,
+    "synthetic_ids_only": true,
+    "cleanup_only_own_run_ids": true
+  },
+  "cases": [
+    {
+      "id": "D1-001",
+      "area": "capability_and_binding_identity",
+      "mode": "read_only",
+      "procedure": "Confirm the exact disposable database and binding resolve to the same target; capture a non-secret fingerprint and environment evidence.",
+      "expected": "No query against an unidentified binding; stop if any mismatch.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-002",
+      "area": "check_constraint_true",
+      "mode": "disposable_write",
+      "procedure": "Insert a synthetic receipt row with assertion=1 into a disposable fixture table carrying CHECK(assertion=1).",
+      "expected": "One row committed; result metadata and read-back agree.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-003",
+      "area": "check_constraint_false",
+      "mode": "disposable_write",
+      "procedure": "Attempt assertion=0 in the disposable fixture, both standalone and as the final statement of a batch preceded by a synthetic write.",
+      "expected": "Constraint error; preceding write in that batch absent after read-back.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-004",
+      "area": "scalar_exists_binding",
+      "mode": "disposable_write",
+      "procedure": "Exercise INSERT-SELECT/CASE WHEN EXISTS with prepared bound values and exact event envelope fields.",
+      "expected": "Exact matching audit produces assertion=1; absent or mismatched audit produces assertion=0 and CHECK failure.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-005",
+      "area": "prepared_binding_types",
+      "mode": "disposable_write",
+      "procedure": "Bind text, integer, NULL, Unicode, quote, delimiter and JSON-encoded payload values through prepare().bind().",
+      "expected": "Round-trip exact values; no string interpolation; undefined rejected before bind.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-006",
+      "area": "batch_order_and_result_vector",
+      "mode": "disposable_write",
+      "procedure": "Run a short prepared batch with deterministic synthetic writes and reads.",
+      "expected": "One result per statement in input order; record success, changes, rows_read, rows_written and returned rows.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-007",
+      "area": "batch_error_rollback",
+      "mode": "disposable_write",
+      "procedure": "Write synthetic row A, trigger a deterministic constraint failure on synthetic row B, then read A.",
+      "expected": "Batch errors and row A is absent; no production objects touched.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-008",
+      "area": "zero_change_is_not_error",
+      "mode": "disposable_write",
+      "procedure": "Run a conditional UPDATE matching no synthetic row inside a batch with another synthetic write.",
+      "expected": "Statement may be successful with changes=0; explicitly verify batch is not treated as rolled back solely for zero changes.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-009",
+      "area": "returning_vs_meta_changes",
+      "mode": "disposable_write",
+      "procedure": "Compare INSERT/UPDATE with and without RETURNING and read each batch result entry.",
+      "expected": "Record exact result shape and meta.changes; use scoped follow-up read if runtime metadata is insufficient.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-010",
+      "area": "unique_conflict_classification",
+      "mode": "disposable_write",
+      "procedure": "Cause expected primary/unique collisions and a distinct non-unique SQL error using synthetic records.",
+      "expected": "Expected conflict is classified narrowly; unrelated SQL error fails closed; no broad catch-as-duplicate.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-011",
+      "area": "owner_scoped_receipt",
+      "mode": "disposable_write",
+      "procedure": "Create operation receipt for synthetic owner A; query with A, owner B and absent owner.",
+      "expected": "A sees exact receipt; B and absent owner are indistinguishable and reveal no result.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-012",
+      "area": "create_binding_competition",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Send simultaneous create operations from separate requests/Worker isolates with same owner/device/key and stable distinct operation IDs.",
+      "expected": "One binding row and one creation audit; all successful losers resolve the exact winner without duplicate created audit.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-013",
+      "area": "create_binding_key_conflict",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Race same owner/device with different synthetic key thumbprints.",
+      "expected": "Exactly one winner; loser conflicts; key never overwritten; no loser-created audit.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-014",
+      "area": "revoke_generation_cas",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Race two revoke operations using the same expected binding generation.",
+      "expected": "Exactly one generation transition and one matching audit; stale contender reports conflict/no-op without a second event.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-015",
+      "area": "share_code_rotation_cas",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Race two rotations using the same expected share-code version.",
+      "expected": "Exactly one version increment and one exact audit; loser does not auto-read a new version and retry.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-016",
+      "area": "timeout_after_commit_recovery",
+      "mode": "disposable_write",
+      "procedure": "Commit a synthetic operation, deliberately suppress/drop the response after commit, then retry with identical operation/event/resource IDs.",
+      "expected": "Retry resolves owner-scoped receipt and returns prior result; no duplicate mutation/audit. Do not infer timeout means rollback.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-017",
+      "area": "limiter_multi_dimension_concurrency",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Run N simultaneous unique event IDs at a controlled test limit across network/device/admin/action dimensions.",
+      "expected": "For each dimension, admitted count never exceeds the configured test limit; record winners and result vectors.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-018",
+      "area": "limiter_duplicate_event_id",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Race same event_id with identical tuple, then in a separate run with one changed bucket/action/fingerprint.",
+      "expected": "Identical tuple counts once and resolves original decision; changed tuple is integrity conflict.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-019",
+      "area": "limiter_required_dimensions",
+      "mode": "disposable_write",
+      "procedure": "Submit NULL/missing/empty required network/device/admin/action dimensions and explicit non-applicable optional dimensions.",
+      "expected": "Missing required dimension fails closed; optional absence is explicit and cannot bypass an applicable dimension.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-020",
+      "area": "limiter_shared_nat",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Use distinct synthetic users/devices sharing one network bucket, then distinct network buckets.",
+      "expected": "Measure network-dimension impact separately from device/admin dimensions; do not select production thresholds from this fixture.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-021",
+      "area": "limiter_clock_movement",
+      "mode": "disposable_write",
+      "procedure": "Replay fixed synthetic event timestamps with forward/backward clock offsets and approved skew bounds.",
+      "expected": "No early admission or deletion outside the documented safe envelope; record exact boundary behavior.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-022",
+      "area": "limiter_window_retry_after",
+      "mode": "disposable_write",
+      "procedure": "Test exact left boundary, now boundary, multiple full dimensions and integer/sub-second precision variants.",
+      "expected": "Observed inclusion/exclusion and Retry-After match a separately approved timestamp precision contract; multi-dimension release is the maximum.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-023",
+      "area": "limiter_cleanup_race",
+      "mode": "concurrent_disposable_requests",
+      "procedure": "Interleave bounded cleanup with admission/retry around retain_until boundary.",
+      "expected": "No event still needed by any active window/idempotency allowance is deleted; cleanup touches only captured synthetic IDs.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-024",
+      "area": "limiter_query_plan_cost",
+      "mode": "read_only_after_fixture",
+      "procedure": "Run EXPLAIN QUERY PLAN for each dimension/action/time query and capture D1 result metadata/Insights for repeated fixture load.",
+      "expected": "Verify intended index use and measure rows_read, rows_written, duration and overload behavior; do not invent cost thresholds.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-025",
+      "area": "hmac_bucket_key_rotation",
+      "mode": "disposable_write",
+      "procedure": "Create limiter events under key version K1; simulate K1-to-K2 overlap and replay within the active window.",
+      "expected": "Rotation cannot split one logical dimension into independent buckets and bypass the active window; key version/overlap behavior is explicit.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    },
+    {
+      "id": "D1-026",
+      "area": "cleanup_idempotency_and_scope",
+      "mode": "disposable_write",
+      "procedure": "Run cleanup repeatedly at retain_until-1, exact retain_until and retain_until+1 using only this run's IDs.",
+      "expected": "Exact boundary behavior matches contract; repeated cleanup is idempotent; no audit/receipt rows are removed.",
+      "required_evidence": [
+        "request/run correlation ID",
+        "redacted batch result vector",
+        "before/after synthetic row counts",
+        "observed D1 error code or success metadata",
+        "test timestamp and runtime evidence"
+      ],
+      "cleanup": "Delete only generated synthetic IDs recorded by this test run; verify zero remaining."
+    }
+  ]
+}
