@@ -25,7 +25,7 @@ def validate_manifest(doc,expected_interface):
         if not isinstance(sid,str) or not sid or sid in seen: raise ValueError("statement_id missing or duplicated")
         seen.add(sid)
         if statement.get("sql_state")!="NOT_FROZEN": raise ValueError("SQL must remain not frozen")
-        if statement.get("sql_sha256") is not None: raise ValueErrorError("SQL hash forbidden before approval")
+        if statement.get("sql_sha256") is not None: raise ValueError("SQL hash forbidden before approval")
         if statement.get("placeholders")!=[] or statement.get("binds")!=[]:
             raise ValueError("placeholder/bind vectors must remain empty before SQL freeze")
     return True
