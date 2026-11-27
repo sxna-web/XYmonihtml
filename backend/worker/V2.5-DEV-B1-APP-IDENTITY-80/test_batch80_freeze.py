@@ -73,7 +73,7 @@ class Batch80FreezeTests(unittest.TestCase):
 
     def test_16_d1_admission_is_fail_closed(self):
         for phrase in ("exact name and database ID", "Separate explicit approvals",
-                       "before further writes", "no default database"):
+                       "before further writes", "No default database"):
             self.assertIn(phrase, EVIDENCE)
 
     def test_17_starjump_staging_is_not_approved_substitute(self):
