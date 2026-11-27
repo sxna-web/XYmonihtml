@@ -1,0 +1,400 @@
+{
+  "schema_version": "1.0",
+  "batch": "V2.5-DEV-B1-APP-IDENTITY-81",
+  "status": "SPEC_ONLY_NO_D1_EXECUTION",
+  "rules": {
+    "logical_names_only": true,
+    "sql_executable": false,
+    "owner_source": "authenticated_server_context",
+    "bind_values_never_persisted": true,
+    "receipt_scope": "(owner_id, operation_id)",
+    "audit_scope": "(owner_id, event_key)",
+    "audit_policy": "blocked_by_U80_01_to_U80_08"
+  },
+  "methods": [
+    {
+      "method": "insertChallenge",
+      "kind": "single_insert",
+      "source": [
+        "validated_request.challenge_id",
+        "authenticated_server_context.resolved_admin_id",
+        "verified_device_proof.thumbprint",
+        "server_clock"
+      ],
+      "bind_contract": [
+        "challenge_id:text:required",
+        "device_id:text:required",
+        "admin_user_id:text:required",
+        "code_version:integer:required",
+        "device_key_thumbprint:text:required",
+        "issued_at:integer:required",
+        "expires_at:integer:required"
+      ],
+      "result": {
+        "success": "exactly_one_insert",
+        "zero": "not_created",
+        "more_than_one": "invariant_failure",
+        "db_error": "storage_failure"
+      },
+      "receipt": "none_by_itself",
+      "audit": "no_audit_policy_frozen",
+      "cases": [
+        "D1-001",
+        "D1-005",
+        "D1-010"
+      ]
+    },
+    {
+      "method": "consumeChallengeAtomic",
+      "kind": "conditional_update",
+      "source": [
+        "validated_request.challenge_id",
+        "authenticated_server_context.owner",
+        "authenticated_server_context.device",
+        "server_clock",
+        "verified_device_proof.thumbprint",
+        "server_resolved_code_version"
+      ],
+      "bind_contract": [
+        "consumed_at:integer:required",
+        "challenge_id:text:required",
+        "now_for_expiry:integer:required",
+        "device_id:text:required",
+        "admin_user_id:text:required",
+        "code_version:integer:required",
+        "device_key_thumbprint:text:required"
+      ],
+      "result": {
+        "success": "exactly_one_pending_to_consumed",
+        "zero": "generic_not_consumable_no_disclosure",
+        "more_than_one": "invariant_failure",
+        "db_error": "storage_failure"
+      },
+      "receipt": "composite_create_receipt_after_full_assertions",
+      "audit": "created_existing_policy_U80_01_to_04_and_retry_U80_07",
+      "cases": [
+        "D1-002",
+        "D1-003",
+        "D1-006",
+        "D1-007",
+        "D1-008",
+        "D1-009",
+        "D1-012",
+        "D1-013",
+        "D1-016",
+        "D1-027",
+        "D1-029"
+      ]
+    },
+    {
+      "method": "consumeNonceAtomic",
+      "kind": "insert_if_absent",
+      "source": [
+        "authenticated_binding_context",
+        "validated_request.nonce",
+        "server_clock",
+        "reviewed_server_retention_policy"
+      ],
+      "bind_contract": [
+        "binding_id:text:required",
+        "nonce:text:required",
+        "device_id:text:required",
+        "consumed_at:integer:required",
+        "expires_at:integer:required"
+      ],
+      "result": {
+        "success": "exactly_one_insert",
+        "zero": "replay_or_duplicate",
+        "more_than_one": "invariant_failure",
+        "db_error": "storage_failure"
+      },
+      "receipt": "none_nonce_is_replay_defense",
+      "audit": "no_per_nonce_audit_approved_redacted_metrics_only",
+      "cases": [
+        "D1-005",
+        "D1-018",
+        "D1-019",
+        "D1-021"
+      ]
+    },
+    {
+      "method": "upsertBindingAtomic",
+      "kind": "insert_then_owner_scoped_select_same_verified_atomic_unit",
+      "source": [
+        "authenticated_server_context.owner",
+        "validated_request.device_id",
+        "verified_device_proof.thumbprint",
+        "server_resolved_share_code_version",
+        "server_generated_binding_id",
+        "server_clock"
+      ],
+      "bind_contract": [
+        "insert.binding_id:text:required",
+        "insert.admin_user_id:text:required",
+        "insert.device_id:text:required",
+        "insert.device_key_thumbprint:text:required",
+        "insert.share_code_version:integer:required",
+        "insert.created_at:integer:required",
+        "select.admin_user_id:text:required",
+        "select.device_id:text:required"
+      ],
+      "result": {
+        "created": "new_row_exact_owner_device_thumbprint",
+        "existing": "same_active_row_immutable_identity_unchanged",
+        "zero": "binding_missing",
+        "foreign": "non_disclosing_failure",
+        "key_mismatch": "key_conflict",
+        "revoked": "never_reactivate",
+        "db_error": "storage_failure"
+      },
+      "receipt": "owner_scoped_create_receipt_type_and_fingerprint_conflict_integrity_failure",
+      "audit": "created_only_for_new_row_existing_resolution_policy_U80_01_actor_payload_U80_02_to_04_retry_U80_07",
+      "cases": [
+        "D1-004",
+        "D1-006",
+        "D1-007",
+        "D1-011",
+        "D1-012",
+        "D1-013",
+        "D1-016",
+        "D1-027",
+        "D1-028",
+        "D1-029",
+        "D1-030"
+      ]
+    },
+    {
+      "method": "revokeBindingAtomic",
+      "kind": "conditional_update_cas",
+      "source": [
+        "authenticated_server_context.actor",
+        "authenticated_server_context.owner",
+        "validated_request.binding_id",
+        "trusted_expected_generation",
+        "approved_reason_enum"
+      ],
+      "bind_contract": [
+        "revoked_at:integer:required",
+        "next_generation:integer:required",
+        "binding_id:text:required",
+        "owner_admin_id:text:required",
+        "expected_status:text:required",
+        "expected_generation:integer:required"
+      ],
+      "result": {
+        "success": "one_row_generation_old_plus_one",
+        "zero": "owner_scoped_read_only",
+        "stale": "cas_conflict",
+        "foreign_or_absent": "same_external_response",
+        "more_than_one": "invariant_failure",
+        "db_error": "storage_failure"
+      },
+      "receipt": "owner_scoped_revoke_receipt_resulting_generation_exact_replay",
+      "audit": "exact_match_owner_actor_target_operation_outcome_reason_payload_U80_02_to_04_U80_07_U80_08",
+      "cases": [
+        "D1-002",
+        "D1-003",
+        "D1-004",
+        "D1-014",
+        "D1-016",
+        "D1-028",
+        "D1-029",
+        "D1-030"
+      ]
+    },
+    {
+      "method": "rotateShareCodeAtomic",
+      "kind": "conditional_update_cas",
+      "source": [
+        "authenticated_server_context.actor",
+        "authenticated_server_context.owner",
+        "server_resolved_code_record_id",
+        "trusted_expected_version",
+        "server_generated_secret_material"
+      ],
+      "bind_contract": [
+        "new_digest:blob_or_text:required",
+        "rotated_at:integer:required",
+        "owner_admin_id:text:required",
+        "code_record_id:text:required",
+        "expected_version:integer:required"
+      ],
+      "result": {
+        "success": "one_row_version_old_plus_one",
+        "zero": "cas_conflict_or_inactive",
+        "digest_collision": "narrow_domain_conflict",
+        "db_error": "storage_failure"
+      },
+      "receipt": "owner_scoped_rotation_receipt_no_auto_retry_with_new_version",
+      "audit": "no_raw_code_or_digest_envelope_policy_U80_02_to_04_U80_07_U80_08_side_effects_U80_05_06",
+      "cases": [
+        "D1-004",
+        "D1-015",
+        "D1-016",
+        "D1-028",
+        "D1-029",
+        "D1-031"
+      ]
+    },
+    {
+      "method": "getCurrentShareCode",
+      "kind": "owner_scoped_select",
+      "source": [
+        "authenticated_server_context.owner"
+      ],
+      "bind_contract": [
+        "owner_admin_id:text:required"
+      ],
+      "result": {
+        "success": "exactly_one_active_record",
+        "zero": "not_found_or_inactive",
+        "more_than_one": "schema_invariant_failure",
+        "db_error": "storage_failure"
+      },
+      "receipt": "read_only_no_mutation_receipt",
+      "audit": "read_audit_policy_not_frozen_never_return_digest_or_raw_secret",
+      "cases": [
+        "D1-001",
+        "D1-005",
+        "D1-011",
+        "D1-030"
+      ]
+    },
+    {
+      "method": "expireTransientRecords",
+      "kind": "bounded_ledger_driven_cleanup",
+      "source": [
+        "server_clock",
+        "fixed_server_batch_limit",
+        "synthetic_run_ledger"
+      ],
+      "bind_contract": [
+        "now:integer:required",
+        "limit:integer:positive_bounded"
+      ],
+      "result": {
+        "success": "bounded_counts_and_residual_query",
+        "zero": "idempotent_noop",
+        "unexpected_scope": "stop",
+        "db_error": "storage_failure"
+      },
+      "receipt": "no_business_operation_receipt",
+      "audit": "test_run_ledger_only_never_delete_audit_receipts_or_bindings",
+      "cases": [
+        "D1-023",
+        "D1-026",
+        "D1-033",
+        "D1-034"
+      ]
+    }
+  ],
+  "composite_contracts": [
+    {
+      "operation": "create_created",
+      "assertions": [
+        "challenge consumed exactly once",
+        "new binding exact owner/device/thumbprint",
+        "binding.created only for row created by this operation",
+        "owner-scoped receipt exact operation type/fingerprint/result",
+        "audit exact-match only after U80-02..04 freeze",
+        "final atomic assertion rolls back mismatch"
+      ],
+      "blocked_by": [
+        "U80-02",
+        "U80-03",
+        "U80-04",
+        "U80-07"
+      ]
+    },
+    {
+      "operation": "create_existing",
+      "assertions": [
+        "challenge consumed exactly once",
+        "pre-existing binding unchanged",
+        "no binding.created",
+        "owner-scoped receipt result_kind=existing",
+        "resolution audit only if U80-01 approves",
+        "exact retry returns original receipt"
+      ],
+      "blocked_by": [
+        "U80-01",
+        "U80-02",
+        "U80-03",
+        "U80-04",
+        "U80-07"
+      ]
+    },
+    {
+      "operation": "revoke",
+      "assertions": [
+        "owner+binding+active+expected_generation CAS",
+        "generation increments once",
+        "audit exact-match",
+        "owner-scoped receipt exact result",
+        "foreign and absent externally indistinguishable"
+      ],
+      "blocked_by": [
+        "U80-02",
+        "U80-03",
+        "U80-04",
+        "U80-07",
+        "U80-08"
+      ]
+    },
+    {
+      "operation": "rotation",
+      "assertions": [
+        "owner+code_record+active+expected_version CAS",
+        "version increments once",
+        "audit exact-match",
+        "owner-scoped receipt exact result",
+        "no implicit side effect on bindings/sessions/challenges/free grants"
+      ],
+      "blocked_by": [
+        "U80-02",
+        "U80-03",
+        "U80-04",
+        "U80-05",
+        "U80-06",
+        "U80-07",
+        "U80-08"
+      ]
+    }
+  ],
+  "d1_case_map": {
+    "D1-001": "environment identity + owner-scoped read",
+    "D1-002": "assertion true and exact readback",
+    "D1-003": "assertion false and rollback",
+    "D1-004": "audit exact predicate",
+    "D1-005": "bind storage class/null/Unicode",
+    "D1-006": "batch result order",
+    "D1-007": "batch rollback",
+    "D1-008": "zero-change classification",
+    "D1-009": "RETURNING/meta.changes runtime",
+    "D1-010": "unique conflict classification",
+    "D1-011": "owner receipt isolation",
+    "D1-012": "create competition",
+    "D1-013": "device key conflict",
+    "D1-014": "revoke CAS competition",
+    "D1-015": "rotation CAS competition",
+    "D1-016": "timeout-after-commit replay",
+    "D1-017": "multi-dimension limiter concurrency",
+    "D1-018": "duplicate event ID semantics",
+    "D1-019": "required dimension presence",
+    "D1-020": "shared NAT dimension isolation",
+    "D1-021": "clock boundary",
+    "D1-022": "window and Retry-After",
+    "D1-023": "cleanup/admission race",
+    "D1-024": "query plan/cost",
+    "D1-025": "HMAC key overlap",
+    "D1-026": "cleanup idempotency/scope",
+    "D1-027": "create-existing resolution",
+    "D1-028": "receipt operation type/fingerprint conflict",
+    "D1-029": "audit field-by-field negative assertions",
+    "D1-030": "owner boundary/non-disclosure",
+    "D1-031": "rotation side effects (blocked U80-05/06)",
+    "D1-032": "cross-version event_id union/dedupe",
+    "D1-033": "cleanup union history race",
+    "D1-034": "HMAC index/migration coverage"
+  }
+}
