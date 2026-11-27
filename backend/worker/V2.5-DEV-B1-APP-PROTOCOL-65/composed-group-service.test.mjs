@@ -167,6 +167,15 @@ test("allowlist must exactly equal loaded card and free group IDs",async()=>{
  assert.equal((await service({deviceId:DEVICE,credentials:credentials(A)})).code,"GROUP_SCOPE_MISMATCH");
 });
 
+test("response projection omits internal entitlement and card identifiers",async()=>{
+ const {service}=setup({scopes:{ent_A:{ok:true,allowedGroupIds:["ga"],cardGroups:[{...cardGroup("ga"),privateSecret:"hidden"}],freeGroups:[]}}});
+ const r=await service({deviceId:DEVICE,credentials:credentials(A)});
+ assert.equal(r.ok,true);
+ assert.equal(Object.hasOwn(r.groups[0],"cardId"),false);
+ assert.equal(Object.hasOwn(r.groups[0],"entitlementId"),false);
+ assert.equal(Object.hasOwn(r.groups[0],"privateSecret"),false);
+});
+
 test("same-name groups belonging to different admins are not serial-decorated",async()=>{
  const {service}=setup({entitlements:[A,C],scopes:{
   ent_A:{ok:true,allowedGroupIds:["ga"],cardGroups:[cardGroup("ga")],freeGroups:[]},
