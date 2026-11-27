@@ -83,7 +83,7 @@ class Batch80FreezeTests(unittest.TestCase):
     def test_18_hmac_counts_logical_events_by_event_id(self):
         self.assertIn("immutable logical tuple", HMAC)
         self.assertIn("event_id", HMAC)
-        self.assertIn("Do not sum raw bucket counts", HMAC)
+        self.assertIn("avoid summing raw bucket counts", HMAC)
 
     def test_19_hmac_plan_has_no_production_threshold(self):
         self.assertIn("no key, threshold, retention duration", HMAC)
@@ -99,10 +99,10 @@ class Batch80FreezeTests(unittest.TestCase):
             self.assertIn(route, LEGACY)
 
     def test_22_v2_isolated_handler_not_claimed_deployed(self):
-        self.assertIn("not proof of production route registration", LEGACY)
+        self.assertIn("not proof of a deployed v2 endpoint", LEGACY)
 
     def test_23_apk_caller_inventory_is_marked_incomplete(self):
-        self.assertIn("caller inventory is therefore incomplete", LEGACY)
+        self.assertIn("no client call-site inventory can be claimed complete", LEGACY)
 
     def test_24_no_legacy_route_retirement_is_authorized(self):
         self.assertIn("Do not delete, rename or change semantics", LEGACY)
