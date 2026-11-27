@@ -1226,3 +1226,33 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 基于仓库源码完成 legacy share-code 调用方盘点，不改路由/schema。
 7. 不连接 D1、不执行 SQL/迁移，不改 Worker/HTML/APK/Room/Secrets，不部署。
 8. 更新进度、总方案和第七十四批接手卡。
+
+
+---
+
+## 第七十三批结果与第七十四批唯一接手卡（2026-11-27）
+
+### 第七十三批结果
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-73`；报告：`docs/backend/StarJump_V2.5_APP_v2身份审计限流契约对抗性复核与隔离测试规格报告_第七十三批_V2.5-DEV-B1-APP-IDENTITY-73_2026-11-27.md`。
+- 新增：`backend/worker/V2.5-DEV-B1-APP-IDENTITY-73/ADVERSARIAL-REVIEW-AND-ISOLATED-TESTS.md`、README。
+- 本批完成对 binding create/revoke/rotation 的并发、超时、重复键、不同 payload、零行和部分提交风险静态复核，并给出精确隔离 D1 测试输入/预期/证据模板。
+- 重要修正：D1 batch 仅在语句错误时中止/回滚；条件 INSERT-SELECT 零行不是 SQL error。业务写入后，required audit INSERT-SELECT 若零行，批处理仍可能成功；batch 返回后检查 changes 已无法回滚。必须设计经隔离 D1 验证的 in-batch assertion/constraint。相同 event_key 的 DO NOTHING 不足以判断 payload 是否相同。
+- 第六十七批 challenge consume 与 binding create 是分离 store 调用；存在先消费 challenge、后创建 binding 失败导致 challenge 被烧掉的风险。下一版必须合并原子逻辑边界。
+- Cloudflare Debug D1 文档指出 Promise.race 超时不取消 D1 写操作，写操作可能仍提交。所有写超时均为 outcome-unknown，复用原 operation/binding/event IDs 并 owner-scoped 核实。
+- 限流对抗性测试覆盖多 isolate 并发、重复 event_id、缺失维度、共享 NAT、窗口边界、时钟跳变、Retry-After、多维释放时间、索引成本、cleanup race、HMAC key rotation 和 fail-closed。
+- Legacy share-code 源码盘点包括 admin_share_codes、ensureShareCode、/api/user/share-code、/api/super/admins/:id/share-code、/api/app/resolve、/api/app/free、/api/app/download 和原始 HTML 展示调用；APK/外部客户端调用方仍未审计，清单不是完整证明。旧字段/路由保持不变。
+- Nonce/签名新旧协议需要版本化；APK 源码未审计，APP_PENDING。
+- 本批只有静态源码/文档复核与公开 Cloudflare 文档核对；没有执行自动化测试、SQLite fixture 或 D1；未连接 D1、未执行 SQL/迁移、未改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、未部署。D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 第七十四批唯一接手卡
+
+**APP v2 identity 原子操作重构设计与本地可执行对抗性 fixture（仍不连接 D1）。**
+
+1. 重读 AGENTS、功能/API/数据库保护基线、总方案、进度和第六十七至七十三批资料。
+2. 重构逻辑状态机契约，使 challenge consume + binding insert/winner resolution + required audit 属于同一原子逻辑操作。
+3. 设计 required-audit in-batch assertion：审计零行、event_key 同 payload 重试、event_key 不同 payload 冲突均有明确结果；不能依赖 batch 返回后的 JS 检查回滚。
+4. 扩展本地 disposable SQLite fixture，覆盖 challenge 已消费后 binding 写失败、audit zero-row、audit SQL error rollback、相同/不同 payload 重试、timeout-after-commit 模拟、revoke/rotation race、limiter 窗口边界与 Retry-After。
+5. SQLite 仅作为本地语义测试，不得宣称 D1 多 isolate 并发通过；真实 D1 仍须隔离环境与用户明确批准。
+6. 不连接任何 D1，不执行 SQL/迁移，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
+7. 更新进度、总方案和第七十五批唯一接手卡。
