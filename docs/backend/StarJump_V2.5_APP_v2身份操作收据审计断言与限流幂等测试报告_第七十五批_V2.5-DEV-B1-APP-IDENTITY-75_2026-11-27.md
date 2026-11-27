@@ -53,8 +53,8 @@
 
 
 ### GitHub Actions verification
-- Run: [45995243015](https://github.com/sxna-web/XYmonihtml/actions/runs/45995243015) — completed / success.
-- Job: 140492878900; runner Python 3.13.18.
+- Run: [45995374834](https://github.com/sxna-web/XYmonihtml/actions/runs/45995374834) — completed / success.
+- Job: 140493331634; runner Python 3.13.18.
 - Exact repository command: `python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-75 -p 'test_*.py' -v`.
 - Log evidence: 24 tests ran; 24 passed; 0 failed; output `OK`; exit code 0.
 - This CI evidence is still only the in-memory synthetic SQLite fixture, not D1/Worker/APP/deployment verification.
