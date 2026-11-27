@@ -24,6 +24,7 @@ export function createIdentityBindingService({
   checkAdminEligibility,
   consumeRateLimit,
   verifyAndConsumeChallenge,
+  verifyDeviceRequestProof,
   getOrCreateBinding,
   loadBinding,
   loadFreeGroups,
@@ -32,7 +33,7 @@ export function createIdentityBindingService({
 }) {
   const deps = {
     lookupShareCode, checkAdminEligibility, consumeRateLimit,
-    verifyAndConsumeChallenge, getOrCreateBinding, loadBinding, loadFreeGroups,
+    verifyAndConsumeChallenge, verifyDeviceRequestProof, getOrCreateBinding, loadBinding, loadFreeGroups,
   };
   for (const [name, fn] of Object.entries(deps)) {
     if (typeof fn !== "function") throw new TypeError(`Missing identity service dependency: ${name}`);
@@ -128,13 +129,16 @@ export function createIdentityBindingService({
       bindingId: binding.bindingId,
       adminUserId: binding.adminUserId,
       deviceId: binding.deviceId,
+      deviceKeyThumbprint: binding.deviceKeyThumbprint,
     });
     if (typeof token !== "string" || !token) return fail("IDENTITY_TOKEN_ISSUE_FAILED");
     return { ok: true, bindingId: binding.bindingId, token };
   }
 
-  async function resolveCredential({ token, deviceId }) {
-    if (!DEVICE_RE.test(deviceId || "") || typeof token !== "string" || !token) {
+  async function resolveCredential({ token, deviceId, requestNonce, proof }) {
+    if (!DEVICE_RE.test(deviceId || "") || typeof token !== "string" || !token ||
+        !ID_RE.test(requestNonce || "") || typeof proof !== "string" ||
+        proof.length < 16 || proof.length > 2048) {
       return fail("IDENTITY_CREDENTIAL_INVALID");
     }
     let claims;
@@ -151,7 +155,26 @@ export function createIdentityBindingService({
     if (!binding || binding.status !== "active" ||
         binding.bindingId !== claims.bindingId ||
         binding.adminUserId !== claims.adminUserId ||
-        binding.deviceId !== deviceId) return fail("IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
+        binding.deviceId !== deviceId ||
+        binding.deviceKeyThumbprint !== claims.deviceKeyThumbprint) {
+      return fail("IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
+    }
+
+    let proofValid;
+    try {
+      proofValid = await verifyDeviceRequestProof({
+        bindingId: binding.bindingId,
+        deviceId,
+        deviceKeyThumbprint: binding.deviceKeyThumbprint,
+        requestNonce,
+        proof,
+      });
+    } catch {
+      return fail("IDENTITY_DEVICE_PROOF_UNAVAILABLE");
+    }
+    if (proofValid !== true && proofValid?.ok !== true) {
+      return fail("IDENTITY_DEVICE_PROOF_INVALID");
+    }
 
     let eligibility;
     try { eligibility = await checkAdminEligibility(binding.adminUserId); }
@@ -179,7 +202,10 @@ export function createIdentityBindingService({
     for (const credential of credentials) {
       if (!credential || typeof credential.token !== "string") return fail("IDENTITY_CREDENTIALS_INVALID");
       if (!(await rateLimit("identity-resolve", rateLimitKey || deviceId))) return fail("RATE_LIMITED");
-      const resolved = await resolveCredential({ token: credential.token, deviceId });
+      const resolved = await resolveCredential({
+        token: credential.token, deviceId,
+        requestNonce: credential.requestNonce, proof: credential.proof,
+      });
       if (!resolved.ok) return resolved;
       if (!seenBindings.has(resolved.context.bindingId)) {
         seenBindings.add(resolved.context.bindingId);
