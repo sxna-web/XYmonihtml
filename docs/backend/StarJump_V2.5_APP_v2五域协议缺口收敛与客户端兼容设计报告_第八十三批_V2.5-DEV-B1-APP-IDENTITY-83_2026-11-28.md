@@ -2,7 +2,7 @@
 
 - 批次：`V2.5-DEV-B1-APP-IDENTITY-83`
 - 日期：2026-11-28
-- 状态：`PROTOCOL_CONTRACT_DESIGN_COMPLETE / 6_00_48_SOURCE_UNAVAILABLE / TOKENIZER_LOCAL_TEST_PASS_16_OF_16 / CONTRACT_CONTENT_CHECK_PASS_9_OF_9 / ACTIONS_RUN_NOT_VERIFIED / D1_NOT_TESTED / APP_NOT_INTEGRATED / NOT_DEPLOYABLE`
+- 状态：`PROTOCOL_CONTRACT_DESIGN_COMPLETE / 6_00_48_SOURCE_UNAVAILABLE / TOKENIZER_LOCAL_TEST_PASS_18_OF_18 / CONTRACT_CONTENT_CHECK_PASS_9_OF_9 / ACTIONS_RUN_NOT_VERIFIED / D1_NOT_TESTED / APP_NOT_INTEGRATED / NOT_DEPLOYABLE`
 
 ## 一、本批结论
 
@@ -37,7 +37,7 @@
 - `.github/workflows/worker-app-identity83-review.yml`
 
 验证证据：
-- Python 3.13 本地隔离执行 tokenizer 测试：16/16 passed。
+- Python 3.13 本地隔离执行 tokenizer 测试：18/18 passed；额外覆盖数字形式命名参数标记与空 SQL 拒绝。
 - 对 GitHub 复读的协议文档执行 9 组内容完整性检查：9/9 passed。
 - Workflow 已提交，但本轮没有取得对应 GitHub Actions run/job/log 的可核验结果，因此不标记 Actions CI 通过。
 - tokenizer 仅是 SQL lexical scanner，不解析 SQL 语义、不执行 SQL，也不证明 D1 兼容。
