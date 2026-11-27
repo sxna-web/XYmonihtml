@@ -1,0 +1,25 @@
+name: APP Protocol 61 Slot Lifecycle Tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-61/**"
+      - ".github/workflows/worker-app-protocol61-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-slot-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check
+        run: node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-61/slot-lifecycle.mjs
+      - name: Slot lifecycle tests
+        run: node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-61/slot-lifecycle.test.mjs
