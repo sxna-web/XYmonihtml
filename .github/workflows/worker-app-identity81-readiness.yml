@@ -25,4 +25,4 @@ jobs:
         with:
           python-version: '3.13'
       - name: Validate offline adapter readiness contracts
-        run: python -m unittest backend/worker/V2.5-DEV-B1-APP-IDENTITY-81/test_batch81_readiness.py -v
+        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-81 -p test_batch81_readiness.py -v
