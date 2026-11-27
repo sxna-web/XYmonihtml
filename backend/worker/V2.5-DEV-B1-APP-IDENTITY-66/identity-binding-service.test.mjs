@@ -89,6 +89,7 @@ test("share code lookup and binding are rate limited before database lookup",asy
   checkAdminEligibility:async()=>null,
   consumeRateLimit:async()=>({ok:false}),
   verifyAndConsumeChallenge:async()=>({ok:false}),
+  verifyDeviceRequestProof:async()=>false,
   getOrCreateBinding:async()=>null,loadBinding:async()=>null,loadFreeGroups:async()=>[],
   identityTokenAdapter:h.tokenAdapter,
  });
@@ -205,6 +206,7 @@ test("group loader must return only enabled free groups owned by exact admin",as
   checkAdminEligibility:async id=>h.eligibility.get(id)||null,
   consumeRateLimit:async()=>true,
   verifyAndConsumeChallenge:async()=>({ok:true,deviceKeyThumbprint:"key_thumbprint_01"}),
+  verifyDeviceRequestProof:async()=>true,
   getOrCreateBinding:async input=>{const row=[...h.bindings.values()][0];return row||{bindingId:"binding_x",...input,status:"active"};},
   loadBinding:async id=>[...h.bindings.values()].find(x=>x.bindingId===id)||null,
   loadFreeGroups:async()=>[group("bad","admin_B","越权组")],
@@ -273,6 +275,7 @@ test("D1-style binding or eligibility errors fail closed",async()=>{
   checkAdminEligibility:async()=>{throw Error("db unavailable");},
   consumeRateLimit:async()=>true,
   verifyAndConsumeChallenge:async()=>({ok:true,deviceKeyThumbprint:"key_thumbprint_01"}),
+  verifyDeviceRequestProof:async()=>true,
   getOrCreateBinding:async()=>{throw Error("db unavailable");},
   loadBinding:async()=>{throw Error("db unavailable");},
   loadFreeGroups:async()=>{throw Error("db unavailable");},
