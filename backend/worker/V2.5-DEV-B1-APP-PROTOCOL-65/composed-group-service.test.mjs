@@ -163,7 +163,7 @@ test("handler rejects malformed, oversized and excessive credential payloads",as
  const handler=createComposedGroupsHandler({composeGroups:async()=>({ok:true,groups:[]})});
  const mk=body=>new Request("https://unit.test/api/app/v2/groups/composed",{method:"POST",headers:{"x-app-device-id":DEVICE},body});
  assert.equal((await handler(mk("{"))).status,400);
- assert.equal((await handler(mk("x".repeat(32769))).status,413);
+ assert.equal((await handler(mk("x".repeat(32769)))).status,413);
  assert.equal((await handler(mk(JSON.stringify({credentials:Array.from({length:21},(_,i)=>({entitlementId:"ent_"+i,token:"token-value-123456789"}))})))).status,400);
 });
 
