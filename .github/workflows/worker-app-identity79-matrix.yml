@@ -1,0 +1,24 @@
+name: Worker APP Identity Batch 79 Offline Matrix
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-79/**"
+      - ".github/workflows/worker-app-identity79-matrix.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: worker-app-identity79-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run offline Batch 79 matrix tests
+        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-79 -p 'test_*.py' -v
