@@ -826,3 +826,43 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 设备 slot schema/backfill/release 仅为设计提案，没有 migration。未找到可确认的隔离 D1，不用生产或 staging 替代。
 - Library 仅有 6.00.47；GitHub tree 确认 6.00.48 ZIP 存在但二进制无法读取，不能宣称完成源码/第三方许可审计。
 - 第六十一批：继续设备 slot 生命周期与客户端授权协议对照；如有可读取 6.00.48 ZIP 再审计；不接生产、不部署。
+
+
+## 13. 第六十一批进度与第六十二批接手卡（2026-11-27）
+
+### 第六十一批状态
+
+- 版本：`V2.5-DEV-B1-APP-PROTOCOL-61`
+- 报告：`docs/backend/StarJump_V2.5_APP_v2设备占额生命周期与6.00.47客户端映射对照报告_第六十一批_V2.5-DEV-B1-APP-PROTOCOL-61_2026-11-27.md`
+- CI Run：`45966848333` completed/success；Node 22 语法检查通过，10/10 tests passed，0 failed。
+- 第六十批 CI Run `45965260408` 已读取完整 job log，确认 Node 71/71、SQLite 3/3，0 失败。
+- 第六十一批新增 slot lifecycle 纯函数：规范化 backfill 计划、同卡同设备去重、超限存量 grandfather、设备解绑审批门禁、卡密过期/撤销 hold 及续期/VIP 状态不自动释放。
+- 卡密过期/撤销是否释放容量、设备解绑审批人范围仍是待用户确认业务规则；当前 helper 仅表达保守提案，不接入线上。
+- 6.00.47 Room 数据映射已重新核对：本地 group numeric id + node groupId；没有 entitlement/admin/card/generation/lease/cursor/ack 映射；Room version 7 存在 destructive migration fallback 风险。
+- Library 仍没有 6.00.48 可读取副本，第三方授权和客户端协议审计继续受阻，APP_PENDING。
+- 没有隔离 D1 可用，D1_NOT_TESTED；未创建 migration；未修改 Worker/HTML/APK/Secrets；未连接生产或 staging；未部署。
+
+### APP v2 当前总体状态（按验收层级）
+
+| 层级 | 状态 | 说明 |
+|---|---|---|
+| 业务规则与 API v2 设计 | 已形成设计/部分冻结 | 需保留待确认业务项 |
+| 隔离 helper 与 mock/纯函数测试 | 多批 CI 通过 | 仍未接入现有 Worker |
+| 真实 Worker 集成 | 未实施 | 原始两文件 Worker 基线未改 |
+| D1 schema / migration / 并发 | 未验证 | 没有经确认的隔离 D1；生产禁止擅动 |
+| 6.00.48 第三方源码审计 | 受阻 | 没有可读取 ZIP 二进制副本 |
+| Android Room/API v2 实施 | 未实施 | 6.00.47 只有结构参考，且 destructive fallback 必须先处理 |
+| APK 构建/真机在线离线测试 | 未实施 | 仍为 APK_PENDING |
+| 部署 | 未授权/未执行 | 不可部署 |
+
+### 第六十二批唯一首要任务
+
+**APP v2 设备槽位策略确认准备与隔离 D1 可用性核查（不部署）。**
+
+1. 重读 AGENTS、功能基线、API、D1 保护规范、总方案、进度和第五十七至六十一批报告。
+2. 复核第六十一批 CI Run 45966848333 与 backfill helper 边界；失败先修复。
+3. 只读核查是否出现 6.00.48 可读取文件；无则保持 APK_PENDING。
+4. 继续列出设备释放策略最少确认项；“过期/撤销先 hold”仅为安全提案，不冻结为硬规则。
+5. 若出现明确隔离 D1，先只读核对 schema 并生成 backfill dry-run 冲突报告；否则仅完善 fixture/冲突报告测试，不接生产或 staging。
+6. 继续评估 resolver、group loader、group composition、slot adapter 接入 Worker 的最小影响方案；不修改原始 Worker。
+7. 更新总进度和第六十三批接手卡；不创建正式 migration、不改 HTML/APK/Secrets、不部署。
