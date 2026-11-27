@@ -1018,3 +1018,48 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 不读取或泄露真实 share code、卡密、Token；不执行 SQL、不创建 migration。
 7. 不修改 Worker/HTML/APK/D1/Secrets，不接生产路由、不部署。
 8. 更新进度、总方案和第六十七批接手卡。
+
+
+
+
+## 18. 第六十六批结果与第六十七批接手卡（2026-11-27）
+
+### 第六十六批结果
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-66`
+- 报告：`docs/backend/StarJump_V2.5_APP_v2身份ID免费组发现绑定Resolver与多卡密组合审查_第六十六批_V2.5-DEV-B1-APP-IDENTITY-66_2026-11-27.md`
+- 最终 CI Run `45978198685` completed/success；Node 22 语法检查通过，23/23 tests passed，0 failed。早期失败 Run 保留，最终以该 Run 为准。
+- 原始 Worker 只读审计确认：公开 `/api/app/resolve` 通过 share code 返回管理员 ID/name/free flag，没有设备绑定/challenge/token/rate-limit；`/api/app/free` 可凭 admin ID 或 code 直接返回免费节点；`admin_share_codes` 旧 DDL 没有 version/revocation 字段；`app_free_grants` 是卡密 redeem 产生的 device/admin 免费资格，不是身份 ID 绑定记录；旧 free route 未见有效 VIP 状态检查。
+- 新增独立 identity Token adapter 和 binding service：APP_IDENTITY_SECRET 单独签发 Token，claims 绑定 binding/admin/device/device-key thumbprint/iat/exp；最大 TTL 23 小时；每次受保护读取都要验证绑定记录、当前 VIP/账号/free 开关，以及新的 request nonce + 设备私钥签名证明。
+- share code 只做发现/绑定；公开发现响应不泄露 admin ID/token/node；绑定按 admin+device 幂等；多管理员分别绑定；同管理员身份免费组去重；不同管理员隔离；与第六十五批卡密 free group 组合时按 admin+group ID 去重，卡密专属组保留。
+- 轮换/撤销策略当前是 DEV 提案：旧 code 不能新绑定，轮换不自动删除既有 binding；单独 revoke binding、free switch 关闭或管理员失去有效资格后拒绝读取。此策略生产前需用户确认。
+- 重要阻塞：旧 share-code DDL 没有 codeVersion/revocation，未发现 identity binding/challenge/nonce 表；durable rate limit、challenge/nonce 原子消费、binding upsert 必须后续由持久化 adapter 实现。Android Keystore/每请求签名兼容未审计 6.00.48。
+- 所有持久化和权限依赖仍是注入接口；没有真实 D1 SQL。未接入 Worker，未改 HTML/APK/Room/D1/Secrets，未部署。D1_NOT_TESTED；APP_PENDING。
+
+### APP v2 状态矩阵（第六十六批后）
+
+| 层级 | 状态 | 说明 |
+|---|---|---|
+| 精确 entitlement Token / 单授权读取 | 隔离实现，23/23 测试 | 未接 Worker；D1 loader 注入 |
+| 多卡密 group composition | 隔离实现，26/26 测试 | 未接 Worker；D1 loader 注入 |
+| Identity discovery/binding service | 隔离实现，23/23 测试 | challenge/binding/rate-limit adapter 注入 |
+| Identity HMAC credential | 隔离实现 | APP_IDENTITY_SECRET 未配置；不可复用 entitlement/session secret |
+| 每次身份读取设备私钥证明 | mock contract 通过 | Android Keystore/6.00.48 未审计 |
+| Share-code version/revocation persistence | 未实施 | 原始旧 DDL 无相关字段 |
+| Identity binding/challenge/nonce persistence | 未实施 | 未发现相关表；无 D1 migration |
+| IDENTITY + CARD free-group composition | 隔离 helper 测试通过 | 不代表生产 API 接通 |
+| 真实 D1 / Workers runtime / Android 联调 | 未测试 | D1_NOT_TESTED / APP_PENDING |
+| 生产部署 | 未授权/未执行 | 不可部署 |
+
+### 第六十七批唯一首要任务
+
+**APP v2 identity challenge / nonce / binding 持久化状态机与并发契约测试（隔离实现，不接 D1、不接 Worker）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度及第五十一至六十六批报告。
+2. 为 bind challenge、每次 request nonce、identity binding 和 share-code version 设计状态机及最小数据契约；区分现有字段与新增设计字段。
+3. 建立 mock durable-store adapter，验证 challenge 单次消费、nonce 防重放、绑定唯一约束、并发重复 bind 幂等、撤销与轮换竞态、过期清理。
+4. 验证多个 Worker 并发/重试下不能重复消费 challenge/nonce 或创建重复绑定；不能只依赖单实例内存锁。
+5. 对照第六十六批 service 接口，输出后续 D1 adapter 契约和迁移前只读核查清单。
+6. 真实 D1 schema 未核实前，不生成可执行 migration，不执行 SQL。
+7. 不修改 Worker/HTML/APK/Room/D1/Secrets，不接生产路由、不部署。
+8. 更新进度、总方案和第六十八批接手卡。
