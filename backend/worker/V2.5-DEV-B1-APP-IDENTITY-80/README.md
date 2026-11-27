@@ -3,7 +3,7 @@
 - Version: `V2.5-DEV-B1-APP-IDENTITY-80`
 - Date: 2026-11-27
 - Scope: adapter freeze checklist, D1 case extension, HMAC union/index/migration proof plan, legacy caller compatibility inventory.
-- Status: `PRE_IMPLEMENTATION_REVIEW / BUSINESS_FREEZE_BLOCKED / OFFLINE_CI_PENDING / D1_NOT_TESTED / NOT_DEPLOYABLE`.
+- Status: `PRE_IMPLEMENTATION_REVIEW / BUSINESS_FREEZE_BLOCKED / OFFLINE_CI_PASS_24_OF_24 / D1_NOT_TESTED / NOT_DEPLOYABLE`.
 
 ## Files
 - `ADAPTER-CONTRACT-FREEZE-CHECKLIST.md`: confirmed product rules vs proposals vs user decisions and technical evidence blockers.
