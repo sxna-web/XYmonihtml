@@ -103,7 +103,7 @@ test("handler returns empty node set for an allowed empty group list", async () 
 });
 test("handler passes explicit allowlist to node adapter", async () => {
  let received;
- const handler=createAppV2ReadHandler({resolveSession:async()=>({ok:true,deviceId:"device_A"}),resolveEntitlement:async()=>({ok:true,entitlement:{id:"entitlement_A"}}),loadGroups:async()=>({ok:true,allowedGroupIds:["group_A"],generation:3,groups:[]}),loadNodes:async(args)=>{received=args.allowedGroupIds;return {ok:true,nodes:[{id:"node_A",adminUserId:"admin_A",groupId:"group_A"}]};}});
+ const handler=createAppV2ReadHandler({resolveSession:async()=>({ok:true,deviceId:"device_A"}),resolveEntitlement:async()=>({ok:true,entitlement:{id:"entitlement_A",device_id:"device_A",admin_user_id:"admin_A"}}),loadGroups:async()=>({ok:true,allowedGroupIds:["group_A"],generation:3,groups:[]}),loadNodes:async(args)=>{received=args.allowedGroupIds;return {ok:true,nodes:[{id:"node_A",adminUserId:"admin_A",groupId:"group_A"}]};}});
  const res=await handler(new Request("https://example.test/api/app/v2/entitlements/entitlement_A/nodes",{headers:{authorization:"Bearer 0123456789abcdef"}}));
  assert.equal(res.status,200);assert.deepEqual(received,["group_A"]);
 });
