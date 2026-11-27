@@ -192,7 +192,7 @@ class Batch79Tests(unittest.TestCase):
         with self.assertRaises(ValueError): validate_manifest("SELECT ?, ?", m, ["a", "b"])
 
     def test_16_duplicate_semantic_names_rejected(self):
-        m = self.manifest(); m[1]["semantic_name"] = m[0]["semantic_name"]
+        m = self.manifest(2, "SELECT ?, ?"); m[1]["semantic_name"] = m[0]["semantic_name"]
         with self.assertRaises(ValueError): validate_manifest("SELECT ?, ?", m, ["a", "b"])
 
     def test_17_undefined_bind_rejected(self):
@@ -208,7 +208,7 @@ class Batch79Tests(unittest.TestCase):
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, [True])
 
     def test_20_null_requires_explicit_null_contract(self):
-        m = self.manifest(1); m[0].update(storage_class="null", nullable=True, missing_policy="bind_null")
+        m = self.manifest(1, "SELECT ?"); m[0].update(storage_class="null", nullable=True, missing_policy="bind_null")
         self.assertTrue(validate_manifest("SELECT ?", m, [None]))
 
     def test_21_null_without_nullable_rejected(self):
@@ -224,7 +224,13 @@ class Batch79Tests(unittest.TestCase):
         b = validate_manifest("SELECT  ?", self.manifest(1), ["x"])
         self.assertNotEqual(a, b)
 
-    def test_24_audit_envelope_required_fields_complete(self):
+    def test_24_manifest_rejects_wrong_exact_sql_hash(self):
+        sql = "SELECT ?"
+        m = self.manifest(1, sql)
+        m[0]["sql_sha256"] = "0" * 64
+        with self.assertRaises(ValueError): validate_manifest(sql, m, ["x"])
+
+    def test_25_audit_envelope_required_fields_complete(self):
         self.assertEqual(audit_envelope_missing({k: None for k in REQUIRED_AUDIT_FIELDS}), set())
 
     def test_25_audit_envelope_missing_actor_owner_target_detected(self):
