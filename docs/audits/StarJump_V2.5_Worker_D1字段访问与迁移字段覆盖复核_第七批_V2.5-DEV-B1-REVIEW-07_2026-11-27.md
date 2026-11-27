@@ -35,7 +35,7 @@
 | `app_free_grants` | device_id, admin_user_id, granted_at |
 | `admin_share_codes` | admin_user_id, code, created_at |
 | `download_links` | id, scope, admin_user_id, title, url, sort, enabled, created_at |
-| `app_card_events` | id, card_id, admin_user_id, action, detail, created_at |
+| `app_card_events` | id, card_id, admin_user_id, action, detail, device_id, created_at |
 | `releases` | id, platform, version_code, version_name, min_version_code, url, notes, force, created_at |
 | `announcements` | id, scope, title, body, level, starts_at, ends_at, active, created_at |
 | `admin_app_perms` | admin_user_id, links_enabled, max_links, free_group_enabled |
