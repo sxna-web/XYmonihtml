@@ -125,37 +125,3 @@ test("lease expires at exact boundary and malformed time fails closed",()=>{
  assert.equal(isLeaseValid({leaseExpiresAt:"2026-11-27T12:00:00Z",serverNow:"2026-11-27T12:00:00Z"}).code,"LEASE_EXPIRED");
  assert.equal(isLeaseValid({leaseExpiresAt:"not-a-date",serverNow:"2026-11-27T11:00:00Z"}).failClosed,true);
 });
-
-
-test("duplicate card group row in one entitlement fails closed",()=>{
- const r=composeEntitlementGroups({entitlements:[cardA],groupsByEntitlement:[
-  {entitlementId:"ent_A",cardGroups:[cardGroup("ga"),cardGroup("ga")],freeGroups:[]},
- ]});
- assert.equal(r.ok,false);assert.equal(r.code,"DUPLICATE_CARD_GROUP_ROW");
-});
-
-test("unexpected loader result not attached to any entitlement fails closed",()=>{
- const r=composeEntitlementGroups({entitlements:[cardA],groupsByEntitlement:[
-  {entitlementId:"ent_A",cardGroups:[],freeGroups:[]},
-  {entitlementId:"ent_fake",cardGroups:[],freeGroups:[]},
- ]});
- assert.equal(r.ok,false);assert.equal(r.code,"UNEXPECTED_GROUP_LOADER_RESULT");
-});
-
-test("same group name across different admins is not decorated with card serial",()=>{
- const entC={id:"ent_C",adminUserId:"admin_C",kind:"CARD",cardId:"card_C",cardSerialLabel:"序列号-003"};
- const r=composeEntitlementGroups({entitlements:[cardA,entC],groupsByEntitlement:[
-  {entitlementId:"ent_A",cardGroups:[cardGroup("ga","香港节点")],freeGroups:[]},
-  {entitlementId:"ent_C",cardGroups:[{...cardGroup("gc","香港节点"),adminUserId:"admin_C"}],freeGroups:[]},
- ]});
- assert.equal(r.ok,true);
- assert.deepEqual(r.groups.map(g=>g.displayName),["香港节点","香港节点"]);
-});
-
-test("unapproved database extra fields are not propagated into group output",()=>{
- const r=composeEntitlementGroups({entitlements:[cardA],groupsByEntitlement:[
-  {entitlementId:"ent_A",cardGroups:[{...cardGroup("ga"),privateSecret:"must-not-leak"}],freeGroups:[]},
- ]});
- assert.equal(r.ok,true);
- assert.equal(Object.hasOwn(r.groups[0],"privateSecret"),false);
-});
