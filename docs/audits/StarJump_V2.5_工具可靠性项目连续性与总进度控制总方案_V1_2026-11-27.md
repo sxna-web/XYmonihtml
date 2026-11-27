@@ -432,3 +432,55 @@
 | 前端接入 | 原始 index.html API 路径与环境错配 | Worker 接口稳定后修正 |
 | 通知/邮箱 | 用户决定后置，需求已留档 | 核心主线完成后再做 |
 | 生产环境 | 线上版本与 D1 schema 未核实 | 不操作、不部署 |
+
+
+## 15. 第四十八批完成与第四十九批接手卡（2026-11-27）
+
+### 第四十八批状态：IMPLEMENTED / CI_TESTED / HANDLER_INTEGRATION_PENDING
+
+- 批次：`V2.5-DEV-B1-CORE-AUTH-48`
+- 报告：`docs/backend/StarJump_V2.5_Worker_APP管理写接口VIP门禁接入与测试报告_第四十八批_V2.5-DEV-B1-CORE-AUTH-48_2026-11-27.md`
+- 报告 Commit：`1a8981de9ab2ddfa08ef9b60f640d860d2e18e3a`
+- 版本 Worker：`backend/worker/V2.5-DEV-B1-CORE-AUTH-48/Worker.js`，Blob SHA `bf04ef31bbd75777263d0dc8b3108da62a852668`。
+- adapter：`worker-auth-adapter.mjs`，Blob SHA `17cb6b04267555b9774cf0665384d43a3dec3cb1`。
+- tests：`worker-auth-adapter.test.mjs`，Blob SHA `f4999ab485c1a89f42bfa833041b4b1e4a00bc06`。
+- 新增 CI：`.github/workflows/worker-auth48-tests.yml`。
+- GitHub Actions Run ID：`45953635805`；Node.js v22.23.5；Worker ESM syntax check、adapter syntax check通过；12/12 adapter mock tests passed，0 failed。
+- 原始 Worker/HTML Blob SHA 复核未变：Worker `5da7aa3582558d9da2c2a0ad25a63c5e95e9fe63`；HTML `ab98aecd4c8546eda197bbb4d5a9f5ec0db82613`。
+- 已接入 APP 分组、APP links、APP cards 的指定用户态写操作。GET 不受 VIP 写门禁影响；身份来自服务端 Session；VIP activation rows 按 effective user 全量读取；正式到期历史删除在最终 DELETE SQL 同时限定 owner 与 created_at cutoff。
+- 仅仓库原 Worker DDL 显示的字段得到静态确认；生产 D1 schema 未核实。
+- 测试边界：adapter mock tests 不等同 Worker handler/D1 集成测试；通用 assist-scope 拒绝分支的审计写入未由本批 mock 覆盖；Cloudflare Workers runtime 未验证。
+- 未修改 D1 schema/数据、Secrets、原始 Worker/HTML；未连接生产 Cloudflare/D1；未部署。
+- APP 分组物理删除与 24 小时 tombstone/cleanup acknowledgement 尚未解决；本版本不可部署。
+
+### 当前总进度摘要
+
+| 模块 | 当前状态 | 下一步 |
+|---|---|---|
+| 项目基线/业务规则 | 已建立并持续维护 | 按批次更新 |
+| 本地迁移工具 | 第四十五批 24/24 SQLite 测试通过 | D1 隔离兼容仍待验证 |
+| 核心身份/VIP 权限 | 第四十七批 helper 26/26；第四十八批 Worker 副本接入，CI 12/12 adapter tests | 第四十九批 handler 级隔离集成测试 |
+| APP 管理写接口 | adapter 已接入版本 Worker 副本 | 验证真实 handler、对象归属、失败恢复 |
+| 转换/匿名归属 | 共享匿名 owner、固定密钥、filters/限流风险已登记 | 后续独立修复 |
+| APP entitlement/多授权 | token/status/latest-only 风险已登记 | 写门禁稳定后继续 |
+| APP 分组撤销 | 仍为物理删除，无 24h ack 闭环 | 单独设计 tombstone/generation/ack |
+| 前端接入 | 原始 HTML API 路径/环境错配已登记 | Worker API 稳定后调整 |
+| 通知/邮箱 | 用户决定后置 | 核心主线完成后再做 |
+| 生产 D1/部署 | 未核实、未授权 | 不操作、不部署 |
+
+### 第四十九批唯一首要任务
+
+**建立隔离 Worker handler 测试环境，完成 APP 管理路由端到端权限回归。**
+
+1. 先重读当前 main、AGENTS、功能基线、本方案、开发进度、第四十八批报告和版本 Worker。
+2. 核对最新 Worker/adapter/tests Blob SHA；不可沿用旧 SHA。
+3. 在不连接生产 D1 的条件下，建立可复现的 Worker handler 测试夹具；优先使用 Cloudflare Workers 兼容运行时或明确说明 Node mock 的覆盖边界。
+4. 覆盖 L1、active_trial、expired_trial、active_formal、expired_formal、direct super、assist scope、activation 查询失败。
+5. 对分组 POST/PUT/DELETE/sources/members、links POST/DELETE、cards POST/DELETE/disable 逐路由验证。
+6. 对拒绝分支区分 Session last_seen、拒绝审计等维护写与业务数据写；证明拒绝不会产生未授权业务数据变更。不得把 mock helper 单测说成 handler 集成测试。
+7. 复核正式 VIP 到期删除的最终 SQL owner + created_at cutoff；检查 D1 mock 的 meta.changes 语义和并发边界。
+8. 评估分组物理删除多条 SQL 的失败恢复与关联残留；本批不擅自改 D1 schema。
+9. 不连接生产 D1、不运行迁移、不读取/修改 Secrets、不部署。
+10. 更新第四十九批报告、开发进度和下一批接手卡。
+
+**部署闸门：**第四十八批 Worker 副本目前不是正式发布包。必须先完成第四十九批 handler 级验证、独立安全复核、回滚/兼容性检查，再决定后续是否形成候选部署包；用户未明确授权前不得部署。
