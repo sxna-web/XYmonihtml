@@ -1284,3 +1284,37 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 4. 明确 SQLite 仅是本地语义测试，不宣称 D1 多 isolate 并发通过。
 5. 不连接任何 D1，不执行 SQL/迁移，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
 6. 更新进度、总方案和第七十六批唯一接手卡。
+
+
+## 12. 第七十五批进度与第七十六批接手卡（2026-11-27）
+
+### 第七十五批结果
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-75`；报告：`docs/backend/StarJump_V2.5_APP_v2身份操作收据审计断言与限流幂等测试报告_第七十五批_V2.5-DEV-B1-APP-IDENTITY-75_2026-11-27.md`。
+- 新增统一 operation receipt/audit assertion 设计、SQLite fixture、README、GitHub Actions workflow。
+- create/revoke/rotation 统一要求 owner-scoped receipt、operation type/request fingerprint、result/version、audit event key 与最终 CHECK assertion。revoke 使用 generation CAS，rotation 使用 version CAS；missing/mismatched audit 应在同一原子单元回滚。
+- Limiter fixture 覆盖 event_id exact replay/conflict、required dimensions、half-open window、inclusive-left-edge Retry-After、multi-dimension latest release、cleanup retention boundary。
+- Run `45994897776` completed/success；Job `140491746184`；Python 3.13.18；24/24 passed、0 failed、exit 0。日志已读取核对。
+- 仅本地合成 SQLite schema；不证明 D1 CHECK/EXISTS/batch rollback、多 isolate 并发、生产 schema、Worker/API 或 Android 兼容。
+- 未连接任何 D1；未执行 SQL/迁移；未改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置；未部署。D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 总进度表（第七十五批后）
+
+| 模块 | 当前状态 | 已有证据 | 未完成/下一步 |
+|---|---|---|---|
+| APP v2 identity service/state machine | 隔离 DEV 测试与协议设计 | 第六十四至七十五批 mock/SQLite CI | 未接真实 D1 adapter/Worker；继续 D1 隔离准入 |
+| Identity operation receipt/audit | 候选逻辑契约 + SQLite 24/24 | Run 45994897776 | D1 CHECK/EXISTS/batch atomicity 未验证 |
+| Durable identity limiter | 候选算法 + SQLite 边界测试 | event idempotency、维度、Retry-After、cleanup 24 项集成测试 | D1 并发/共享 NAT/时钟/成本/Secret rotation 未验证 |
+| APP Android compatibility | APP_PENDING | APK 源码尚未完成审计 | 需完整 APK 源码与第三方限制核查 |
+| 生产 D1 / Worker / deployment | 未授权/未验证 | 无本批生产证据 | 需明确隔离环境授权；生产仍禁止擅自操作 |
+
+### 第七十六批唯一接手卡
+
+**APP v2 identity 原子操作的 D1 隔离验证准入包与语义差距收敛（不接生产、不执行迁移）。**
+
+1. 重读 AGENTS、功能基线、API/数据库保护规范、总方案、进度及第六十八至七十五批资料。
+2. 对照第七十五批统一 receipt/audit assertion 与第七十四批 challenge+binding atomic contract，整理 D1 disposable 环境可执行验证矩阵：CHECK、scalar EXISTS、prepared binding、batch rollback、RETURNING/meta changes、唯一冲突、owner scope、create/revoke/rotation 竞争、timeout-after-commit 恢复。
+3. 将 limiter 测试矩阵扩展为 D1 验证输入：多维并发、重复 event_id、缺失维度、共享 NAT、时钟跳变、窗口边界、Retry-After、cleanup race、查询成本/索引和 HMAC key rotation；阈值/保留期仍待确认。
+4. 只准备隔离环境准入与验证脚本/文档；没有用户明确指定并批准的 disposable D1 binding/database ID 时，不连接任何 D1、不执行远端 SQL。
+5. 不生成/执行生产 migration，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
+6. 更新总进度、总方案与第七十七批唯一接手卡。
