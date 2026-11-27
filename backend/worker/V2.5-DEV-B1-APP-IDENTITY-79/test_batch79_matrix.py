@@ -2,7 +2,6 @@
 No network, D1, SQL execution, credentials or production dependencies.
 """
 import hashlib
-import re
 import unittest
 
 ALLOWED_SOURCES = {"authenticated_context", "validated_request", "server_constant", "derived_server_value"}
@@ -30,7 +29,7 @@ def scan_placeholders(sql):
             elif ch == "-" and nxt == "-": state = "line"; i += 1
             elif ch == "/" and nxt == "*": state = "block"; i += 1
             elif ch in (":", "@", "$"):
-                if nxt and (nxt.isalpha() or nxt == "_"):
+                if nxt and (nxt.isalnum() or nxt == "_"):
                     raise ValueError("named placeholder rejected")
             elif ch == "?":
                 if nxt.isdigit():
@@ -56,6 +55,14 @@ def scan_placeholders(sql):
 
 def validate_manifest(sql, manifest, bind_values):
     count = scan_placeholders(sql)
+    sql_hash = hashlib.sha256(sql.encode("utf-8")).hexdigest()
+    if manifest:
+        if any(m.get("statement_id") != manifest[0].get("statement_id") for m in manifest):
+            raise ValueError("statement id mismatch")
+        if not manifest[0].get("statement_id"):
+            raise ValueError("statement id required")
+        if any(m.get("sql_sha256") != sql_hash for m in manifest):
+            raise ValueError("exact SQL hash mismatch")
     if len(manifest) != count or len(bind_values) != count:
         raise ValueError("placeholder/manifest/bind count mismatch")
     expected = list(range(1, count + 1))
@@ -90,7 +97,7 @@ def validate_manifest(sql, manifest, bind_values):
             raise ValueError("real bind type mismatch")
         elif m["storage_class"] == "blob" and not isinstance(value, bytes):
             raise ValueError("blob bind type mismatch")
-    return hashlib.sha256(sql.encode("utf-8")).hexdigest()
+    return sql_hash
 
 
 def audit_envelope_missing(envelope):
@@ -120,9 +127,11 @@ def cleanup_eligible(retain_until, now, active_window_end, retry_horizon_end):
 
 
 class Batch79Tests(unittest.TestCase):
-    def manifest(self, n=2):
+    def manifest(self, n=2, sql=""):
+        sql_hash = hashlib.sha256(sql.encode("utf-8")).hexdigest()
         return [
-            {"ordinal": i, "semantic_name": f"bind_{i}", "source": "validated_request",
+            {"statement_id": "stmt_test", "sql_sha256": sql_hash,
+             "ordinal": i, "semantic_name": f"bind_{i}", "source": "validated_request",
              "storage_class": "text", "nullable": False, "missing_policy": "reject",
              "sensitivity": "internal"}
             for i in range(1, n + 1)
@@ -130,7 +139,7 @@ class Batch79Tests(unittest.TestCase):
 
     def test_01_exact_manifest_validates_and_returns_sql_hash(self):
         sql = "UPDATE t SET a=? WHERE id=?"
-        digest = validate_manifest(sql, self.manifest(), ["x", "id"])
+        digest = validate_manifest(sql, self.manifest(2, sql), ["x", "id"])
         self.assertEqual(digest, hashlib.sha256(sql.encode()).hexdigest())
 
     def test_02_qmarks_inside_all_quote_regions_ignored(self):
@@ -164,7 +173,11 @@ class Batch79Tests(unittest.TestCase):
     def test_11_numbered_placeholder_rejected(self):
         with self.assertRaises(ValueError): scan_placeholders("SELECT ?1")
 
-    def test_12_unterminated_single_quote_rejected(self):
+    def test_12_numeric_named_placeholder_rejected(self):
+        for prefix in (":", "@", "$"):
+            with self.assertRaises(ValueError): scan_placeholders(f"SELECT {prefix}1")
+
+    def test_35_unterminated_single_quote_rejected(self):
         with self.assertRaises(ValueError): scan_placeholders("SELECT 'abc ?")
 
     def test_13_unterminated_block_comment_rejected(self):
@@ -172,10 +185,10 @@ class Batch79Tests(unittest.TestCase):
 
     def test_14_manifest_count_mismatch_rejected(self):
         with self.assertRaises(ValueError):
-            validate_manifest("SELECT ?, ?", self.manifest(1), ["a", "b"])
+            validate_manifest("SELECT ?, ?", self.manifest(1, "SELECT ?, ?"), ["a", "b"])
 
     def test_15_manifest_order_mismatch_rejected(self):
-        m = self.manifest(); m[0]["ordinal"], m[1]["ordinal"] = 2, 1
+        m = self.manifest(2, "SELECT ?, ?"); m[0]["ordinal"], m[1]["ordinal"] = 2, 1
         with self.assertRaises(ValueError): validate_manifest("SELECT ?, ?", m, ["a", "b"])
 
     def test_16_duplicate_semantic_names_rejected(self):
@@ -184,14 +197,14 @@ class Batch79Tests(unittest.TestCase):
 
     def test_17_undefined_bind_rejected(self):
         with self.assertRaises(ValueError):
-            validate_manifest("SELECT ?", self.manifest(1), [...])
+            validate_manifest("SELECT ?", self.manifest(1, "SELECT ?"), [...])
 
     def test_18_text_type_mismatch_rejected(self):
         with self.assertRaises(ValueError):
-            validate_manifest("SELECT ?", self.manifest(1), [123])
+            validate_manifest("SELECT ?", self.manifest(1, "SELECT ?"), [123])
 
     def test_19_boolean_is_not_integer_bind(self):
-        m = self.manifest(1); m[0]["storage_class"] = "integer"
+        m = self.manifest(1, "SELECT ?"); m[0]["storage_class"] = "integer"
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, [True])
 
     def test_20_null_requires_explicit_null_contract(self):
@@ -207,7 +220,7 @@ class Batch79Tests(unittest.TestCase):
         with self.assertRaises(ValueError): validate_manifest("SELECT ?", m, ["x"])
 
     def test_23_sql_hash_changes_with_exact_whitespace(self):
-        a = validate_manifest("SELECT ?", self.manifest(1), ["x"])
+        a = validate_manifest("SELECT ?", self.manifest(1, "SELECT ?"), ["x"])
         b = validate_manifest("SELECT  ?", self.manifest(1), ["x"])
         self.assertNotEqual(a, b)
 
