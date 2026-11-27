@@ -89,9 +89,17 @@ def placeholders(sql: str) -> list[Placeholder]:
                 raise TokenizerError("numbered placeholder ?NNN is forbidden")
             out.append(Placeholder(len(out)+1,start))
             continue
-        if c in (':','@','$'):
-            if i+1<n and (sql[i+1].isalpha() or sql[i+1]=='_'):
-                raise TokenizerError("named placeholder is forbidden")
+        if c in (':','@','
+        i+=1
+    return out
+
+def validate_bind_count(sql: str, bind_count: int) -> list[Placeholder]:
+    found=placeholders(sql)
+    if bind_count != len(found):
+        raise TokenizerError(f"placeholder/bind count mismatch: {len(found)} != {bind_count}")
+    return found
+):
+            raise TokenizerError("named or ambiguous parameter marker is forbidden")
         i+=1
     return out
 
