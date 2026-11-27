@@ -455,3 +455,51 @@ AI 提供完整、互相匹配的 Worker、HTML、迁移、配置模板、操作
 ## 16. 变更记录
 
 - 2026-11-27：建立 API 契约 V1；基于 V2.5 基线、Worker 路由盘点、D1 字段映射和手机端运维方案整理；标记现有/待修复/新增/待 APK/待 schema 项。
+
+
+## 17. 第三批底层安全核查补充（2026-11-27）
+
+第三批只读审计报告：
+`docs/audits/StarJump_V2.5_统一权限门禁与底层安全函数核查_第三批_2026-11-27.md`
+
+**本节为源码差异补充，不表示已修复或测试通过。** 核查基于当前仓库 Worker 基线文件，未连接正式 D1、未调用 API、未部署。
+
+### 17.1 当前源码确认的安全差异
+
+1. `/api/user/*` 路由层已有 Session + 协助 scope 门禁，但没有统一有效 VIP 动作门禁。
+2. `/api/user/app-groups`、`/api/user/app-links`、`/api/user/app-cards` 的管理写操作未见有效 VIP 检查；必须按 V2.5 规则补齐。
+3. 转换过滤函数 `applyNodeFilters` 没有服务端登录/VIP 等级检查，匿名请求也会执行 filters。
+4. 转换 API 对内部 Session 解析异常/无效凭证可能降级匿名；缺 guest_key 时使用共享 `g:anonymous`。
+5. APP HMAC Token 密钥缺失时回退固定 `starjump-app`；转换加密密钥缺失时回退固定 `starjump-convert`。
+6. `/api/app/status` 只按 device_id 查询，不验证 entitlement Token。
+7. APP groups/nodes/links 只选最新一条有效 entitlement，无法完整表达同设备多管理员授权。
+8. APP 免费分组路径尚未形成统一、可验证的 free-grant 凭证闭环。
+9. 转换密文无 envelope version/key_id；密钥轮换没有受控兼容机制。
+10. `loadSourceForCtx/loadSubscriptionNode` 验证 ownership 关系，但没有统一涵盖 source approval/enabled、node lifecycle stale 等资源状态条件。
+
+### 17.2 新增问题编号
+
+- P1-47 至 P1-60：详见第三批审计报告第 4 节。
+- 第三批 P2：详见第三批审计报告第 4 节。
+
+### 17.3 动作级门禁实施约束
+
+- 先实现统一身份/会员解析，再按 action 与 resource 决策；不能仅用“是否登录”替代 L0/L1/L2。
+- 有效体验 VIP 和正式 VIP 在有效期内核心 VIP 功能相同。
+- 体验 VIP 到期：只读历史，默认不允许复制/编辑/删除。
+- 正式 VIP 到期：允许查看和删除本人历史数据；禁止创建、编辑和需要有效 VIP 的分享管理操作。
+- APP 对接/星链接：注册用户可查看；只有有效 VIP 管理员可管理。
+- 高级转换功能逐项 L1/L2 分配仍待确认；未确认前不得自行设定等级。
+- 每个写操作必须同时验证 actor/effective scope、会员状态、资源归属和资源状态；敏感写入应把授权断言纳入同一原子边界。
+
+### 17.4 密钥与 Token 的强制约束
+
+- SESSION_PEPPER、APP 专用 HMAC Secret、CONVERT_KEY 缺失或强度不足时，相关功能 fail closed。
+- 不得保留任何公开固定字符串作为生产密钥回退。
+- APP Token 不得通过 URL query 传递；所有状态、节点、分组、入口和免费组读取均需统一凭证校验。
+- 加密 envelope 必须具备版本和 key_id；密钥轮换需双读单写、旧密文兼容和可回滚方案。
+- device_id 仅为设备标识，不是认证凭证；必须设计设备凭证绑定、轮换、撤销和重放保护。
+
+### 17.5 状态说明
+
+上述差异均为**静态源码核查发现**。没有任何一项被标记为已修复、已测试或已部署。实施前仍需完成正式 D1 只读 schema 核验、APK Token 存储/调用审计、影响分析、回滚计划和测试环境验证。
