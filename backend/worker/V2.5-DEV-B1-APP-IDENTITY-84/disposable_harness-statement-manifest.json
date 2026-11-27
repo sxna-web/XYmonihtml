@@ -1,0 +1,12 @@
+{
+  "manifest_version": "1.0",
+  "interface": "disposable_harness",
+  "status": "DESIGN_ONLY_NO_SQL",
+  "policy": {
+    "database_scope": "explicit_disposable_database_only",
+    "cleanup_scope": "run_id_ledger_exact_ids_only",
+    "production_tables_access": false,
+    "production_sql_permitted": false
+  },
+  "statements": []
+}
