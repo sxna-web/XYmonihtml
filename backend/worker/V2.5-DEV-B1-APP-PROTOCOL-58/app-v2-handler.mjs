@@ -8,12 +8,7 @@ function response(status, body) {
   return new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 }
 
-export function createAppV2ReadHandler({
-  resolveSession,
-  resolveEntitlement,
-  loadGroups,
-  loadNodes,
-}) {
+export function createAppV2ReadHandler({ resolveSession, resolveEntitlement, loadGroups, loadNodes }) {
   for (const [name, fn] of Object.entries({ resolveSession, resolveEntitlement, loadGroups, loadNodes })) {
     if (typeof fn !== "function") throw new TypeError(`Missing handler dependency: ${name}`);
   }
@@ -37,32 +32,42 @@ export function createAppV2ReadHandler({
       return response(401, { ok: false, code: "INVALID_SESSION" });
     }
 
-    let entitlement;
-    try { entitlement = await resolveEntitlement({ entitlementId, deviceId: session.deviceId, token: authorization.slice(7) }); }
+    let resolved;
+    try { resolved = await resolveEntitlement({ entitlementId, deviceId: session.deviceId, token: authorization.slice(7) }); }
     catch { return response(503, { ok: false, code: "ENTITLEMENT_UNAVAILABLE" }); }
-    if (!entitlement || entitlement.ok !== true || !entitlement.entitlement) {
-      return response(403, { ok: false, code: entitlement?.code || "ENTITLEMENT_DENIED" });
+    const ent = resolved?.entitlement;
+    if (!resolved || resolved.ok !== true || !ent ||
+        ent.id !== entitlementId || ent.device_id !== session.deviceId) {
+      return response(403, { ok: false, code: resolved?.code || "ENTITLEMENT_BINDING_MISMATCH" });
     }
 
     let scope;
-    try { scope = await loadGroups(entitlement.entitlement); }
+    try { scope = await loadGroups(ent); }
     catch { return response(503, { ok: false, code: "GROUP_SCOPE_UNAVAILABLE" }); }
-    if (!scope || scope.ok !== true || !Array.isArray(scope.allowedGroupIds)) {
+    if (!scope || scope.ok !== true || !Array.isArray(scope.allowedGroupIds) ||
+        scope.allowedGroupIds.some(id => typeof id !== "string")) {
       return response(403, { ok: false, code: scope?.code || "GROUP_SCOPE_DENIED" });
     }
 
     if (resource === "groups") {
-      return response(200, { ok: true, entitlementId, groups: scope.groups || [], generation: scope.generation });
+      if (!Array.isArray(scope.groups) || scope.groups.some(g =>
+        !g || g.adminUserId !== ent.admin_user_id || !scope.allowedGroupIds.includes(g.id) ||
+        g.enabled !== true || !["card", "free"].includes(g.mode))) {
+        return response(403, { ok: false, code: "GROUP_SCOPE_MISMATCH" });
+      }
+      return response(200, { ok: true, entitlementId, groups: scope.groups, generation: scope.generation });
     }
 
     if (scope.allowedGroupIds.length === 0) {
       return response(200, { ok: true, entitlementId, nodes: [], generation: scope.generation });
     }
     let nodes;
-    try { nodes = await loadNodes({ entitlement: entitlement.entitlement, allowedGroupIds: scope.allowedGroupIds }); }
+    try { nodes = await loadNodes({ entitlement: ent, allowedGroupIds: scope.allowedGroupIds }); }
     catch { return response(503, { ok: false, code: "NODE_READ_UNAVAILABLE" }); }
-    if (!nodes || nodes.ok !== true || !Array.isArray(nodes.nodes)) {
-      return response(403, { ok: false, code: nodes?.code || "NODE_SCOPE_DENIED" });
+    if (!nodes || nodes.ok !== true || !Array.isArray(nodes.nodes) ||
+        nodes.nodes.some(node => !node || node.adminUserId !== ent.admin_user_id ||
+          !scope.allowedGroupIds.includes(node.groupId))) {
+      return response(403, { ok: false, code: nodes?.code || "NODE_SCOPE_MISMATCH" });
     }
     return response(200, { ok: true, entitlementId, nodes: nodes.nodes, generation: scope.generation });
   };
