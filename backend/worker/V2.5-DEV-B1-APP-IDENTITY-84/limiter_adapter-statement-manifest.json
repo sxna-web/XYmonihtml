@@ -1,0 +1,15 @@
+{
+  "manifest_version": "1.0",
+  "interface": "limiter_adapter",
+  "status": "DESIGN_ONLY_NO_SQL",
+  "policy": {
+    "dimension_identity": "opaque_dimension_id",
+    "key_aliases": "per_key_version",
+    "admission_requires_all_active_key_versions": true,
+    "union_count_key": "event_id",
+    "retirement_requires_backfill_and_retry_rollback_cleanup_horizons_closed": true,
+    "raw_dimensions_persisted": false,
+    "production_sql_permitted": false
+  },
+  "statements": []
+}
