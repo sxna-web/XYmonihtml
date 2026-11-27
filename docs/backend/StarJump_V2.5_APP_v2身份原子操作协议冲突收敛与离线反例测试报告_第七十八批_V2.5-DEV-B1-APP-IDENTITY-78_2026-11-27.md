@@ -61,3 +61,13 @@
 5. 完善 HMAC key overlap 状态机、cleanup/admission 原子性前置条件及证据表；不设生产阈值。
 6. 仍不连接 D1、不读取凭证、不执行 SQL、不创建 migration、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
 7. 更新总进度、总方案和第八十批唯一接手卡。
+
+
+## 六、离线 CI 实际结果
+
+- GitHub Actions Run：`45997564796`（completed / success）。
+- Job：`140500692553`（offline-contract-tests，success）。
+- Python：`3.13.18`。
+- 日志原文：`Ran 23 tests in 0.011s`、`OK`；23 项全部通过。
+- 测试范围仅为 Python 参考模型、编码边界、占位符扫描与 HMAC overlap 逻辑；没有 D1、SQLite DDL、SQL、Worker 或 APP 真实请求。
+- Run：https://github.com/sxna-web/XYmonihtml/actions/runs/45997564796
