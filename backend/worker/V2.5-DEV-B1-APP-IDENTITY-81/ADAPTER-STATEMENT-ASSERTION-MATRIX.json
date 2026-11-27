@@ -396,5 +396,53 @@
     "D1-032": "cross-version event_id union/dedupe",
     "D1-033": "cleanup union history race",
     "D1-034": "HMAC index/migration coverage"
+  },
+  "review_findings": {
+    "disposition": "METHOD_LEVEL_OUTLINE_NOT_STATEMENT_LEVEL_MANIFEST",
+    "sql_statement_manifest_present": false,
+    "missing_statement_fields": [
+      "statement_id",
+      "exact_sql_sha256",
+      "placeholder_tokenizer_version",
+      "placeholder_ordinal",
+      "per_statement_bind_order",
+      "result_index",
+      "expected_changes",
+      "expected_rows_read",
+      "expected_rows_written",
+      "expected_returning_count"
+    ],
+    "unassigned_d1_cases": [
+      "D1-017",
+      "D1-018",
+      "D1-019",
+      "D1-020",
+      "D1-021",
+      "D1-022",
+      "D1-024",
+      "D1-025",
+      "D1-032",
+      "D1-033",
+      "D1-034"
+    ],
+    "misclassified_or_separate_scope": [
+      "D1-023 and D1-026 are limiter cleanup cases; expireTransientRecords currently references synthetic_run_ledger and is not an approved production identity adapter method",
+      "D1-017..026 require a separate limiter admission/read/cleanup contract",
+      "D1-032..034 require a separate HMAC alias/migration evidence map"
+    ],
+    "unresolved_storage_contracts": [
+      "consumeNonceAtomic nonce storage encoding and uniqueness scope remain unresolved; do not assume raw nonce persistence",
+      "rotateShareCodeAtomic new_digest storage class is ambiguously blob_or_text and must be frozen to one representation",
+      "U80-01..08 still block relevant audit and rotation behavior"
+    ],
+    "lexical_bind_review_required": [
+      "single/double/backtick/bracket quoted spans and doubled quote escaping",
+      "line and block comments",
+      "anonymous ? versus numbered ?NNN",
+      "named :name, @name, $name must be rejected if positional-only policy remains",
+      "unterminated lexical states must fail closed"
+    ],
+    "normative_case_source": "backend/worker/V2.5-DEV-B1-APP-IDENTITY-80/D1-EVIDENCE-MAP.md",
+    "no_sql_or_d1_evidence": true
   }
 }
