@@ -28,11 +28,11 @@
 | 文件 | Blob SHA | 说明 |
 |---|---|---|
 | `Worker.js` | `bf04ef31bbd75777263d0dc8b3108da62a852668` | 以原始 Worker 为基线的修订副本，5,638 行 |
-| `worker-auth-adapter.mjs` | `17cb6b04267555b9774cf0665384d43a3dec3cb1` | Worker Session → VIP activation → action gate adapter |
-| `worker-auth-adapter.test.mjs` | `f4999ab485c1a89f42bfa833041b4b1e4a00bc06` | 12 项 Node mock tests |
+| `worker-auth-adapter.mjs` | `2f91941c68082a44d5e23e1e25b416ae2901e0f0` | Worker Session → VIP activation → action gate adapter |
+| `worker-auth-adapter.test.mjs` | `86e226e1a14c00359f7e23ce08913830f1435814` | 12 项 Node mock tests |
 | `README.md` | `6a82fcce787ba675ada4ce7d555b3538a1ac9c20` | 范围、字段依据、运行方式和限制 |
 
-新增 CI：`.github/workflows/worker-auth48-tests.yml`，Blob SHA `45fe213f268409420caf651a0a8d9b453c7243d4`。
+本批验证由当时的 GitHub Actions workflow 执行；该临时工作流随后由第四十九批专用 workflow 替换。
 
 ## 3. 已编码内容
 
@@ -52,7 +52,6 @@
 | APP 分组 DELETE | delete_history | 有效 VIP 可删除本人资源；正式 VIP 到期仅限到期前创建的本人历史 |
 | APP 分组 sources POST | associate | 当前有效体验/正式 VIP |
 | APP 分组 members POST | associate | 当前有效体验/正式 VIP |
-| APP 分组 members/:deviceId DELETE | update | 当前有效体验/正式 VIP |
 | APP 入口 POST | create | 当前有效体验/正式 VIP |
 | APP 入口 DELETE | delete_history | 有效 VIP可删除本人资源；正式 VIP 到期仅限到期前创建的本人历史 |
 | APP 卡密 POST | generate | 当前有效体验/正式 VIP |
@@ -125,8 +124,12 @@ GitHub Actions：
 - APK：未修改。
 - 通知/邮箱：继续按用户决定后置。
 
-## 7. 下一批唯一首要任务（第四十九批）
+## 7. 本批后续接手任务（第四十九批，已由后续批次接续）
 
 **建立隔离 Worker handler 测试环境，完成 APP 管理路由端到端权限回归。**
 
 优先覆盖 L1、active_trial、expired_trial、active_formal、expired_formal、direct super、assist scope、activation 查询失败；逐路由验证分组、入口、卡密 POST/PUT/DELETE/disable/sources/members。测试必须区分 Session 心跳/拒绝审计等维护写与业务数据写，并证明每个拒绝分支不会产生未授权业务写入。确认 D1 mock SQL 的 owner/cutoff 条件、分组多语句删除的失败恢复风险。完成前不进入正式部署包，不连接生产 D1，不部署。
+
+
+### 后续批次说明
+第四十九批已另建不可覆盖的版本目录 `backend/worker/V2.5-DEV-B1-CORE-AUTH-49/`，增加实际 Worker handler mock 测试，并进一步把 APP 分组 PUT、sources POST、members POST 的 owner 校验下沉到最终 SQL 条件。第四十九批结果以其独立报告为准；第四十八批仍保留本批原始版本和历史 CI 证据。
