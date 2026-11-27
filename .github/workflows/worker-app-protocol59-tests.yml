@@ -38,4 +38,4 @@ jobs:
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-58/app-v2-policy.test.mjs
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/group-composition.test.mjs
       - name: Atomic device reservation SQLite tests
-        run: python -m unittest backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/device_slots_sqlite_test.py
+        run: python backend/worker/V2.5-DEV-B1-APP-PROTOCOL-59/device_slots_sqlite_test.py
