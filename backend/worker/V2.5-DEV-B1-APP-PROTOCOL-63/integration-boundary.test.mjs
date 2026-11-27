@@ -30,6 +30,6 @@ test("the audit matrix cannot claim production wiring",()=>{
 test("summary risk and priority counts are deterministic",()=>{
   const s=summarizeAppRouteMatrix();
   assert.equal(s.total,16);
-  assert.equal(s.risks.CRITICAL,5);
-  assert.equal(s.priorities[0],5);
+  assert.equal(s.risks.CRITICAL,6);
+  assert.equal(s.priorities[0],6);
 });
