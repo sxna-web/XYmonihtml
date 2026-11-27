@@ -1197,3 +1197,32 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 保留 legacy share-code 分阶段兼容方案，不改路由和 schema。
 7. 不连接 D1、不执行 SQL/迁移，不改 Worker/HTML/APK/Room/Secrets，不部署。
 8. 更新进度、总方案和第七十三批接手卡。
+
+
+## 24. 第七十二批结果与第七十三批接手卡（2026-11-27）
+
+### 第七十二批结果
+
+- 版本：V2.5-DEV-B1-APP-IDENTITY-72。
+- 报告：docs/backend/StarJump_V2.5_APP_v2身份审计事件与持久化限流协议设计报告_第七十二批_V2.5-DEV-B1-APP-IDENTITY-72_2026-11-27.md。
+- 新增：backend/worker/V2.5-DEV-B1-APP-IDENTITY-72/AUDIT-AND-RATE-LIMIT-PROTOCOL.md、README。
+- 完成不可变 append-only 审计事件逻辑契约；actor/owner 分离、owner-scoped 读取、唯一 event_key、相同 key 不同 payload 完整性冲突、秘密字段禁止进入审计载荷。
+- 为 binding 创建/撤销/share-code 轮换设计确定性事件键和条件审计写入；timeout outcome-unknown，重试复用相同 operation_id/event_key；审计失败不得报告业务状态变更成功。
+- 审计保留政策未确认，不设置自动清理。
+- Durable identity rate-limit 候选采用 append-only event ledger + 单条条件 INSERT-SELECT 同时检查 network/device/admin/action 滑动窗口；限额不设最终数值，独立 HMAC key，不复用 APP/session/entitlement secrets。跨 isolate 并发、D1 RETURNING、查询计划、Retry-After 和 cleanup 尚未实测。
+- 签名协议要求版本化 canonicalization/timestamp precision/nonce/skew；每版本单独 S_v/P_v/M_v；对称 inclusive skew 下 retention >= first_seen + 2*S_v + M_v；不允许原版本直接扩大 skew。
+- Legacy share-code 字段/路由保持不变；轮换对既有绑定/会话/挑战/free grant 的影响仍待确认。
+- 本批只改文档，无可执行测试；未连接 D1、未执行 SQL/迁移、未改 Worker/HTML/APK/Room/Secrets/Cloudflare、未部署。D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 第七十三批唯一接手卡
+
+**APP v2 identity audit/rate-limit 契约对抗性复核与隔离测试规格（设计阶段，不连接 D1）。**
+
+1. 重读 AGENTS、功能/API/数据库保护基线、总方案、进度和第六十八至七十二批报告。
+2. 对 binding create/revoke/rotation 的并发、超时、重复键、不同 payload、部分提交风险进行独立对抗性复核。
+3. 审查滑动窗口 SQL 形状在并发、重复 event_id、缺失维度、共享 NAT、时钟跳变、查询成本、cleanup race 下的边界；不对 D1 执行。
+4. 制定隔离 D1 batch/statement atomicity、RETURNING、限流竞争准入、Retry-After 的精确测试输入/预期/证据模板。
+5. 复核 nonce 协议版本 rollout 与旧/新 APK 兼容；无客户端源码证据仍标 APP_PENDING。
+6. 基于仓库源码完成 legacy share-code 调用方盘点，不改路由/schema。
+7. 不连接 D1、不执行 SQL/迁移，不改 Worker/HTML/APK/Room/Secrets，不部署。
+8. 更新进度、总方案和第七十四批接手卡。
