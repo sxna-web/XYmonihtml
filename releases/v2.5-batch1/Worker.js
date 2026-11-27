@@ -1,28 +1,19 @@
 /**
- * StarJump V1.0 Production Worker
- * 星跃管理平台 —— 正式版后端（多用户隔离 / 字段覆盖 / 分组 / 审计 / 同步 staging+fencing）
+ * StarJump V2.5 Batch 1 Worker Security Repair
+ * 星跃管理平台 —— 第一批安全修复版（以 Cloudflare 两文件基准为源）
  *
- * 基线：V0.4.0-compat-test2（保留其解析器行为、SSRF 纵深防御、旧接口形状）
+ * 基线：原始 Worker.js blob 5da7aa3582558d9da2c2a0ad25a63c5e95e9fe63
  * 部署绑定：
- *   D1 binding : DB  -> starjump-db
- *   Secret     : ADMIN_TOKEN      (>=32 字符；仅作为旧后台 /api/admin/* 与 bootstrap 的超级凭据)
- *   Secret     : SESSION_PEPPER   (任意 >=16 字符；参与 session token 哈希)
- *   Variable   : ADMIN_ORIGIN     (后台页面 Origin，可用逗号分隔多个)
- *   Variable   : ALLOW_REGISTRATION ("1" 才允许自助注册，默认关闭)
- *   Variable   : SESSION_TTL_HOURS  (默认 720 = 30 天)
- *   Variable   : IMPERSONATION_TTL_MINUTES (默认 30)
+ *   D1 binding : DB -> 用户当前正式 Cloudflare D1（必须核对现有绑定；不要改绑到 staging 或 starjump-db）
+ *   Secret     : ADMIN_TOKEN（>=32 字符；仅用于旧后台 /api/admin/* 与 bootstrap）
+ *   Secret     : SESSION_PEPPER（本版要求 >=32 字符；必须保留当前线上原值，否则既有 Session/APP Token 会失效）
+ *   Secret     : APP_HMAC_SECRET（可选；首次兼容部署时若配置，必须与现有 SESSION_PEPPER 完全一致）
+ *   Variable   : ADMIN_ORIGIN、ALLOW_REGISTRATION、SESSION_TTL_HOURS、IMPERSONATION_TTL_MINUTES 沿用现有配置
  *
- * 设计约束（对应任务书第三、八、九节）：
- *   - 不改任何旧表结构；旧表数据不动；不改历史 fingerprint。
- *   - 用户覆盖只写 node_overrides，绝不回写 node_records。
- *   - 手动节点只写 user_manual_nodes，不属于机场同步范围。
- *   - 所有用户态数据访问都从服务端 Session 推导 user_id，绝不信任请求体。
- *   - 审计与业务写尽量同 batch；审计表由触发器保证 append-only。
- *
- * 未在真实 D1 上验证的事项集中列在 Compatibility_Report 的「未验证」章节。
+ * 本批不修改 D1 schema，不执行迁移；原始文件保持只读。
+ * APP Token 暂时兼容 query 参数，新增 X-App-Token Header；旧 APK 是否向 status 发送 Token 仍须实机验证。
  */
-
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const CANON_VERSION = "v1.0-1";
 
 const MAX_BODY = 32 * 1024;
@@ -5362,7 +5353,7 @@ export default {
     if (url.pathname === "/health" && req.method === "GET") {
       return withCors(json({
         ok: true, service: "starjump-api", version: VERSION,
-        build: "2026-11-23-diag",
+        build: "2026-11-27-v2.5-batch1",
         auth_mode: "multi_user_session",
         legacy_admin_token: "restricted",
         features: ["multi_user", "overrides", "groups", "audit_events", "sync_staging", "password_change"],
