@@ -749,3 +749,29 @@
 7. 输出测试矩阵、兼容策略、回滚计划；不创建正式 migration、不连接生产 D1、不部署。
 8. 更新进度、总方案和第五十八批接手卡。
 
+## 第五十七批完成与第五十八批接手卡（2026-11-27）
+
+### 第五十七批状态：DESIGN_COMPLETE / BUSINESS_RULES_FROZEN / NOT_IMPLEMENTED
+
+- 版本：`V2.5-DEV-B1-APP-PROTOCOL-57`
+- 报告：`docs/backend/StarJump_V2.5_APP授权协议与24小时分组清理技术设计_第五十七批_V2.5-DEV-B1-APP-PROTOCOL-57_2026-11-27.md`
+- 报告 Commit：`833615e2348097d056e359d78067f4bc64fe94c3`
+- 用户已冻结：卡密默认 1 台设备；有效 VIP 管理员可调整至 5 台；超过 5 台需超管。允许空分组卡密激活；身份 ID 取管理员 free 组，卡密取其 card 组 + 符合条件的 free 组。卡密分组变更同步影响全部仍有效已激活设备。
+- 完成 API v2 契约、精确 entitlement resolver 调用图、card/free 查询 SQL 草案、设备上限原子占额设计、多管理员隔离模型、generation/tombstone/lease/ack 状态机、离线 24h 约束、6.00.47 客户端接入点、测试矩阵、兼容与回滚方案。
+- 重要安全规则：空 card 组不扩大成管理员全量组；public/assigned 不默认叠加；服务端变更提交后立即停止下发；离线设备租约到期 fail closed；不同 entitlement 独立 cursor/cache/ack。
+- 未改 Worker/HTML/APK/D1/Secrets；未创建 migration；未连接生产 D1/Cloudflare；未跑代码测试/Gradle/真机测试；未部署。
+- APP 状态继续 APK_PENDING：6.00.47 仅作结构参考；6.00.48 ZIP 尚未解包，第三方源码限制未知。
+- 当前 APP 授权 helper（第五十二/五十三批）仍未接入真实 Worker handler；新 API v2 仍为设计契约。
+
+### 第五十八批唯一首要任务
+
+**APP v2 授权协议静态实现准备与隔离测试骨架（不接生产、不部署）。**
+
+1. 重读 AGENTS、功能基线、API 规范、数据库保护规范、总方案、进度和第五十七批报告。
+2. 只读核对第五十二/五十三批 helper 与测试文件，确认可复用边界。
+3. 设计隔离 Worker v2 handler 模块和 mock D1 fixtures，不接入原始生产 Worker。
+4. 实现并实际测试纯函数：设备上限策略、card/free group allowlist、generation 单调性、tombstone/ack 幂等、lease 截止判断。
+5. 对 SQL 做静态契约测试，确保节点查询必须限制 allowed_group_ids 并二次验证 owner/source。
+6. APK 6.00.48 未解包前继续标记 APP_PENDING，不改 APK。
+7. 不创建正式 migration、不连接生产 D1、不修改 Secrets、不部署。
+8. 完成后更新进度、总方案和第五十九批接手卡；没有实际运行的测试不得标记通过。
