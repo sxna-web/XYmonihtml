@@ -4557,9 +4557,7 @@ async function userAppGroupsRoute(req, env, url, ctx) {
     const name = body.name === undefined ? row.name : s(body.name, 40);
     const mode = body.mode === undefined ? row.mode : s(body.mode, 20);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 不合法", 400);
-    const updated = await db.prepare("UPDATE app_groups SET name=?, mode=? WHERE id=? AND admin_user_id=?")
-      .bind(name, mode, id, ctx.effectiveId).run();
-    if (!updated.meta?.changes) return fail("分组已变化或不属于你", 409);
+    await db.prepare("UPDATE app_groups SET name=?, mode=? WHERE id=?").bind(name, mode, id).run();
     return json({ ok: true, data: { id, name, mode } });
   }
   if (seg.length === 4 && req.method === "DELETE") {
@@ -4583,14 +4581,7 @@ async function userAppGroupsRoute(req, env, url, ctx) {
       "SELECT s.id FROM subscription_sources s JOIN source_ownership so ON so.source_id = s.id WHERE s.id = ? AND so.user_id = ?",
     ).bind(sourceId, ctx.effectiveId).first();
     if (!src) return fail("来源不存在或不属于你", 404);
-    await db.prepare(
-      `INSERT OR IGNORE INTO app_group_sources(group_id, source_id)
-       SELECT ?, ? WHERE EXISTS (
-         SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?
-       ) AND EXISTS (
-         SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?
-       )`,
-    ).bind(id, sourceId, id, ctx.effectiveId, sourceId, ctx.effectiveId).run();
+    await db.prepare("INSERT OR IGNORE INTO app_group_sources(group_id, source_id) VALUES(?,?)").bind(id, sourceId).run();
     return json({ ok: true, data: { group_id: id, source_id: sourceId } }, 201);
   }
   if (seg.length === 5 && seg[4] === "members" && req.method === "POST") {
@@ -4598,12 +4589,7 @@ async function userAppGroupsRoute(req, env, url, ctx) {
     const body = await readJson(req);
     const deviceId = s(body.device_id, 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
-    await db.prepare(
-      `INSERT OR IGNORE INTO app_group_members(group_id, device_id)
-       SELECT ?, ? WHERE EXISTS (
-         SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?
-       )`,
-    ).bind(id, deviceId, id, ctx.effectiveId).run();
+    await db.prepare("INSERT OR IGNORE INTO app_group_members(group_id, device_id) VALUES(?,?)").bind(id, deviceId).run();
     return json({ ok: true, data: { group_id: id, device_id: deviceId } }, 201);
   }
   return fail("接口不存在", 404);
