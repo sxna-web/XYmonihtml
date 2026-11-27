@@ -1318,3 +1318,39 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 4. 只准备隔离环境准入与验证脚本/文档；没有用户明确指定并批准的 disposable D1 binding/database ID 时，不连接任何 D1、不执行远端 SQL。
 5. 不生成/执行生产 migration，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
 6. 更新总进度、总方案与第七十七批唯一接手卡。
+
+
+## 13. 第七十六批结果与第七十七批接手卡（2026-11-27）
+
+### 第七十六批结果
+
+- 版本：`V2.5-DEV-B1-APP-IDENTITY-76`；报告：`docs/backend/StarJump_V2.5_APP_v2身份原子操作D1隔离验证准入包报告_第七十六批_V2.5-DEV-B1-APP-IDENTITY-76_2026-11-27.md`。
+- 新增 D1 isolated validation plan、26-case machine-readable JSON matrix、offline validator、README、CI workflow 和报告。
+- 官方 D1 docs 核实：batch sequential/non-concurrent; SQL error abort/rollback; result order follows input; success and meta.changes are distinct; each D1 database is single-threaded and queues concurrent requests; Promise.race timeout does not cancel writes; D1 Insights includes rows read/written and duration.
+- Run `45995978023` completed/success；Job `140495345000`；Python 3.13.18；26-case matrix structure PASS。日志明确没有 network/D1 access、SQL execution 或 migration。
+- 本批仅验证矩阵完整性，不是 D1/Worker/APP 测试。
+- 专用 disposable D1、准确 database ID/binding、环境隔离证据、只读/写入授权均未提供或未授予；没有访问任何 D1。
+- 未执行 SQL/迁移，未修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，未部署。D1_NOT_TESTED / APP_PENDING / NOT_DEPLOYABLE。
+
+### 总进度表（第七十六批后）
+
+| 模块 | 当前状态 | 已有证据 | 未完成/下一步 |
+|---|---|---|---|
+| APP v2 identity service/state machine | 隔离 DEV 契约与本地测试 | 第六十四至七十五批 mock/SQLite CI | 未接真实 D1 adapter/Worker |
+| Identity operation receipt/audit | 候选原子契约 + SQLite 24/24 | Run 45995374834；D1 验证矩阵 D1-002…D1-016 | D1 CHECK/EXISTS/batch atomicity 未验证 |
+| Durable identity limiter | 候选算法 + SQLite 边界测试 | 第七十五批 24/24；D1 矩阵 D1-017…D1-026 | 多请求限流、共享 NAT、时钟、cleanup race、HMAC rotation 未验证 |
+| D1 isolated admission | 准入包和 26-case matrix 已完成 | Run 45995978023 offline structure PASS | 未提供 disposable DB/binding 和授权 |
+| APP Android compatibility | APP_PENDING | APK 源码尚未完成审计 | 第三方授权、签名、设备证明、协议兼容未核实 |
+| Production D1 / Worker / deployment | 未授权/未验证 | 本批未访问 | 生产仍禁止擅自操作 |
+
+### 第七十七批唯一接手卡
+
+**APP v2 D1 原子断言 SQL 候选静态可移植性复核与隔离执行器设计（仍不连接 D1）。**
+
+1. 重读 AGENTS、功能/API/数据库保护基线、总方案、进度和第七十至七十六批文件。
+2. 对第七十四/七十五批 CHECK assertion 候选 SQL 做 SQLite/D1 静态语法边界复核：CHECK 列约束、INSERT-SELECT/CASE WHEN EXISTS、唯一 event_key、精确 payload 比对、NULL 语义、prepared binding 顺序、batch 最终断言位置。
+3. 专门复核 create/revoke/rotation 的 receipt 断言是否存在零行、重复键、owner 错配、payload canonicalization 和状态 CAS 漏洞；发现问题先写反例，不推测已支持。
+4. 设计只接受显式隔离配置的未来 D1 harness：默认禁用、无默认 binding/database、环境身份核对、synthetic run namespace、只清理本 run ID、失败立即停止；本批不读取凭证、不连接 D1、不执行 SQL。
+5. 继续完善限流多维并发、共享 NAT、时钟、cleanup race、HMAC key overlap 的静态用例和证据模板，不设生产阈值。
+6. 不生成/执行生产 migration，不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置，不部署。
+7. 更新总进度、总方案与第七十八批唯一接手卡。
