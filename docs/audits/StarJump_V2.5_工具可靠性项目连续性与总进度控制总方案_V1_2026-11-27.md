@@ -1379,3 +1379,5 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 5. 完善 limiter HMAC 双 key overlap 和 cleanup/admission 竞态证据规格，不设生产阈值。
 6. 仍不连接 D1、不读取凭证、不执行 SQL、不创建 migration、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare 配置、不部署。
 7. 更新进度与总方案，给出第七十九批唯一接手卡。
+
+- 第七十七批 CI 后续核验结果：Run `45996975612` completed/success；Job `140498704644`；Python 3.13.18；离线结构检查 PASS，日志明确无 network/D1、无凭证读取、无 SQL 执行。不得将该结果扩大解释为 D1/SQL 测试通过。
