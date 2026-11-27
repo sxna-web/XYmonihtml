@@ -53,7 +53,7 @@
 
 
 ### GitHub Actions verification
-- Run: [45994897776](${run}) — completed / success.
+- Run: [45994897776](https://github.com/sxna-web/XYmonihtml/actions/runs/45994897776) — completed / success.
 - Job: 140491746184; runner Python 3.13.18.
 - Exact repository command: `python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-75 -p 'test_*.py' -v`.
 - Log evidence: 24 tests ran; 24 passed; 0 failed; output `OK`; exit code 0.
