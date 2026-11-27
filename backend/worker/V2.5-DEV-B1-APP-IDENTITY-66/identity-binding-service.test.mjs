@@ -36,6 +36,8 @@ function harness() {
       if(args.proof==="valid-device-proof-123456") return {ok:true,deviceKeyThumbprint:"key_thumbprint_01"};
       return {ok:false};
     },
+    verifyDeviceRequestProof:async args=>args.deviceKeyThumbprint==="key_thumbprint_01" &&
+      args.requestNonce==="nonce_123456" && args.proof==="valid-device-proof-123456",
     getOrCreateBinding:async input=>{
       createCalls.push(input);
       const key=input.adminUserId+"|"+input.deviceId;
@@ -115,7 +117,7 @@ test("one device can bind different administrators without merging their identit
  const a=await bind(h,CODE_A,DEVICE_A,"challenge_0001");
  const b=await bind(h,CODE_B,DEVICE_A,"challenge_0002");
  assert.equal(a.ok,true);assert.equal(b.ok,true);
- const result=await h.service.resolveManyAndLoadFreeGroups({credentials:[{token:a.token},{token:b.token}],deviceId:DEVICE_A,rateLimitKey:"resolve"});
+ const result=await h.service.resolveManyAndLoadFreeGroups({credentials:[{token:a.token,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"},{token:b.token,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"}],deviceId:DEVICE_A,rateLimitKey:"resolve"});
  assert.equal(result.ok,true);
  assert.deepEqual(result.groups.map(g=>g.adminUserId).sort(),["admin_A","admin_B"]);
  assert.deepEqual(new Set(h.groupCalls),new Set(["admin_A","admin_B"]));
@@ -125,7 +127,7 @@ test("duplicate identity credentials load the same admin free groups only once",
  const h=harness();
  const a=await bind(h);
  const b=await bind(h,CODE_A,DEVICE_A,"challenge_0002");
- const result=await h.service.resolveManyAndLoadFreeGroups({credentials:[{token:a.token},{token:b.token}],deviceId:DEVICE_A,rateLimitKey:"resolve"});
+ const result=await h.service.resolveManyAndLoadFreeGroups({credentials:[{token:a.token,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"},{token:b.token,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"}],deviceId:DEVICE_A,rateLimitKey:"resolve"});
  assert.equal(result.ok,true);
  assert.equal(result.groups.length,1);
  assert.equal(h.groupCalls.filter(x=>x==="admin_A").length,1);
@@ -136,7 +138,7 @@ test("disabled free group or expired VIP immediately blocks discovery and existi
  const issued=await bind(h);
  h.eligibility.set("admin_A",{accountActive:true,activeVipAdmin:true,freeGroupEnabled:false});
  assert.equal((await h.service.discover({shareCode:CODE_A,deviceId:DEVICE_A,rateLimitKey:"discover"})).code,"IDENTITY_NOT_AVAILABLE");
- assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A})).code,"IDENTITY_FREE_GROUP_NOT_AUTHORIZED");
+ assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"})).code,"IDENTITY_FREE_GROUP_NOT_AUTHORIZED");
 });
 
 test("inactive or non-VIP admin cannot bind even if share code exists",async()=>{
@@ -163,19 +165,19 @@ test("revoked binding cannot be used even when the share code remains active",as
  const h=harness();
  const issued=await bind(h);
  const row=[...h.bindings.values()][0];row.status="revoked";
- assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A})).code,"IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
+ assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"})).code,"IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
 });
 
 test("credential cannot be replayed on a different device",async()=>{
  const h=harness();
  const issued=await bind(h);
- assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_B})).code,"IDENTITY_CREDENTIAL_INVALID");
+ assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_B,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"})).code,"IDENTITY_CREDENTIAL_INVALID");
 });
 
 test("client-supplied admin ID cannot change the signed identity context",async()=>{
  const h=harness();
  const issued=await bind(h);
- const result=await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A,adminUserId:"admin_B"});
+ const result=await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A,adminUserId:"admin_B",requestNonce:"nonce_123456",proof:"valid-device-proof-123456"});
  assert.equal(result.ok,true);
  assert.equal(result.context.adminUserId,"admin_A");
 });
@@ -185,7 +187,7 @@ test("identity credential cannot be used to impersonate another admin",async()=>
  const issued=await bind(h);
  const claims=await h.tokenAdapter.verify({token:issued.token,deviceId:DEVICE_A});
  const forged=await h.tokenAdapter.issue({bindingId:claims.bindingId,adminUserId:"admin_B",deviceId:DEVICE_A});
- assert.equal((await h.service.resolveCredential({token:forged,deviceId:DEVICE_A})).code,"IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
+ assert.equal((await h.service.resolveCredential({token:forged,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"})).code,"IDENTITY_BINDING_REVOKED_OR_MISMATCHED");
 });
 
 test("group loader must return only enabled free groups owned by exact admin",async()=>{
@@ -244,7 +246,7 @@ test("identity token expires and rejects tampering",async()=>{
  assert.equal(await h.tokenAdapter.verify({token:tampered,deviceId:DEVICE_A}),null);
  let clock=NOW;
  const expiring=createIdentityTokenAdapter({secret:SECRET,cryptoImpl:webcrypto,now:()=>clock,ttlSeconds:60});
- const token=await expiring.issue({bindingId:"binding_exp",adminUserId:"admin_A",deviceId:DEVICE_A});
+ const token=await expiring.issue({bindingId:"binding_exp",adminUserId:"admin_A",deviceId:DEVICE_A,deviceKeyThumbprint:"key_thumbprint_01"});
  clock+=61000;
  assert.equal(await expiring.verify({token,deviceId:DEVICE_A}),null);
 });
@@ -270,7 +272,7 @@ test("D1-style binding or eligibility errors fail closed",async()=>{
   identityTokenAdapter:h.tokenAdapter,
  });
  assert.equal((await h.service.discover({shareCode:CODE_A,deviceId:DEVICE_A,rateLimitKey:"x"})).code,"IDENTITY_NOT_AVAILABLE");
- assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A})).code,"IDENTITY_BINDING_UNAVAILABLE");
+ assert.equal((await h.service.resolveCredential({token:issued.token,deviceId:DEVICE_A,requestNonce:"nonce_123456",proof:"valid-device-proof-123456"})).code,"IDENTITY_BINDING_UNAVAILABLE");
 });
 
 test("identity credential batch rejects partial invalid credential",async()=>{
