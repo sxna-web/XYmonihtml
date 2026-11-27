@@ -932,3 +932,45 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 6. 保留 legacy API 不变；不接入生产 Worker，不改 HTML/APK/D1/Secrets，不部署。
 7. 若 6.00.48 或隔离 D1 仍不可用，继续记录 APK_PENDING/D1_NOT_TESTED，不虚报联调完成。
 8. 更新进度、总方案和第六十五批接手卡。
+
+
+
+
+## 16. 第六十四批结果与第六十五批接手卡（2026-11-27）
+
+### 第六十四批结果
+
+- 版本：`V2.5-DEV-B1-APP-PROTOCOL-64`
+- 报告：`docs/backend/StarJump_V2.5_APP_v2_entitlementToken认证适配器与精确读取Handler报告_第六十四批_V2.5-DEV-B1-APP-PROTOCOL-64_2026-11-27.md`
+- 最终 CI Run `45973150016` completed/success；Node 22 语法检查通过，23/23 tests passed，0 failed。首次 Run `45972711669` 失败记录保留；修正后 Run `45972878003` 通过，verifier 缓存优化后的最终 Run 再次通过。
+- 新增独立 entitlement HMAC adapter：只读专用 `APP_ENTITLEMENT_SECRET`，无密钥 fail closed，不回退 SESSION_PEPPER/固定默认密钥；HMAC 输入为源码观察到的 `entitlementId|deviceId`，输出 base64url。
+- 新增精确读取 handler：显式 entitlementId + X-App-Device-ID + Bearer entitlement Token；不再调用 Session resolver；status/groups/nodes/links 全部使用第五十二批 resolver 返回的 entitlement context；节点和链接受 owner/group allowlist 二次检查；空 allowlist 不执行节点查询。
+- 第五十八批历史文件保留未覆盖；本批仅新增隔离替代实现。所有 loader 仍是注入依赖，尚未形成真实 D1 SQL 集成。
+- 未接入现有 Worker；未连接 D1/Cloudflare；未执行 SQL/创建 migration；未修改 HTML/APK/Secrets；未部署。6.00.48 未审计，APP_PENDING；隔离 D1 不存在/未核实，D1_NOT_TESTED。
+
+### APP v2 当前状态（第六十四批后）
+
+| 层级 | 状态 | 说明 |
+|---|---|---|
+| 精确 entitlement resolver | 隔离 helper 已编码并有测试 | 未接入 Worker |
+| entitlement HMAC adapter | 隔离实现已编码，23/23 CI 通过 | 专用 APP_ENTITLEMENT_SECRET 未配置；未验证 Cloudflare Workers runtime |
+| groups/nodes/links/status Handler | mock D1 测试通过 | loader 仍注入；未核实真实 SQL/schema |
+| group loader/composition | 既有隔离 helper 多批通过 | 尚未组合进本批 handler 的真实数据路径 |
+| Worker v2 实际路由接入 | 未实施 | legacy Worker 未改 |
+| D1 schema/migration/并发 | 未验证 | D1_NOT_TESTED |
+| 6.00.48 第三方源码审计 | 受阻 | APK_PENDING |
+| Android Room/API v2 与真机测试 | 未实施 | 6.00.47 只能作为结构参考 |
+| 生产部署 | 未授权/未执行 | 不可部署 |
+
+### 第六十五批唯一首要任务
+
+**APP v2 group loader / card-free scope 与 Handler 组合集成测试（继续隔离，不接 Worker）。**
+
+1. 重读 AGENTS、功能基线、API/D1 保护规范、总方案、进度及第五十一至六十四批报告。
+2. 复核第六十四批最终 CI Run `45973150016` 和最终文件 SHA。
+3. 对照第五十九/六十批 group loader、composition、projection helper，建立第六十五批 adapter，将每个 entitlement 的 card groups 与管理员 free group 精确组合。
+4. 覆盖同一管理员多卡密免费组只一份、同名 card group 追加序列号、不同管理员免费组隔离、空卡密分组、重复 entitlement/group ID fail closed。
+5. 读取接口继续显式 entitlement context；不得引入 latest fallback 或客户端 adminId 查询。
+6. 若 loader 所需 schema 字段仍未在真实隔离 D1 核实，只做 mock contract 测试并标记 D1_NOT_TESTED；不得编造生产 SQL 或 migration。
+7. 不修改 Worker/HTML/APK/D1/Secrets，不连接生产/staging，不部署。
+8. 更新进度、总方案和第六十六批接手卡。
