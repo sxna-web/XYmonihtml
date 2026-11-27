@@ -1,0 +1,32 @@
+name: APP v2 protocol 64 isolated tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/**"
+      - ".github/workflows/worker-app-protocol64-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-v2-protocol64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax checks
+        run: |
+          node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/entitlement-token-adapter.mjs
+          node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/app-v2-read-handler.mjs
+          node --check backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/app-v2-read-handler.test.mjs
+      - name: Isolated mock-D1 and handler tests
+        run: node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/app-v2-read-handler.test.mjs
