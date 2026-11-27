@@ -1,0 +1,25 @@
+name: APP Identity 75 Operation Receipt and Limiter SQLite Tests
+on:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-75/**"
+      - ".github/workflows/worker-app-identity75-operation-tests.yml"
+  pull_request:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-75/**"
+      - ".github/workflows/worker-app-identity75-operation-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  operation-receipt-and-limiter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run disposable SQLite operation and limiter fixture
+        run: python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-75 -p 'test_*.py' -v
