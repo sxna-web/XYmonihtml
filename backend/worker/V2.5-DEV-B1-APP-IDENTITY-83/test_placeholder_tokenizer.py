@@ -39,19 +39,28 @@ class PlaceholderTokenizerTests(unittest.TestCase):
     def test_12_named_dollar_rejected(self):
         with self.assertRaises(TokenizerError): placeholders("SELECT $value")
 
-    def test_13_unterminated_quotes_rejected(self):
+    def test_13_numeric_named_parameters_rejected(self):
+        for marker in (":1", "@1", "$1"):
+            with self.subTest(marker=marker), self.assertRaises(TokenizerError):
+                placeholders("SELECT " + marker)
+
+    def test_14_empty_sql_rejected(self):
+        with self.assertRaises(TokenizerError):
+            placeholders("")
+
+    def test_15_unterminated_quotes_rejected(self):
         for sql in ("SELECT 'x", 'SELECT "x', "SELECT `x", "SELECT [x"):
             with self.subTest(sql=sql), self.assertRaises(TokenizerError):
                 placeholders(sql)
 
-    def test_14_unterminated_comments_rejected(self):
+    def test_16_unterminated_comments_rejected(self):
         with self.assertRaises(TokenizerError): placeholders("SELECT /* x")
     
-    def test_15_bind_count_mismatch_rejected(self):
+    def test_17_bind_count_mismatch_rejected(self):
         with self.assertRaises(TokenizerError):
             validate_bind_count("SELECT ?, ?",1)
 
-    def test_16_valid_bind_count(self):
+    def test_18_valid_bind_count(self):
         self.assertEqual(len(validate_bind_count("SELECT ?, ?",2)),2)
 
 if __name__ == "__main__":
