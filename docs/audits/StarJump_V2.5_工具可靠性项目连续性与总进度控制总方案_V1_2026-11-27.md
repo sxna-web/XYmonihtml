@@ -694,3 +694,30 @@
 7. APK 仍标记 APK_PENDING；不修改客户端协议。
 8. 完成后更新报告、进度、总方案与第五十六批接手卡。
 
+
+
+## 第五十五批完成与第五十六批接手卡（2026-11-27）
+
+### 第五十五批状态：ADMIN_FLOW_AUDITED / END_TO_END_SPEC_DRAFTED / NOT_IMPLEMENTED / NOT_DEPLOYABLE
+
+- 批次：`V2.5-DEV-B1-APP-CARD-UI-55`
+- 报告：`docs/backend/StarJump_V2.5_APP卡密分组管理端调用链与端到端实施规格_第五十五批_V2.5-DEV-B1-APP-CARD-UI-55_2026-11-27.md`
+- 报告 Commit：`b579a4b39b3c8d0990d48d6590336d3bf572c63b`
+- HTML 1.4.61 的 APP 卡密分组配置是本地模拟 DB 操作，入口属于 masterOnly 且 requireMaster；没有真实 Worker API 调用。管理员 APP 分组 UI 也仍写入本地模拟数据。
+- 第四十九批 Worker 已有卡密列表/批量生成/停用/事件接口和用户 APP 分组 CRUD/来源/设备成员接口；但没有 card-group mapping API/表。卡密生成只接受 count/days，卡密列表未返回 groupIds。
+- 推荐端到端提案：新增 GET/PUT /api/user/app-cards/:cardId/groups 与 app_card_groups(card_id,group_id)，服务端逐项验证 effectiveId、卡密/分组归属、card 类型、enabled 和 VIP 状态；APP 读取按 entitlement.card_id 限定组及节点来源。
+- 未冻结边界：空分组卡密激活策略、public/free/assigned 与 card 专属组叠加、同卡密多设备激活、激活后改组生效时机、APK 请求/响应协议。
+- 本批未修改 HTML/Worker/D1/Secrets/APK，无代码测试，未访问生产、未部署。
+
+### 第五十六批唯一首要任务
+
+**APP 卡密分组授权业务规则冻结与兼容矩阵。**
+
+1. 重读 AGENTS、功能基线、API 规范、总方案、进度和第五十四/五十五批报告。
+2. 对照历史需求记录，核实卡密独立用户 ID、多设备激活、空分组、激活后修改、VIP 到期、免费组叠加等边界。
+3. 只读核对 APK 源码 ZIP 是否在仓库或 Library 可用；不可取得二进制则明确 APK_PENDING，不推测协议。
+4. 形成卡密状态 × entitlement 状态 × VIP 状态 × 分组类型 × 设备身份矩阵。
+5. 冻结旧 APP API 兼容策略、card group 响应字段、generation/24 小时清理端到端协议。
+6. 关键业务冲突仅列最少必要确认项；不擅自创建 migration 或接入 Worker。
+7. 完成后更新进度、总方案和第五十七批接手卡。
+
