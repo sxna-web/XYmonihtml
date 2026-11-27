@@ -721,3 +721,31 @@
 6. 关键业务冲突仅列最少必要确认项；不擅自创建 migration 或接入 Worker。
 7. 完成后更新进度、总方案和第五十七批接手卡。
 
+
+
+## 第五十六批完成与第五十七批接手卡（2026-11-27）
+
+### 第五十六批状态：RULES_AUDITED / SOURCE_READ_ONLY_AUDIT_DONE / APP_PENDING / NOT_IMPLEMENTED / NOT_DEPLOYABLE
+
+- 批次：`V2.5-DEV-B1-APP-RULES-56`
+- 报告：`docs/backend/StarJump_V2.5_APP卡密分组授权业务规则冻结与旧客户端兼容矩阵_第五十六批_V2.5-DEV-B1-APP-RULES-56_2026-11-27.md`
+- 报告 Commit：`298ba34295d413e48073ae59dab191408e52e640`
+- Library 找到并解包 `StarJump-6.00.47-source.zip`（2,377,487 bytes，SHA-256 `5a45da3d6e6e42a6aabf776336fdfff8424af0e9c7d756a8fea17f882459f7ab`）。源码有 Room 本地分组和普通订阅刷新，但未发现当前 Worker entitlement/card/device API、card group mapping、generation/tombstone/ack 协议实现。
+- 源码根目录 `STARJUMP-BACKEND-AND-MEMBERSHIP-SPEC.md` 仅是待实现 API 设计，不是已接入证据。6.00.48 ZIP 在仓库树中存在但二进制未读取。不能把 X Android wrapper 的 app-debug.apk 误认成星跃 APP。
+- 已核实用户规则：一个 APP 用户可绑定多个管理员，同一管理员一条绑定；管理员 ID 仅免费组；卡密取得该卡密配置的全部 card 组 + 符合条件的管理员 free 组；卡密组数量不限；卡密自身过期不回收已取得的管理员免费资格；管理员 VIP 到期不撤销已激活卡密/已生效链接；未激活卡密有 3 天宽限，之后只将 admin_vip_expired 自动失活者在续费后恢复；分组删除/改型立即停止下发并在 24 小时内清理失效节点。
+- public/assigned 不默认叠加到卡密专属组。未确认项：同一卡密设备数量上限、空分组卡密激活策略、激活后改组是否追溯所有已激活设备、宽限精确边界。
+- 未改业务代码、未跑代码测试、未构建/安装 APK、未连接生产 D1/Cloudflare/Secrets、未部署。
+
+### 第五十七批唯一首要任务
+
+**APP 授权协议与 24 小时分组清理技术设计（不改客户端/不改生产）。**
+
+1. 重读 AGENTS、功能基线、API 规范、总方案、进度、第五十四至五十六批报告。
+2. 形成 Worker API v2 契约、精确 entitlement resolver 调用图、card/free group 查询 SQL 草案。
+3. 设计 generation/tombstone/lease/ack 状态机，覆盖离线 24 小时边界。
+4. 明确多管理员、多卡密、多设备隔离模型；未确认的设备上限/空分组/改组追溯边界不擅自设值。
+5. 对照 6.00.47 源码给出最小客户端接入点（网络层、Room 分组映射、GroupUpdater/GroupManager 生命周期），不修改 APK。
+6. 继续标记 APK_PENDING；6.00.48 ZIP 尚未解包。
+7. 输出测试矩阵、兼容策略、回滚计划；不创建正式 migration、不连接生产 D1、不部署。
+8. 更新进度、总方案和第五十八批接手卡。
+
