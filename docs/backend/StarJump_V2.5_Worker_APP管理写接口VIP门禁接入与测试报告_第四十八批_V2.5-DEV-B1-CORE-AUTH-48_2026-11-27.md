@@ -30,7 +30,7 @@
 | `Worker.js` | `bf04ef31bbd75777263d0dc8b3108da62a852668` | 以原始 Worker 为基线的修订副本，5,638 行 |
 | `worker-auth-adapter.mjs` | `2f91941c68082a44d5e23e1e25b416ae2901e0f0` | Worker Session → VIP activation → action gate adapter |
 | `worker-auth-adapter.test.mjs` | `86e226e1a14c00359f7e23ce08913830f1435814` | 12 项 Node mock tests |
-| `README.md` | `6a82fcce787ba675ada4ce7d555b3538a1ac9c20` | 范围、字段依据、运行方式和限制 |
+| `README.md` | `164e3917e1ed714c8c0fc41cc66ede1448c1fc57` | 范围、字段依据、运行方式和限制 |
 
 本批验证由当时的 GitHub Actions workflow 执行；该临时工作流随后由第四十九批专用 workflow 替换。
 
