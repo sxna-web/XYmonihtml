@@ -50,3 +50,11 @@
 回滚：本批为独立版本目录和 workflow；停止引用该目录/禁用该 workflow 或回退对应提交即可，不触及现有业务数据。
 
 结论：本地 SQLite fixture 语义测试通过；真实 D1、Worker、APP 和生产部署均未通过验收。本批不可部署。
+
+
+### GitHub Actions verification
+- Run: [45994897776](${run}) — completed / success.
+- Job: 140491746184; runner Python 3.13.18.
+- Exact repository command: `python -m unittest discover -s backend/worker/V2.5-DEV-B1-APP-IDENTITY-75 -p 'test_*.py' -v`.
+- Log evidence: 24 tests ran; 24 passed; 0 failed; output `OK`; exit code 0.
+- This CI evidence is still only the in-memory synthetic SQLite fixture, not D1/Worker/APP/deployment verification.
