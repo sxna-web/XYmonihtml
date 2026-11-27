@@ -5451,8 +5451,6 @@ export default {
           db: env.DB, path: url.pathname, method: req.method, ctx: ctxWithReq,
         });
         if (appAuthorization && !appAuthorization.allowed) {
-          await auditDenied(env.DB, ctxWithReq, "app_management.authorization_denied",
-            appAuthorization.code || "APP_AUTH_DENIED", "path", url.pathname);
           return withCors(fail("当前身份或会员状态无权执行此操作", 403, {
             code: appAuthorization.code || "APP_AUTH_DENIED",
             vip_state: appAuthorization.vipState || null,
