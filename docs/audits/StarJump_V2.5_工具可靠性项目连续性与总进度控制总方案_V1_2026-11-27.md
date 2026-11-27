@@ -1497,3 +1497,14 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - HMAC opaque dimension_id + version alias registry 仅为待证明候选；并发首次发现、split identity、partial backfill/high-water、rollback、cleanup race 仍是实施阻塞。
 - U80-01..08 继续未确认；APP v2 feature flag OFF。D1_NOT_TESTED / APP_NOT_INTEGRATED / NOT_DEPLOYABLE。
 - **第八十四批接手卡：**建立 HMAC dimension alias registry 的并发一致性参考模型与反例测试；建立 identity/limiter/harness 三类独立 statement-manifest JSON schema/静态检查，不写生产 SQL；继续核查 6.00.48 源码；保持离线，不连接 D1、不读取凭证、不修改 Worker/HTML/APK/Room/Secrets/Cloudflare、不部署。
+
+
+## 第八十四批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-IDENTITY-84`；报告：`docs/backend/StarJump_V2.5_HMAC维度别名注册表并发一致性证明与三类语句清单分离报告_第八十四批_V2.5-DEV-B1-APP-IDENTITY-84_2026-11-28.md`。
+- HMAC alias reference model 与 adversarial tests 已提交；同一维度在 key overlap 期间必须一次解析全部 active-version aliases，绑定到一个 opaque dimension_id。K1-only/K2-only first-seen 拒绝；alias split、event tuple conflict、partial backfill、late retry、cleanup/retirement horizon 未闭合均 fail closed。
+- 特别风险：HMAC 不可逆。只有 K1 fingerprint 且没有可信规范化原始维度来源时，不能计算 K2 fingerprint；禁止伪造回填完成，K1 retirement 必须阻断。
+- 三类独立 design-only statement manifests（identity/limiter/disposable harness）、JSON Schema 和静态校验器已提交；SQL/hash/placeholders/binds 仍为空，禁止生产 SQL。
+- GitHub Actions Run `46057517659` / Job `140703508367` completed/success；Python 3.13.18，29/29 tests passed（20 model + 9 manifest validator）；只证明离线模型和静态结构，不证明 D1/HMAC/Worker 生产行为。
+- 未连接 D1、未执行 SQL/DDL/migration、未读取 Secrets、未修改 Worker/API/HTML/APK/Room/Cloudflare、不部署。U80-01..08 等既有待确认项保持 fail closed。
+- **第八十五批接手卡：**负面复核 active-version config drift、cross-worker concurrency、owner/admin/tenant/dimension-type scope、event/dimension cleanup；审查 durable backfill cursor/high-water/writer epoch/snapshot token 契约；扩展三类 manifest metadata skeleton（owner/method/result/error/receipt/audit/assertion dependencies）但不写 SQL；核查旧 K1 可信重算来源。保持离线，不连 D1、不部署。
