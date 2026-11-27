@@ -484,3 +484,55 @@
 10. 更新第四十九批报告、开发进度和下一批接手卡。
 
 **部署闸门：**第四十八批 Worker 副本目前不是正式发布包。必须先完成第四十九批 handler 级验证、独立安全复核、回滚/兼容性检查，再决定后续是否形成候选部署包；用户未明确授权前不得部署。
+
+
+## 16. 第四十九批完成与第五十批接手卡（2026-11-27）
+
+### 第四十九批状态：CI_TESTED / WORKER_FETCH_HANDLER_MOCK_PASS / D1_RUNTIME_PENDING
+
+- 批次：`V2.5-DEV-B1-CORE-AUTH-49`
+- 报告：`docs/backend/StarJump_V2.5_Worker_APP管理路由对象归属加固与Handler集成测试报告_第四十九批_V2.5-DEV-B1-CORE-AUTH-49_2026-11-27.md`
+- 报告 Commit：`c501249b98751aef5326e56f320bf428d5e04d72`
+- 版本 Worker：`backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js`，Blob SHA `a4689380215e95c1c9f605fc974cc553b3e7037f`。
+- adapter：`worker-auth-adapter.mjs`，Blob SHA `2f91941c68082a44d5e23e1e25b416ae2901e0f0`。
+- adapter tests：`worker-auth-adapter.test.mjs`，Blob SHA `86e226e1a14c00359f7e23ce08913830f1435814`。
+- handler tests：`worker-handler.integration.test.mjs`，Blob SHA `d0303a2ed5a9e84d938fb95b9d46711444050abd`。
+- README：`b2497b360f67118233a8084547c18e890582661b`。
+- CI Workflow：`.github/workflows/worker-auth49-tests.yml`；Run ID `45954203952`；Node.js v22.23.5；Worker ESM syntax、adapter syntax均通过；adapter tests 12/12、Worker.fetch handler tests 12/12，均 0 failed。
+- handler tests 实际调用版本 Worker `fetch()` 入口并使用 mock D1；这比纯函数测试更接近路由，但不等于 Cloudflare Workers runtime 或真实 D1 集成。
+- 已加固 APP 分组 PUT、sources POST、members POST 最终 SQL 的 owner predicates；正式 VIP 到期历史删除仍在最终 DELETE SQL 限定 owner + created_at cutoff。
+- 路由复核更正：members/:deviceId DELETE 属于超管分组 handler，不是用户态 APP 分组 handler；adapter 不再错误映射为用户态动作。
+- 本批只改版本化 Worker 副本和测试/文档；未改 D1 schema/数据、Secrets、原始 Worker/HTML；未连接生产 Cloudflare/D1；未部署。
+- 未完成：APP links/cards handler 级测试；分组多语句删除失败恢复；tombstone/generation/24h cleanup acknowledgement；APP status token 与多 entitlement latest-only 风险。
+- 第四十八批版本目录保留原始快照，第四十九批单独版本化，避免覆盖历史交付。
+
+### 当前总进度摘要
+
+| 模块 | 当前状态 | 下一步 |
+|---|---|---|
+| 项目基线/业务规则 | 已建立并持续维护 | 按批次更新 |
+| 本地迁移工具 | 第四十五批 24/24 SQLite 测试通过 | D1 隔离兼容仍待验证 |
+| 核心身份/VIP 权限 | 第四十七批 helper 26/26；第四十八批 adapter 12/12；第四十九批 Worker.fetch handler 12/12 | 扩展所有 APP 管理路由集成测试 |
+| APP 分组权限 | POST/PUT/DELETE/sources/members POST 门禁接入；PUT/关联 SQL owner 条件已加固 | 并发、批量写和失败恢复验证 |
+| APP links/cards | adapter 动作门禁已接入 | 第五十批补 handler 级测试 |
+| APP entitlement | status token、多授权 latest-only 风险已登记 | 后续独立修复 |
+| APP 分组撤销 | 仍为物理删除，无 24h ack 闭环 | 设计 tombstone/generation/ack |
+| 转换/匿名归属 | 共享匿名 owner、固定密钥、filters/限流风险已登记 | 后续独立修复 |
+| 前端接入 | 原始 HTML API 路径/环境错配已登记 | Worker API 稳定后调整 |
+| 通知/邮箱 | 用户决定后置 | 核心主线完成后再做 |
+| 生产 D1/部署 | 未核实、未授权 | 不操作、不部署 |
+
+### 第五十批唯一首要任务
+
+**补齐 APP links 与 APP cards 的 Worker handler 级权限回归，并复核全部 APP 管理写路由。**
+
+1. 重读当前 main、AGENTS、功能基线、本方案、开发进度、第四十八/四十九批报告和第四十九批 Worker。
+2. 核对当前 main Blob SHA；不使用旧路径/旧 SHA。
+3. 通过实际 Worker.fetch + mock D1 测试 links POST/DELETE、cards POST/DELETE/disable；覆盖有效/过期 trial/formal、L1、direct super、assist scope、VIP 查询失败和跨用户资源 ID。
+4. 对分组 sources/members、links、cards 所有写路径逐项检查最终 SQL 是否包含 owner/admin_user_id 条件；不能只靠前置 SELECT。
+5. 检查 `userBatch`、D1 `batch()`、审计语句的执行和失败语义；断言拒绝请求不会改变业务表，审计/Session 心跳等维护写必须单独分类。
+6. 核查 links DELETE 的 owner/cutoff 原子条件；cards DELETE 是软停用，不得误当历史物理删除。
+7. 不连接生产 D1、不执行迁移、不读取/修改 Secrets、不部署。
+8. 更新第五十批报告、开发进度和下一批接手卡。
+
+**部署闸门：**第四十九批仍不可部署。需完成 APP links/cards handler 测试、完整 APP 管理 API 独立复核、Worker runtime 兼容验证、回滚和 D1 兼容评估后，才可形成候选发布包；用户明确授权前不部署。
