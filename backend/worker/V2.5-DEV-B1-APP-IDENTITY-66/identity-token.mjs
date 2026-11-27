@@ -41,13 +41,14 @@ export function createIdentityTokenAdapter({
   }
 
   return Object.freeze({
-    async issue({ bindingId, adminUserId, deviceId }) {
+    async issue({ bindingId, adminUserId, deviceId, deviceKeyThumbprint }) {
       if (!secretValid || !ttlValid || !ID_RE.test(bindingId || "") ||
-          !ID_RE.test(adminUserId || "") || !DEVICE_RE.test(deviceId || "")) return null;
+          !ID_RE.test(adminUserId || "") || !DEVICE_RE.test(deviceId || "") ||
+          !ID_RE.test(deviceKeyThumbprint || "")) return null;
       try {
         const issuedAt = Math.floor(now() / 1000);
         const claims = {
-          v: 1, bindingId, adminUserId, deviceId,
+          v: 1, bindingId, adminUserId, deviceId, deviceKeyThumbprint,
           issuedAt, expiresAt: issuedAt + ttlSeconds,
         };
         const payload = encodeJson(claims);
@@ -77,6 +78,7 @@ export function createIdentityTokenAdapter({
         if (!claims || claims.v !== 1 ||
             !ID_RE.test(claims.bindingId || "") ||
             !ID_RE.test(claims.adminUserId || "") ||
+            !ID_RE.test(claims.deviceKeyThumbprint || "") ||
             claims.deviceId !== deviceId ||
             !Number.isInteger(claims.issuedAt) ||
             !Number.isInteger(claims.expiresAt) ||
@@ -88,6 +90,7 @@ export function createIdentityTokenAdapter({
           bindingId: claims.bindingId,
           adminUserId: claims.adminUserId,
           deviceId: claims.deviceId,
+          deviceKeyThumbprint: claims.deviceKeyThumbprint,
           issuedAt: claims.issuedAt,
           expiresAt: claims.expiresAt,
         });
