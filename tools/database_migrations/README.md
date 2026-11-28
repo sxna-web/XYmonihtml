@@ -45,6 +45,14 @@ The read-only snapshot now records:
 
 This improves local structural diff evidence but is not a complete semantic equivalence proof. It does not read Cloudflare D1, does not imply production compatibility, and does not automatically repair drift. The local test suite is run in RC1 CI only as a regression check for this isolated verifier.
 
+## RC1 CI regression integration (2026-11-28)
+
+The isolated verifier test suite is now part of the RC1 convergence workflow:
+- Command: `python -m unittest discover -s tools/database_migrations/tests -v`
+- Current suite: 25 tests, including index key order/uniqueness and extended/generated-column snapshot coverage.
+- The CI step uses disposable local SQLite fixtures only. It does not invoke D1, Wrangler, Cloudflare APIs, production bindings, or secrets.
+- Latest push and PR workflow checks passed: [push run](https://github.com/sxna-web/XYmonihtml/actions/runs/46097127196), [PR run](https://github.com/sxna-web/XYmonihtml/actions/runs/46097121612).
+
 ## Compatibility boundary
 
 SQLite test success does not establish Cloudflare D1 compatibility, transaction semantics, concurrency guarantees, SQL feature availability, or production schema compatibility. Before any D1 implementation, separately verify supported SQL syntax and transactional behavior against the actual D1 environment and schema, after explicit user approval. No D1 access or migration is included in this batch.
