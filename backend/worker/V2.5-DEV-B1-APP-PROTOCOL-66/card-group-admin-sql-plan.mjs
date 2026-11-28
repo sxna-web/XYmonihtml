@@ -55,6 +55,7 @@ export function buildCardGroupReplaceStatements(db, input) {
       !ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
       !ID_RE.test(cardId || "") || typeof isSuperAdmin !== "boolean" ||
       (actorId !== adminId && !ID_RE.test(scopeId || "")) ||
+      (isSuperAdmin && actorId !== adminId) ||
       typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey) ||
       typeof requestId !== "string" || !requestId.trim() || requestId.length > 80 ||
       !Array.isArray(groupIds) || !Array.isArray(expectedGroupIds) ||
