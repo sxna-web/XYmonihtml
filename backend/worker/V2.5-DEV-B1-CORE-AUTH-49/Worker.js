@@ -4399,13 +4399,16 @@ async function inspectAppSchema(db, existingTableNames) {
       name: table,
       present: true,
       verification: complete ? "OBSERVED_SCHEMA_ONLY" : "PARTIAL_NOT_VERIFIED",
-      columns: columnsOk ? columnsResult.value.map(column => ({
+      // Schema defaults can contain literal values. Expose presence + a digest,
+      // never the raw default expression/value in the diagnostic response.
+      columns: columnsOk ? await Promise.all(columnsResult.value.map(async column => ({
         name: String(column.name),
         type: String(column.type || ""),
         not_null: Number(column.notnull) === 1,
-        default_value: column.dflt_value == null ? null : String(column.dflt_value),
+        default_present: column.dflt_value != null,
+        default_sha256: column.dflt_value == null ? null : await sha256Hex(String(column.dflt_value)),
         primary_key_order: Number(column.pk || 0),
-      })) : null,
+      }))) : null,
       indexes: indexesOk ? indexDetails : null,
       foreign_keys: foreignKeysOk ? foreignKeysResult.value.map(fk => ({
         id: Number(fk.id),
