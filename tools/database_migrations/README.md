@@ -68,3 +68,33 @@ SQLite test success does not establish Cloudflare D1 compatibility, transaction 
 - Column defaults and sqlite_master/index/trigger SQL are represented by SHA-256 digests, not echoed. Column names/types/NOT NULL/PK, index uniqueness/origin/partial/key columns, foreign-key actions, and object identities are compared.
 - Output is a structural comparison only. A MATCH is not proof of semantic compatibility, data integrity, migration safety, D1 transaction semantics, or production readiness. Keep staging and production source snapshots and manifests separately labelled; do not overwrite an approved baseline without review.
 - New regression tests: 16. The latest full suite reports 62 tests passed. The whole unittest suite is run by the existing RC1 convergence workflow against local in-memory fixtures only.
+
+
+## Staging schema-only intake from the Worker diagnostic (Batch 93)
+
+This path consumes the authenticated `GET /api/super/schema-status` response from an already-existing staging Worker that is confirmed to use the staging D1 binding. It does not create or switch bindings and does not call Wrangler or Cloudflare APIs from this local utility.
+
+1. Sign in as the direct super-admin account to the staging environment only.
+2. Request `GET /api/super/schema-status` and save the complete JSON response as `staging-schema-status.json`. Do not use a production Worker URL for this staging capture.
+3. Confirm `data.app_structure.verification` is `OBSERVED_SCHEMA_ONLY` and `objects_verification` is `OBSERVED`. If either is partial, stop; do not build a manifest.
+4. Build the sanitized manifest:
+
+```bash
+python tools/database_migrations/schema_manifest.py build-diagnostic --input staging-schema-status.json --environment staging --output staging.app-schema.manifest.json
+```
+
+5. Keep the original response and generated manifest together with capture date, Worker version/commit, and an operator note that the endpoint was the staging environment. Do not put credentials, cookies, authorization headers, or session tokens in the files or commit them to Git.
+6. Compare two independently captured manifests only when both environments are explicitly approved for read-only inspection:
+
+```bash
+python tools/database_migrations/schema_manifest.py compare --left staging.app-schema.manifest.json --right approved-baseline.app-schema.manifest.json --output schema-comparison.json
+```
+
+### What this intake contains / omits
+
+- Includes table presence, column names/types/nullability/PK order, default-presence plus SHA-256 of default expressions, index identity/uniqueness/origin/partial flag/key columns, FK actions, and trigger/view names.
+- The Worker diagnostic never returns raw default expressions after Batch 93; it returns only `default_present` and `default_sha256`.
+- It does not return business rows, card codes, tokens, request payload JSON, or raw trigger/view/index SQL.
+- Since raw index/trigger/view SQL is intentionally omitted, definition-level SQL digest comparison is unavailable in this intake path. A manifest match therefore means only that the exposed structural metadata matches; it is not semantic equivalence or migration approval.
+- A missing table is recorded as `ABSENT`, never as an instruction to create it. A partial diagnostic is rejected.
+- This procedure is documentation for a future authorized staging capture. No staging or production database was accessed as part of Batch 93.
