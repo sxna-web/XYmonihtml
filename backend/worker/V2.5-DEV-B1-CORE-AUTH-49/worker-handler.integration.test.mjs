@@ -44,6 +44,11 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
         },
       };
     },
+    async batch(statements) {
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
+    },
   };
 }
 function businessWrites(db) {
@@ -160,4 +165,32 @@ test("Worker handler associates APP member only through group-owner SQL predicat
   assert.equal(res.status,201);
   const write=businessWrites(db).find(x=>x.sql.includes("app_group_members"));
   assert.ok(write);assert.match(write.sql,/app_groups WHERE id = \? AND admin_user_id = \?/);
+});
+
+
+test("delegated APP group mutation includes the live scope guard in the same D1 batch",async()=>{
+  const db=mockDb({role:"super_admin",actingAs:"u1",scope:"manage",activations:activeTrial});
+  const {res}=await call(db,{path:"/api/user/app-groups",method:"POST",body:{name:"Scoped",mode:"assigned"}});
+  assert.equal(res.status,201);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM admin_user_scopes") && x.sql.includes("revoked_at IS NULL")));
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_groups")).length,1);
+});
+
+test("expired formal VIP cannot remove an APP group source association as a configuration mutation",async()=>{
+  const db=mockDb({activations:expiredFormal});
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1/sources/src1",method:"DELETE"});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"VIP_REQUIRED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("DELETE FROM app_group_sources")).length,0);
+});
+
+test("APP group source removal checks group ownership in the final SQL and scope batch",async()=>{
+  const db=mockDb({role:"super_admin",actingAs:"u1",scope:"manage",activations:activeTrial});
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1/sources/src1",method:"DELETE"});
+  assert.equal(res.status,200);
+  assert.equal(json.data.removed,true);
+  const del=businessWrites(db).find(x=>x.sql.startsWith("DELETE FROM app_group_sources"));
+  assert.ok(del);
+  assert.match(del.sql,/EXISTS \(SELECT 1 FROM app_groups WHERE id = \? AND admin_user_id = \?\)/);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM admin_user_scopes") && x.sql.includes("revoked_at IS NULL")));
 });
