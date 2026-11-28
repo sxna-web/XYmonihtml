@@ -48,7 +48,7 @@ def manifest_from_snapshot(snapshot: dict, environment: str) -> dict:
         raise ManifestError("environment must be staging, production, or local-fixture")
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("tables"), dict):
         raise ManifestError("snapshot.tables is required")
-    objects = _require_list(snapshot.get("objects", []), "snapshot.objects")
+    objects = _require_list(snapshot.get("objects"), "snapshot.objects")
     object_map: dict[tuple[str, str], dict] = {}
     for row in objects:
         if not isinstance(row, list) or len(row) < 4:
@@ -56,8 +56,13 @@ def manifest_from_snapshot(snapshot: dict, environment: str) -> dict:
         obj_type, name, table_name, sql = row[:4]
         if not all(isinstance(x, str) for x in (obj_type, name, table_name)):
             raise ManifestError("object identity fields must be strings")
+        if sql is not None and not isinstance(sql, str):
+            raise ManifestError("object SQL must be text or null")
         if obj_type in {"table", "index", "trigger", "view"}:
-            object_map[(obj_type, name)] = {
+            identity = (obj_type, name)
+            if identity in object_map:
+                raise ManifestError(f"duplicate schema object identity: {obj_type}/{name}")
+            object_map[identity] = {
                 "type": obj_type,
                 "name": name,
                 "table": table_name,
@@ -87,14 +92,18 @@ def manifest_from_snapshot(snapshot: dict, environment: str) -> dict:
                 "default_sha256": _digest(default_value) if default_value is not None else None,
             })
 
-        index_details = raw.get("index_details", [])
+        if "index_details" not in raw:
+            raise ManifestError(f"{table_name}.index_details is required; refusing partial manifest")
+        index_details = raw["index_details"]
         if not isinstance(index_details, list):
             raise ManifestError(f"{table_name}.index_details must be a list")
         indexes = []
         for item in index_details:
             if not isinstance(item, dict) or not isinstance(item.get("name"), str):
                 raise ManifestError(f"{table_name}: malformed index detail")
-            list_row = item.get("list_row", [])
+            if "list_row" not in item or "columns" not in item or "sql" not in item:
+                raise ManifestError(f"{table_name}: index metadata is incomplete")
+            list_row = item["list_row"]
             if not isinstance(list_row, list) or len(list_row) < 3:
                 raise ManifestError(f"{table_name}: malformed index_list row")
             key_columns = []
