@@ -80,9 +80,9 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
     };
   }
 
-  async function findRequest(adminId, requestId) {
+  async function findRequest(adminId, idempotencyKey) {
     return db.prepare(CARD_GROUP_READ_SQL.idempotency)
-      .bind(adminId, requestId).first();
+      .bind(adminId, idempotencyKey).first();
   }
 
   function idempotentResult(adminId, cardId, record, digest) {
@@ -109,7 +109,7 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
 
   async function classifyBatchFailure(input, originalError) {
     try {
-      const prior = await findRequest(input.adminId, input.requestId);
+      const prior = await findRequest(input.adminId, input.idempotencyKey);
       if (prior) {
         const replay = idempotentResult(input.adminId, input.cardId, prior, input.payloadSha256);
         if (replay) return replay;
@@ -157,13 +157,14 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
 
     async replaceCardGroupsAtomically(input) {
       const {
-        adminId, actorId, scope = null, scopeId = null, requestId, cardId, groupIds, expectedGroupIds,
+        adminId, actorId, scope = null, scopeId = null, idempotencyKey, requestId, cardId, groupIds, expectedGroupIds,
       } = input || {};
       if (!ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
           !ID_RE.test(cardId || "") ||
           (actorId !== adminId && (!["operate", "manage"].includes(scope) || !ID_RE.test(scopeId || ""))) ||
-          typeof requestId !== "string" ||
-          !requestId.trim() || requestId.length > 80 ||
+          typeof idempotencyKey !== "string" ||
+          !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey) ||
+          typeof requestId !== "string" || !requestId.trim() || requestId.length > 80 ||
           !Array.isArray(groupIds) || !Array.isArray(expectedGroupIds) ||
           groupIds.length > 100 || expectedGroupIds.length > 100 ||
           [...groupIds, ...expectedGroupIds].some(id => !ID_RE.test(id || "")) ||
@@ -187,7 +188,7 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
       const inputWithDigest = { ...input, payloadSha256: digest };
 
       let prior;
-      try { prior = await findRequest(adminId, requestId); }
+      try { prior = await findRequest(adminId, idempotencyKey); }
       catch { return { ok: false, code: "IDEMPOTENCY_READ_UNAVAILABLE" }; }
       if (prior) return idempotentResult(adminId, cardId, prior, digest);
 
@@ -215,11 +216,16 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
       const beforeJson = JSON.stringify(activeIds(state.mappings));
       let batch;
       try {
+        const mappingIds = groupIds.map(() => {
+          if (typeof globalThis.crypto?.randomUUID !== "function") throw new Error("WEB_CRYPTO_UNAVAILABLE");
+          return `cgm_${globalThis.crypto.randomUUID().replace(/-/g, "")}`;
+        });
         batch = buildCardGroupReplaceStatements(db, {
           ...inputWithDigest,
           scopeId,
           expectedGroupIds,
           beforeJson,
+          mappingIds,
         });
         const results = await db.batch(batch);
         const last = Array.isArray(results) ? results[results.length - 1] : null;
