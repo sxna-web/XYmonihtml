@@ -3690,7 +3690,17 @@ async function userAppCardsRoute(req, env, url, ctx) {
     if (Number(stock?.n || 0) + count > APP_CARD_STOCK_MAX) return fail(`未激活库存上限 ${APP_CARD_STOCK_MAX} 张`, 409);
 
     const codes = [];
-    const stmts = [];
+    const stmts = [
+      // Re-check both capacity limits inside the same D1 batch as the inserts.
+      // The earlier SELECTs provide friendly messages; these assertions close
+      // the concurrent-request window so two batches cannot both overfill stock.
+      assertStmt(db,
+        "(SELECT COUNT(*) FROM app_cards WHERE admin_user_id = ?) + ? <= ?",
+        [ctx.effectiveId, count, APP_CARD_TOTAL_MAX]),
+      assertStmt(db,
+        "(SELECT COUNT(*) FROM app_cards WHERE admin_user_id = ? AND status='normal' AND activated_at IS NULL AND used_at IS NULL) + ? <= ?",
+        [ctx.effectiveId, count, APP_CARD_STOCK_MAX]),
+    ];
     for (let i = 0; i < count; i++) {
       const code = appCardCode();
       codes.push(code);
@@ -3703,7 +3713,14 @@ async function userAppCardsRoute(req, env, url, ctx) {
       action: "app_card.create", targetType: "app_card", targetId: "-",
       after: { count, days }, detail: `生成 ${count} 张 APP 卡密`,
     }));
-    await userBatch(db, ctx, stmts);
+    try {
+      await userBatch(db, ctx, stmts);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("卡密库存或总记录容量刚刚发生变化，请刷新后重试", 409, { code: "APP_CARD_CAPACITY_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { count, days, codes } }, 201);
   }
 
