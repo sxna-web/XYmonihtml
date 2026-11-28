@@ -2070,7 +2070,8 @@ async function userGroupsRoute(req, env, url, ctx) {
     const sortOrder = body.sort_order === undefined ? group.sort_order : num(body.sort_order, group.sort_order);
     if (!Number.isInteger(sortOrder)) return fail("sort_order 不合法", 400);
     const remark = body.remark === undefined ? group.remark : s(body.remark, 200);
-    await userBatch(db, ctx, [
+    const updated = await userBatch(db, ctx, [
+      assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
       db.prepare("UPDATE node_groups SET name=?, sort_order=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?")
         .bind(name, sortOrder, remark, groupId, ctx.effectiveId),
       auditStmt(db, ctx, {
@@ -2078,15 +2079,18 @@ async function userGroupsRoute(req, env, url, ctx) {
         before: { name: group.name, sort_order: group.sort_order }, after: { name, sort_order: sortOrder },
       }),
     ]);
+    if (!updated[1]?.meta?.changes) return fail("分组已变化", 409);
     return json({ ok: true, data: { id: groupId } });
   }
 
   if (seg.length === 4 && method === "DELETE") {
-    await userBatch(db, ctx, [
-      db.prepare("DELETE FROM node_groups WHERE id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
+    const deleted = await userBatch(db, ctx, [
+      assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
       db.prepare("DELETE FROM node_group_members WHERE group_id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
+      db.prepare("DELETE FROM node_groups WHERE id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
       auditStmt(db, ctx, { action: "group.delete", targetType: "group", targetId: groupId, before: { name: group.name } }),
     ]);
+    if (!deleted[2]?.meta?.changes) return fail("分组已变化", 409);
     return json({ ok: true, data: { id: groupId } });
   }
 
@@ -2105,22 +2109,33 @@ async function userGroupsRoute(req, env, url, ctx) {
         await auditDenied(db, ctx, "group.member.add", "节点不存在或不属于当前用户", "node", nodeId);
         return fail("节点不存在", 404);
       }
-      await userBatch(db, ctx, [
-        db.prepare("INSERT OR IGNORE INTO node_group_members(user_id, group_id, node_kind, node_id) VALUES(?,?,?,?)")
-          .bind(ctx.effectiveId, groupId, kind, nodeId),
-        auditStmt(db, ctx, { action: "group.member.add", targetType: "group", targetId: groupId, after: { node_kind: kind, node_id: nodeId } }),
-      ]);
+      try {
+        await userBatch(db, ctx, [
+          assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
+          nodeOwnerAssertStmt(db, ctx, nodeId, kind),
+          db.prepare("INSERT OR IGNORE INTO node_group_members(user_id, group_id, node_kind, node_id) VALUES(?,?,?,?)")
+            .bind(ctx.effectiveId, groupId, kind, nodeId),
+          auditStmt(db, ctx, { action: "group.member.add", targetType: "group", targetId: groupId, after: { node_kind: kind, node_id: nodeId } }),
+        ]);
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("分组或节点归属刚刚发生变化，请刷新后重试", 409, { code: "GROUP_MEMBER_STATE_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { group_id: groupId, node_kind: kind, node_id: nodeId } }, 201);
     }
     if (method === "DELETE") {
       const kind = s(url.searchParams.get("node_kind"), 20);
       const nodeId = s(url.searchParams.get("node_id"), 80);
       if (!["subscription", "manual"].includes(kind) || !validId(nodeId)) return fail("参数无效", 400);
-      await userBatch(db, ctx, [
+      const removed = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
         db.prepare("DELETE FROM node_group_members WHERE user_id = ? AND group_id = ? AND node_kind = ? AND node_id = ?")
           .bind(ctx.effectiveId, groupId, kind, nodeId),
         auditStmt(db, ctx, { action: "group.member.remove", targetType: "group", targetId: groupId, before: { node_kind: kind, node_id: nodeId } }),
       ]);
+      if (!removed[1]?.meta?.changes) return fail("分组成员已变化", 409);
       return json({ ok: true, data: { group_id: groupId, node_kind: kind, node_id: nodeId } });
     }
   }
