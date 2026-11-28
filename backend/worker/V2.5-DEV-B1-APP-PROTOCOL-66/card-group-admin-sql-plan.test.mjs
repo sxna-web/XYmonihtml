@@ -31,7 +31,7 @@ test("read plan scopes card and groups to one admin and never selects redeem cod
 test("replace plan final assertion includes active VIP, card state, owner/mode and CAS",()=>{
   const db=dbCapture();
   const plan=buildCardGroupReplaceStatements(db,{
-    adminId:"admin1",actorId:"actor1",requestId:"req1",cardId:"card1",
+    adminId:"admin1",actorId:"admin1",requestId:"req1",cardId:"card1",
     groupIds:["g2","g1"],expectedGroupIds:["old1"],
     payloadSha256:"a".repeat(64),beforeJson:'["old1"]',
   });
@@ -49,7 +49,7 @@ test("replace plan final assertion includes active VIP, card state, owner/mode a
 test("replace plan uses soft removal, upsert restore and audit in one batch",()=>{
   const db=dbCapture();
   const plan=buildCardGroupReplaceStatements(db,{
-    adminId:"admin1",actorId:"actor1",requestId:"req1",cardId:"card1",
+    adminId:"admin1",actorId:"admin1",requestId:"req1",cardId:"card1",
     groupIds:["g1","g2"],expectedGroupIds:[],
     payloadSha256:"b".repeat(64),
   });
@@ -65,7 +65,7 @@ test("replace plan uses soft removal, upsert restore and audit in one batch",()=
 test("empty replacement soft-removes every active mapping without empty IN()",()=>{
   const db=dbCapture();
   buildCardGroupReplaceStatements(db,{
-    adminId:"admin1",actorId:"actor1",requestId:"req2",cardId:"card1",
+    adminId:"admin1",actorId:"admin1",requestId:"req2",cardId:"card1",
     groupIds:[],expectedGroupIds:["g1"],
     payloadSha256:"c".repeat(64),
   });
@@ -77,7 +77,7 @@ test("empty replacement soft-removes every active mapping without empty IN()",()
 test("duplicate request is guarded by unique insert and changes assertion",()=>{
   const db=dbCapture();
   buildCardGroupReplaceStatements(db,{
-    adminId:"admin1",actorId:"actor1",requestId:"req3",cardId:"card1",
+    adminId:"admin1",actorId:"admin1",requestId:"req3",cardId:"card1",
     groupIds:[],expectedGroupIds:[],
     payloadSha256:"d".repeat(64),
   });
@@ -96,11 +96,11 @@ test("invalid scope, duplicate IDs and malformed digest fail closed",()=>{
   const db=dbCapture();
   assert.throws(()=>buildCardGroupReadStatements(db,{adminId:"",cardId:"card1"}));
   assert.throws(()=>buildCardGroupReplaceStatements(db,{
-    adminId:"admin1",actorId:"actor1",requestId:"req",cardId:"card1",
+    adminId:"admin1",actorId:"admin1",requestId:"req",cardId:"card1",
     groupIds:["g1","g1"],expectedGroupIds:[],payloadSha256:"a".repeat(64),
   }));
   assert.throws(()=>buildCardGroupReplaceStatements(db,{
-    adminId:"admin1",actorId:"actor1",requestId:"req",cardId:"card1",
+    adminId:"admin1",actorId:"admin1",requestId:"req",cardId:"card1",
     groupIds:[],expectedGroupIds:[],payloadSha256:"not-a-hash",
   }));
 });
