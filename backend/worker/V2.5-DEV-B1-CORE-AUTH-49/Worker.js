@@ -2802,6 +2802,8 @@ async function superRoute(req, env, url, ctx) {
     const previous = await db.prepare("SELECT user_id FROM source_ownership WHERE source_id = ?").bind(sourceId).first();
     // 事务外读只用于 before 审计；批内再断言归属未变化，防止并发转移导致审计与实际不一致
     const stmts = [
+      assertStmt(db, "EXISTS (SELECT 1 FROM subscription_sources WHERE id = ?)", [sourceId]),
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ? AND status = 'active')", [targetId]),
       previous
         ? assertStmt(db, "EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)", [sourceId, previous.user_id])
         : assertStmt(db, "NOT EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ?)", [sourceId]),
