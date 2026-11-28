@@ -905,10 +905,15 @@ function maskSubscriptionUrl(raw) {
 
 const FENCE_SQL = `EXISTS (SELECT 1 FROM subscription_sync_state st
   WHERE st.source_id = ? AND st.generation = ? AND st.lease_owner = ?
-    AND st.lease_token_hash = ? AND st.lease_expires_at > ?)`;
+    AND st.lease_token_hash = ? AND st.lease_expires_at > ?
+    AND (? IS NULL OR EXISTS (
+      SELECT 1 FROM source_ownership so
+       WHERE so.source_id = st.source_id AND so.user_id = ?
+    )))`;
 
 function fenceBinds(lease) {
-  return [lease.sourceId, lease.generation, lease.owner, lease.tokenHash, Date.now()];
+  const ownerUserId = lease.ownerUserId || null;
+  return [lease.sourceId, lease.generation, lease.owner, lease.tokenHash, Date.now(), ownerUserId, ownerUserId];
 }
 /** 断言语句：fence 失效时 json_extract 报错 → 整个 D1 batch 回滚。 */
 function fenceAssert(db, lease) {
@@ -921,7 +926,7 @@ function assertStmt(db, conditionSql, binds) {
     .bind(...binds);
 }
 
-async function acquireLease(db, sourceId, actorUserId, triggerKind) {
+async function acquireLease(db, sourceId, actorUserId, triggerKind, ownerUserId = null) {
   const owner = newId();
   const token = newSessionToken();
   const tokenHash = await sha256Hex(token);
@@ -946,6 +951,19 @@ async function acquireLease(db, sourceId, actorUserId, triggerKind) {
   ).bind(sourceId).first();
   if (!state || state.lease_owner !== owner || state.lease_token_hash !== tokenHash) return null;
   if (Number(state.lease_expires_at) <= Date.now()) return null;
+  // Manual/Cron sync must still own the source before creating a task. The
+  // ownership condition is also repeated inside every stage/commit fence below.
+  if (ownerUserId) {
+    const currentOwner = await db.prepare(
+      "SELECT 1 AS ok FROM source_ownership WHERE source_id = ? AND user_id = ?",
+    ).bind(sourceId, ownerUserId).first();
+    if (!currentOwner) {
+      await db.prepare(
+        "UPDATE subscription_sync_state SET lease_expires_at = 0, updated_at = CURRENT_TIMESTAMP WHERE source_id = ? AND generation = ? AND lease_owner = ?",
+      ).bind(sourceId, state.generation, owner).run();
+      return null;
+    }
+  }
 
   const taskId = newId();
   await db.batch([
@@ -964,7 +982,7 @@ async function acquireLease(db, sourceId, actorUserId, triggerKind) {
     ).bind(sourceId, taskId),
   ]);
 
-  return { taskId, sourceId, generation: state.generation, owner, tokenHash, expires };
+  return { taskId, sourceId, generation: state.generation, owner, tokenHash, expires, ownerUserId };
 }
 
 async function stageNodes(db, lease, records) {
@@ -1194,7 +1212,7 @@ async function recordQuotaFailure(db, sourceId, message) {
 async function syncSource(db, source, opts = {}) {
   const { actorUserId, triggerKind, ctx, env } = opts;
   const startedAt = Date.now();
-  const lease = await acquireLease(db, source.id, actorUserId, triggerKind);
+  const lease = await acquireLease(db, source.id, actorUserId, triggerKind, source.owner_user_id ?? opts.ownerUserId ?? null);
   if (!lease) {
     return { source_id: source.id, source_name: source.name, status: "busy", error: "该订阅源已有同步任务在执行" };
   }
@@ -1309,6 +1327,23 @@ async function loadSourceForCtx(db, ctx, sourceId) {
   const own = await db.prepare("SELECT 1 AS ok FROM source_ownership WHERE source_id = ? AND user_id = ?")
     .bind(sourceId, ctx.effectiveId).first();
   return own ? row : null;
+}
+
+/**
+ * Source ownership fence for user-facing mutations.
+ * The precondition is executed inside the same D1 batch, while the SQL
+ * predicate is repeated on the final UPDATE to close the read/write race.
+ * Direct super-admin sessions retain their existing global-management scope.
+ */
+function sourceOwnerFence(db, ctx, sourceId) {
+  if (ctx.isSuper && ctx.actorId === ctx.effectiveId) return { guard: null, sql: "", binds: [] };
+  return {
+    guard: assertStmt(db,
+      "EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)",
+      [sourceId, ctx.effectiveId]),
+    sql: " AND EXISTS (SELECT 1 FROM source_ownership so WHERE so.source_id = subscription_sources.id AND so.user_id = ?)",
+    binds: [ctx.effectiveId],
+  };
 }
 
 /** 订阅节点的归属：必须通过 source_ownership 走到当前用户。 */
@@ -1441,10 +1476,35 @@ async function userSourcesRoute(req, env, url, ctx) {
         return fail("该订阅源尚未通过审核，不能启用", 409, { code: "SOURCE_NOT_APPROVED", approval_status: ap.status });
       }
     }
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE subscription_sources SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(enabled, id),
+    const ownerFence = sourceOwnerFence(db, ctx, id);
+    const approvalGuard = enabled === 1
+      ? assertStmt(db,
+        "NOT EXISTS (SELECT 1 FROM source_approvals WHERE source_id = ? AND (status IS NULL OR status <> 'approved'))",
+        [id])
+      : null;
+    const stmts = [];
+    if (ownerFence.guard) stmts.push(ownerFence.guard);
+    if (approvalGuard) stmts.push(approvalGuard);
+    stmts.push(
+      db.prepare(
+        `UPDATE subscription_sources SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?${ownerFence.sql}
+            AND (? <> 1 OR NOT EXISTS (
+              SELECT 1 FROM source_approvals ap
+               WHERE ap.source_id = subscription_sources.id
+                 AND (ap.status IS NULL OR ap.status <> 'approved')
+            ))`,
+      ).bind(enabled, id, ...ownerFence.binds, enabled),
       auditStmt(db, ctx, { action: "source.enabled", targetType: "source", targetId: id, before: { enabled: source.enabled }, after: { enabled } }),
-    ]);
+    );
+    try {
+      await userBatch(db, ctx, stmts);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("来源归属或审核状态已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { id, enabled } });
   }
 
@@ -1464,15 +1524,15 @@ async function userSourcesRoute(req, env, url, ctx) {
     const adminDirect = ctx.isSuper && ctx.actorId === ctx.effectiveId;
     // 安全字段（订阅地址）变更：必须重新审核，并在同一批次里停用
     const requiresReview = urlChanged && !adminDirect;
-    const stmts = [
-      db.prepare(
-        urlChanged
-          ? "UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?"
-          : "UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-      ),
-    ];
+    const ownerFence = sourceOwnerFence(db, ctx, id);
+    const updateSql = urlChanged
+      ? `UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?${ownerFence.sql}`
+      : `UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=?${ownerFence.sql}`;
+    const stmts = [];
+    if (ownerFence.guard) stmts.push(ownerFence.guard);
+    stmts.push(db.prepare(updateSql));
     if (urlChanged) {
-      stmts[0] = stmts[0].bind(name, rawUrl, tier, priority, s(body.remark, 500), requiresReview ? 0 : source.enabled, id);
+      stmts[stmts.length - 1] = stmts[stmts.length - 1].bind(name, rawUrl, tier, priority, s(body.remark, 500), requiresReview ? 0 : source.enabled, id, ...ownerFence.binds);
       if (requiresReview) {
         stmts.push(
           db.prepare(
@@ -1496,7 +1556,7 @@ async function userSourcesRoute(req, env, url, ctx) {
         );
       }
     } else {
-      stmts[0] = stmts[0].bind(name, rawUrl, tier, priority, s(body.remark, 500), id);
+      stmts[stmts.length - 1] = stmts[stmts.length - 1].bind(name, rawUrl, tier, priority, s(body.remark, 500), id, ...ownerFence.binds);
     }
     stmts.push(auditStmt(db, ctx, {
       action: requiresReview ? "source.update.re_review" : "source.update",
@@ -1506,7 +1566,14 @@ async function userSourcesRoute(req, env, url, ctx) {
       detail: requiresReview ? "订阅地址变更：已停用并重新进入待审核" : (urlChanged ? "管理员直接修改地址，保持已批准" : "仅修改非安全字段"),
       reason: requiresReview ? "url_changed" : "",
     }));
-    await userBatch(db, ctx, stmts);
+    try {
+      await userBatch(db, ctx, stmts);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("来源归属或协助授权已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({
       ok: true,
       data: {
@@ -1528,7 +1595,9 @@ async function userSourcesRoute(req, env, url, ctx) {
       await auditDenied(db, ctx, "source.sync", "未分配来源不可同步", "source", id);
       return fail("该来源尚未分配归属，不能同步", 409, { code: "SOURCE_UNASSIGNED" });
     }
-    if (ctx.actorId === ctx.effectiveId && !ctx.isSuper && own.user_id !== ctx.effectiveId) {
+    const directSuper = ctx.isSuper && ctx.actorId === ctx.effectiveId;
+    if (!directSuper && own.user_id !== ctx.effectiveId) {
+      await auditDenied(db, ctx, "source.sync", "来源归属已变化", "source", id);
       return fail("订阅源不存在", 404);
     }
     const ap = await db.prepare("SELECT status FROM source_approvals WHERE source_id = ?").bind(id).first();
@@ -1539,7 +1608,7 @@ async function userSourcesRoute(req, env, url, ctx) {
       return fail("该来源已停用，不能同步", 409, { code: "SOURCE_DISABLED" });
     }
     const result = await syncSource(db, {
-      id: source.id, name: source.name, url: source.url, tier: source.tier,
+      id: source.id, name: source.name, url: source.url, tier: source.tier, owner_user_id: own.user_id,
     }, { actorUserId: ctx.actorId, triggerKind: "manual", ctx, env });
     return json({ ok: result.status === "success", data: result });
   }
@@ -1550,8 +1619,12 @@ async function userSourcesRoute(req, env, url, ctx) {
     const tasks = await db.prepare(
       "SELECT COUNT(*) AS n FROM sync_tasks WHERE source_id = ? AND status IN ('staging','staged')",
     ).bind(id).first();
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id),
+    const ownerFence = sourceOwnerFence(db, ctx, id);
+    const stmts = [];
+    if (ownerFence.guard) stmts.push(ownerFence.guard);
+    stmts.push(
+      db.prepare(`UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?${ownerFence.sql}`)
+        .bind(id, ...ownerFence.binds),
       // 解除归属：用户列表里消失，但来源与节点保留在库里（备份给超管），不会物理删除
       db.prepare("DELETE FROM source_ownership WHERE source_id = ? AND user_id = ?").bind(id, ctx.effectiveId),
       auditStmt(db, ctx, {
@@ -1559,7 +1632,15 @@ async function userSourcesRoute(req, env, url, ctx) {
         reason: "用户删除：解除归属并停用，数据保留为超管备份",
         detail: `history_nodes=${Number(nodes?.n || 0)}; pending_tasks=${Number(tasks?.n || 0)}`,
       }),
-    ]);
+    );
+    try {
+      await userBatch(db, ctx, stmts);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("来源归属或协助授权已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({
       ok: true,
       data: { id, archived: true, node_count: Number(nodes?.n || 0) },
@@ -5537,7 +5618,7 @@ export default {
     const rows = await db.prepare(
       // 公平轮转：用 sync_tasks.created_at 取“最近一次同步尝试”（含失败）。
       // 从未尝试 → 最早；尝试过的按时间升序，失败来源也会被排到队尾，不会永远占住前 N 个。
-      `SELECT s.id, s.name, s.url, s.tier,
+      `SELECT s.id, s.name, s.url, s.tier, so.user_id AS owner_user_id,
               (SELECT MAX(t.created_at) FROM sync_tasks t WHERE t.source_id = s.id) AS last_attempt_at
          FROM subscription_sources s
          JOIN source_ownership so ON so.source_id = s.id
