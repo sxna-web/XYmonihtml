@@ -53,7 +53,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("SELECT status FROM source_approvals WHERE source_id = ?")) return {status:"pending"};
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
               if (sql.includes("FROM app_cards WHERE code = ?")) return cardLookupMissing ? null : (cardOverride || {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"});
-              if (sql.includes("FROM app_entitlements WHERE card_id = ? AND device_id = ?")) return replayEntitlement;
+              if (sql.includes("FROM app_entitlements WHERE card_id = ? AND device_id = ?")) { reads.push({sql,args}); return replayEntitlement; }
               if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
               if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {links_enabled:1,max_links:3,free_group_enabled:1};
               if (sql.includes("COUNT(*) AS n FROM app_links WHERE admin_user_id = ?")) return {n:0};
@@ -364,7 +364,7 @@ test("APP redemption rate limit counts failed guesses only and uses a fixed 15-m
   assert.equal(last.res.status,429);
   assert.equal(last.json.code,"REDEEM_RATE_LIMITED");
   const counterSql=db.writes.find(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)"))?.sql || "";
-  assert.match(counterSql,/updated_at = CASE[\\s\\S]*THEN CURRENT_TIMESTAMP ELSE rate_limits\\.updated_at END/);
+  assert.ok(counterSql.includes("updated_at = CASE") && counterSql.includes("THEN CURRENT_TIMESTAMP ELSE rate_limits.updated_at END"));
   assert.match(counterSql,/app:redeem:failed:v2/);
   assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
@@ -380,7 +380,8 @@ test("APP redemption retry on the same device replays the existing live entitlem
     replayEntitlement:{id:"ent-existing",expires_at:"2099-01-01 00:00:00",purge_at:"2099-01-02 00:00:00",status:"active"},
   });
   const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
-  assert.equal(res.status,201);assert.equal(json.ok,true);
+  assert.equal(res.status,201,JSON.stringify(json));assert.equal(json.ok,true);
+  assert.ok(db.reads.some(x=>x.sql.includes("FROM app_entitlements WHERE card_id = ? AND device_id = ?")));
   assert.equal(json.data.entitlement.id,"ent-existing");
   assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)")),false);
   assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
