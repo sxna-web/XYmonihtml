@@ -109,7 +109,7 @@ class AppCardGroupMappingCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(sqlite3.IntegrityError, "GROUP_HAS_CARD_MAPPING_HISTORY"):
             self.db.execute("UPDATE app_groups SET admin_user_id='a2' WHERE id='g1'")
 
-    def test_09_parent_delete_is_restricted_not_cascaded(self):
+    def test_09_parent_delete_is_restricted_by_history_guard_not_foreign_key(self):
         self.insert()
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("DELETE FROM app_cards WHERE id='c1'")
