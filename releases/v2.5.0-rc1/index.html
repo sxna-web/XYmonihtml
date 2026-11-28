@@ -2142,7 +2142,7 @@ $('dbUpgrade').addEventListener('click', async () => {
   try {
     const st = await api('/api/super/schema-status');
     const missing = st.data.missing || [];
-    const summary = st.data.ready
+    const summary = st.data.required_tables_present
       ? '候选业务表均存在，但当前仅核对表名，尚未验证字段、索引和约束。'
       : '仍缺少 ' + missing.length + ' 张候选业务表：\\n' + missing.join('\\n');
     alert(summary + '\\n\\nRC1 暂不执行自动建表。请先完成数据库结构核对和迁移计划验收，避免对已有数据造成影响。');
