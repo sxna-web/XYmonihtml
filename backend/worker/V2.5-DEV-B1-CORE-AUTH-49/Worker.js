@@ -4005,108 +4005,23 @@ async function runEntitlementMaintenance(db) {
   return { expired: Number(expired.meta?.changes || 0), purged: Number(purgeable.meta?.changes || 0) };
 }
 
-/* ────────────────────────────── 一键建表（幂等）────────────────────────────── */
+/* ────────────────────────────── 数据库结构只读状态 ────────────────────────────── */
 /**
- * 让不懂 SQL 的人也能把新表建好：超管在后台点一次按钮即可。
- * 全部是 CREATE TABLE/INDEX IF NOT EXISTS 与一次 ADD COLUMN 尝试，可重复执行。
+ * RC1 安全门禁：
+ * - 仅报告当前核心业务表是否存在，不执行 DDL。
+ * - 旧版 migrateRoute 是逐条非事务 DDL、宽泛忽略重复错误、仅核对表名，
+ *   未验证列/索引/约束；在取得目标 D1 schema snapshot 前禁止执行。
+ * - 正式迁移必须由后续经过 manifest/checksum/plan/approve/postcondition 的迁移器接管。
  */
-
-const MIGRATE_STATEMENTS = [
-  ["convert_links", `CREATE TABLE IF NOT EXISTS convert_links (
-    id TEXT PRIMARY KEY, payload TEXT NOT NULL, targets TEXT NOT NULL DEFAULT '',
-    group_name TEXT NOT NULL DEFAULT '默认分组', owner_user_id TEXT,
-    ip_hash TEXT NOT NULL DEFAULT '', hits INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT,
-    expires_at TEXT NOT NULL, revoked_at TEXT)`],
-  ["ix_convert_links_expires", "CREATE INDEX IF NOT EXISTS ix_convert_links_expires ON convert_links(expires_at)"],
-  ["ix_convert_links_ip", "CREATE INDEX IF NOT EXISTS ix_convert_links_ip ON convert_links(ip_hash, created_at)"],
-  ["ix_convert_links_group", "CREATE INDEX IF NOT EXISTS ix_convert_links_group ON convert_links(group_name)"],
-  ["admin_vip_cards", `CREATE TABLE IF NOT EXISTS admin_vip_cards (
-    id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, days INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'unused', note TEXT NOT NULL DEFAULT '',
-    created_by TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    used_by TEXT, used_at TEXT)`],
-  ["ix_vip_cards_status", "CREATE INDEX IF NOT EXISTS ix_vip_cards_status ON admin_vip_cards(status, created_at)"],
-  ["admin_vip_activations", `CREATE TABLE IF NOT EXISTS admin_vip_activations (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, card_id TEXT, days INTEGER NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'formal', starts_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ends_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_vip_activations_user", "CREATE INDEX IF NOT EXISTS ix_vip_activations_user ON admin_vip_activations(user_id, ends_at)"],
-  ["app_cards", `CREATE TABLE IF NOT EXISTS app_cards (
-    id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, admin_user_id TEXT NOT NULL,
-    days INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'normal',
-    inactive_reason TEXT NOT NULL DEFAULT '', inactive_at TEXT, restored_at TEXT,
-    manual_disabled INTEGER NOT NULL DEFAULT 0, expires_at TEXT, activated_at TEXT,
-    used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_cards_admin", "CREATE INDEX IF NOT EXISTS ix_app_cards_admin ON app_cards(admin_user_id, status)"],
-  ["ix_app_cards_code", "CREATE INDEX IF NOT EXISTS ix_app_cards_code ON app_cards(code)"],
-  ["node_lifecycle", `CREATE TABLE IF NOT EXISTS node_lifecycle (
-    node_id TEXT PRIMARY KEY, source_id TEXT NOT NULL, fail_streak INTEGER NOT NULL DEFAULT 0,
-    first_check_at TEXT, last_check_at TEXT, observation_started_at TEXT, stale_at TEXT,
-    state TEXT NOT NULL DEFAULT 'ok', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_node_lifecycle_state", "CREATE INDEX IF NOT EXISTS ix_node_lifecycle_state ON node_lifecycle(state)"],
-  ["ix_node_lifecycle_source", "CREATE INDEX IF NOT EXISTS ix_node_lifecycle_source ON node_lifecycle(source_id)"],
-  ["app_entitlements", `CREATE TABLE IF NOT EXISTS app_entitlements (
-    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, device_id TEXT NOT NULL, card_id TEXT NOT NULL,
-    starts_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, purge_at TEXT,
-    status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_ent_device", "CREATE INDEX IF NOT EXISTS ix_app_ent_device ON app_entitlements(device_id, status)"],
-  ["ix_app_ent_admin", "CREATE INDEX IF NOT EXISTS ix_app_ent_admin ON app_entitlements(admin_user_id, status)"],
-  ["ix_app_ent_expires", "CREATE INDEX IF NOT EXISTS ix_app_ent_expires ON app_entitlements(expires_at)"],
-  ["rate_limits", `CREATE TABLE IF NOT EXISTS rate_limits (
-    bucket TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["app_links", `CREATE TABLE IF NOT EXISTS app_links (
-    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL,
-    sort INTEGER NOT NULL DEFAULT 100, enabled INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_links_admin", "CREATE INDEX IF NOT EXISTS ix_app_links_admin ON app_links(admin_user_id, sort)"],
-  ["app_groups", `CREATE TABLE IF NOT EXISTS app_groups (
-    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, name TEXT NOT NULL,
-    mode TEXT NOT NULL DEFAULT 'assigned', sort INTEGER NOT NULL DEFAULT 100,
-    enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_groups_admin", "CREATE INDEX IF NOT EXISTS ix_app_groups_admin ON app_groups(admin_user_id, sort)"],
-  ["app_group_sources", "CREATE TABLE IF NOT EXISTS app_group_sources (group_id TEXT NOT NULL, source_id TEXT NOT NULL, PRIMARY KEY (group_id, source_id))"],
-  ["app_group_members", "CREATE TABLE IF NOT EXISTS app_group_members (group_id TEXT NOT NULL, device_id TEXT NOT NULL, PRIMARY KEY (group_id, device_id))"],
-  ["app_free_grants", "CREATE TABLE IF NOT EXISTS app_free_grants (device_id TEXT NOT NULL, admin_user_id TEXT NOT NULL, granted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (device_id, admin_user_id))"],
-  ["admin_share_codes", `CREATE TABLE IF NOT EXISTS admin_share_codes (
-    admin_user_id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_admin_share_codes_code", "CREATE INDEX IF NOT EXISTS ix_admin_share_codes_code ON admin_share_codes(code)"],
-  ["download_links", `CREATE TABLE IF NOT EXISTS download_links (
-    id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'global', admin_user_id TEXT,
-    title TEXT NOT NULL, url TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 100,
-    enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_download_links_scope", "CREATE INDEX IF NOT EXISTS ix_download_links_scope ON download_links(scope, admin_user_id, sort)"],
-  ["app_card_events", `CREATE TABLE IF NOT EXISTS app_card_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, card_id TEXT NOT NULL, admin_user_id TEXT NOT NULL,
-    action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_card_events_card", "CREATE INDEX IF NOT EXISTS ix_card_events_card ON app_card_events(card_id, created_at)"],
-  ["releases", `CREATE TABLE IF NOT EXISTS releases (
-    id TEXT PRIMARY KEY, platform TEXT NOT NULL DEFAULT 'android', version_code INTEGER NOT NULL,
-    version_name TEXT NOT NULL, min_version_code INTEGER NOT NULL DEFAULT 0, url TEXT NOT NULL,
-    notes TEXT NOT NULL DEFAULT '', force INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["announcements", `CREATE TABLE IF NOT EXISTS announcements (
-    id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'web', title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
-    level TEXT NOT NULL DEFAULT 'info', active INTEGER NOT NULL DEFAULT 1, starts_at TEXT, ends_at TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["admin_app_perms", `CREATE TABLE IF NOT EXISTS admin_app_perms (
-    admin_user_id TEXT PRIMARY KEY, links_enabled INTEGER NOT NULL DEFAULT 1,
-    max_links INTEGER NOT NULL DEFAULT 1, free_group_enabled INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-];
-
-const REQUIRED_TABLES = ["download_links", 
-  "convert_links", "admin_vip_cards", "admin_vip_activations", "app_cards", "node_lifecycle",
-  "app_entitlements", "rate_limits", "app_links", "admin_app_perms", "app_groups",
-  "app_group_sources", "app_group_members", "app_free_grants", "admin_share_codes",
-  "releases", "announcements", "app_card_events",
+const REQUIRED_TABLES = [
+  "download_links", "convert_links", "admin_vip_cards", "admin_vip_activations",
+  "app_cards", "node_lifecycle", "app_entitlements", "rate_limits", "app_links",
+  "admin_app_perms", "app_groups", "app_group_sources", "app_group_members",
+  "app_free_grants", "admin_share_codes", "releases", "announcements", "app_card_events",
 ];
 
 async function migrateRoute(req, env, url, ctx) {
   const db = env.DB;
-
   if (url.pathname === "/api/super/schema-status" && req.method === "GET") {
     const rows = await db.prepare(
       `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_TABLES.map(() => "?").join(",")})`,
@@ -4116,65 +4031,20 @@ async function migrateRoute(req, env, url, ctx) {
       ok: true,
       data: {
         ready: REQUIRED_TABLES.every(t => have.includes(t)),
-        have, missing: REQUIRED_TABLES.filter(t => !have.includes(t)),
+        have,
+        missing: REQUIRED_TABLES.filter(t => !have.includes(t)),
+        verification: "TABLE_NAMES_ONLY",
+        migration_enabled: false,
       },
     });
   }
-
   if (url.pathname === "/api/super/migrate" && req.method === "POST") {
-    const body = await readJson(req, { allowEmpty: true });
-    if (body.confirm !== "yes") return fail("需要确认参数 confirm=yes", 400);
-    const done = [];
-    const skipped = [];
-    const errors = [];
-    for (const [name, sql] of MIGRATE_STATEMENTS) {
-      try {
-        await db.prepare(sql).run();
-        done.push(name);
-      } catch (e) {
-        const msg = String(e?.message || "");
-        if (/already exists|duplicate column/i.test(msg)) skipped.push(name);
-        else errors.push({ name, error: msg.slice(0, 160) });
-      }
-    }
-    // 旧版 convert_links 可能缺列：逐个尝试补齐（已存在会报 duplicate column，忽略）
-    let addedOwner = false;
-    for (const [col, ddl] of [
-      ["owner_user_id", "ALTER TABLE convert_links ADD COLUMN owner_user_id TEXT"],
-      ["owner_key", "ALTER TABLE convert_links ADD COLUMN owner_key TEXT"],
-    ]) {
-      try {
-        await db.prepare(ddl).run();
-        addedOwner = true;
-      } catch (e) {
-        if (!/duplicate column|already exists/i.test(String(e?.message || ""))) {
-          errors.push({ name: `convert_links.${col}`, error: String(e?.message || "").slice(0, 160) });
-        }
-      }
-    }
-    try { await db.prepare("CREATE INDEX IF NOT EXISTS ix_convert_links_owner ON convert_links(owner_key, group_name)").run(); } catch {}
-    for (const ddl of [
-      "ALTER TABLE node_sync_logs ADD COLUMN trigger_kind TEXT NOT NULL DEFAULT 'manual'",
-      "ALTER TABLE node_sync_logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
-      "ALTER TABLE node_sync_logs ADD COLUMN missing_nodes INTEGER NOT NULL DEFAULT 0",
-    ]) { try { await db.prepare(ddl).run(); } catch {} }
-    try { await db.prepare("ALTER TABLE admin_app_perms ADD COLUMN free_group_enabled INTEGER NOT NULL DEFAULT 0").run(); } catch {}
-    const rows = await db.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_TABLES.map(() => "?").join(",")})`,
-    ).bind(...REQUIRED_TABLES).all();
-    const have = (rows.results || []).map(r => r.name);
-    const missing = REQUIRED_TABLES.filter(t => !have.includes(t));
-    await auditStmt(db, ctx, {
-      action: "schema.migrate", targetType: "schema", targetId: "v1",
-      after: { done: done.length, skipped: skipped.length, missing: missing.length, addedOwner },
-      detail: missing.length ? `仍缺：${missing.join(",")}` : "全部就绪",
-    }).run().catch(() => {});
-    return json({
-      ok: missing.length === 0 && errors.length === 0,
-      data: { ready: missing.length === 0, done, skipped, errors, missing, owner_column_added: addedOwner },
-    }, missing.length === 0 && errors.length === 0 ? 200 : 500);
+    return fail(
+      "数据库自动迁移已安全暂停：当前版本只支持只读检查，需先完成目标数据库结构核对和迁移计划验收。",
+      503,
+      { code: "MIGRATION_REVIEW_REQUIRED" },
+    );
   }
-
   return fail("接口不存在", 404);
 }
 
@@ -5567,8 +5437,10 @@ export default {
         return withCors(await superAlertsRoute(req, env, url, ctxWithReq));
       }
       if (url.pathname === "/api/super/schema-status" || url.pathname === "/api/super/migrate") {
-        // 允许 ADMIN_TOKEN（legacy）作为兜底：登录异常时也能把表建好
-        if (!ctx || !ctx.isSuper) return withCors(fail("需要超级管理员或 ADMIN_TOKEN", 403));
+        // 数据库检查/迁移仅允许本人登录的超级管理员 Session；拒绝 ADMIN_TOKEN 与协助会话。
+        if (!ctx || !ctx.isSuper || ctx.legacy || ctx.actorId !== ctx.effectiveId) {
+          return withCors(fail("需要本人登录的超级管理员会话", 403));
+        }
         return withCors(await migrateRoute(req, env, url, ctxWithReq));
       }
 
