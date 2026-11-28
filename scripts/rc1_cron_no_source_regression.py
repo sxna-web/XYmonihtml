@@ -117,6 +117,15 @@ def main() -> None:
         raise AssertionError("APP group history delete must assert owner/cutoff before child cleanup")
     if auth_adapter.count('p.length === 6 && p[4] === "sources" && method === "DELETE") return "associate";') != 1:
         raise AssertionError("APP source-association removal must be an active-VIP configuration mutation")
+    app_group_read = source.split("async function appGroupsForDevice", 1)[1].split("管理员分享编号", 1)[0]
+    if "ORDER BY created_at DESC LIMIT 1" in app_group_read:
+        raise AssertionError("APP group composition must not discard older active card entitlements")
+    if 'url.searchParams.getAll("token")' not in app_group_read or "authorizedEntitlements" not in app_group_read:
+        raise AssertionError("APP group reads must authorize each card entitlement token independently")
+    if "app_card_group_mappings" not in app_group_read or "card_groups_ready" not in app_group_read:
+        raise AssertionError("APP card groups must be composed only when the guarded mapping schema is ready")
+    if "app_free_grants" not in app_group_read or "free_admin_user_ids" not in app_group_read:
+        raise AssertionError("APP free groups must remain one grant per admin, independent of multiple card entitlements")
     app_links = source.split("async function addAppLink", 1)[1].split("/* 超管 */", 1)[0]
     if "await userBatch(db, ctx" not in app_links or "auditStmt(db, ctx" not in app_links:
         raise AssertionError("APP link creation must share its assist-scope guard and audit batch")
