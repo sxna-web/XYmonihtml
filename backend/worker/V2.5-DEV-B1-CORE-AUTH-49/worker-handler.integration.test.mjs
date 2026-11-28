@@ -360,7 +360,7 @@ test("APP redemption rate limit blocks repeated guesses per device before card l
   assert.equal(last.res.status,429);
   assert.equal(last.json.code,"REDEEM_RATE_LIMITED");
   const counterSql=db.writes.find(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)"))?.sql || "";
-  assert.match(counterSql,/updated_at = CASE[\\s\\S]*THEN CURRENT_TIMESTAMP ELSE rate_limits\\.updated_at END/);
+  assert.match(counterSql,/updated_at = CASE[\s\S]*THEN CURRENT_TIMESTAMP ELSE rate_limits\.updated_at END/);
   assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
 test("APP redemption fails closed when rate limit storage is unavailable",async()=>{
