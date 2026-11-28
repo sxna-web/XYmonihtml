@@ -37,3 +37,10 @@
 - [本次独立会话记录](docs/handoffs/sessions/2026-11-29-app-650-version-lock-and-dev.md)
 
 注意：6.00.50 ZIP 已生成并交付，但尚待用户上传到 `app/versions/6.00.50/StarJump-6.00.50-source.zip`。在该文件进入仓库前，任何新会话必须先索取/上传，不得从 47/48 继续修改。
+
+
+## 2026-11-29｜6.00.50 源码上传与构建状态更正
+
+6.00.50 ZIP 已由用户上传到 `app/versions/6.00.50/StarJump-6.00.50-source.zip`。Git blob SHA `176f88023962f27c759157f456cb85e0b295b563`；ZIP 大小 2,355,724 bytes；交付包 SHA-256 `1a031e2dc18115e2448b42873d9ace957dc256a2daeb050468fbb9ec3bcbe018`，已核验一致。
+
+当前 Actions 运行 `46184869195`：https://github.com/sxna-web/XYmonihtml/actions/runs/46184869195 。源码校验、工具链准备和 LibCore AAR 构建/校验通过；ARM64 APK 编译仍在进行，尚无 APK Artifact。早期“尚待用户上传 ZIP”的说明是历史状态，以本段为准。
