@@ -1,5 +1,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -77,8 +78,8 @@ def main() -> None:
     if sync_guard < 0 or sync_call < sync_guard or positions[-1] > sync_guard:
         raise AssertionError("Only runSync may be conditional on sources.length")
 
-    if "worker-auth-adapter.mjs" in bundle or "authorization.mjs" in bundle:
-        raise AssertionError("Bundled Worker still contains local helper module references")
+    if re.search(r'^\\s*import\\b.*(?:worker-auth-adapter|authorization)\\.mjs', bundle, re.MULTILINE):
+        raise AssertionError("Bundled Worker still imports a local helper module")
 
     parser = InlineScripts()
     parser.feed(html)
