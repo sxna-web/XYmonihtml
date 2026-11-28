@@ -1549,3 +1549,13 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 最终测试 head `3f4980a90ef4c81d45a63b2352b5effbf6d1ff20`：Push Run `46113685467` 与 PR Run `46113689633` 均 SUCCESS；Worker integration 62/62、auth adapter 12/12、APP suites 19/19 + 23/23 + 26/26，bundle/static/SQLite/artifact 全部通过。中间两次 CI 因测试 mock 适配/regex 断言失败，已根据真实日志修复，最终 head 双 CI 通过。
 - 仍无生产 D1 schema snapshot；卡密映射表、管理端配置 API/UI、真实 D1 adapter、正式 route 和 APK 多 entitlement 未完成。迁移保持 fail-closed；未部署、未改 Secrets、未合并。
 - **第七十二批唯一接手卡：**先让用户确认目标 D1 环境和 schema-only snapshot 获取方式；取得只含 schema metadata 的 APP 7 表快照后再建立批准的 manifest comparison；隔离验证 mapping migration 与 rollback；继续旧 mode 兼容审查。不得导出业务行/卡密/令牌，不连生产写入、不部署。
+
+
+## 第七十二批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-CARD-MAP-72`；报告：`docs/backend/StarJump_V2.5_APP卡密分组映射候选模型隔离SQLite验证报告_第七十二批_V2.5-DEV-B1-APP-CARD-MAP-72_2026-11-28.md`。
+- 新增 `tools/database_migrations/tests/test_app_card_group_mapping_candidate.py`，以最小历史字段 fixture 验证候选 mapping model；该文件只测试、不属于 migration catalog，没有新增 SQL migration。
+- 约束：同管理员 card/group、group.mode=card、unique(card_id,group_id)、软解绑保留、父记录 RESTRICT、阻止活跃映射 mode 降级、阻止关联历史 owner 转移。11 项 SQLite fixture tests CI 通过。
+- 测试 head `b6078a207ce036eb4f160b1e16db75da96f33a23`，Push `46113980630` 与 PR `46113985475` SUCCESS。该证据仅为隔离 SQLite 和现有 mock/integration 测试，不代表 D1 生产约束验证。
+- 没有真实 D1 schema snapshot；候选模型不是可执行生产 DDL。无管理 API/UI、D1 loader、正式 composed route、APK 多凭据闭环；未部署/未合并/未操作 Secrets。
+- **第七十三批唯一接手卡：**做管理员卡密-分组 API 的 handler/SQL adapter contract fixture，测试 owner/VIP/card status/replace semantics/audit 同批次/幂等/脱敏；不接真实 D1，不创建 migration SQL，不注册 route。
