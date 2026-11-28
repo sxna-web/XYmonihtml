@@ -22,7 +22,7 @@
 
 保存管理员对某张卡的分组替换操作幂等凭据。
 
-- 唯一键：`(admin_user_id, request_id)`。
+- 唯一键：`(admin_user_id, idempotency_key)`。
 - 保存规范化请求 payload 的 SHA-256 和成功响应摘要；同 key 同 digest 重放成功结果，同 key 不同 digest 返回冲突。
 - 不保存卡密明文、密码、session token。
 - 请求行必须与映射变化及审计事件处于同一个 D1 原子 batch；任何一步失败整体回滚。
