@@ -1,6 +1,7 @@
+-- ISOLATED CANDIDATE FIXTURE ONLY. Not a production migration; never run against D1.
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE app_cards (
+CREATE TABLE IF NOT EXISTS app_cards (
   id TEXT PRIMARY KEY,
   admin_user_id TEXT NOT NULL,
   status TEXT NOT NULL,
@@ -8,7 +9,7 @@ CREATE TABLE app_cards (
   expires_at TEXT
 );
 
-CREATE TABLE app_groups (
+CREATE TABLE IF NOT EXISTS app_groups (
   id TEXT PRIMARY KEY,
   admin_user_id TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -17,7 +18,7 @@ CREATE TABLE app_groups (
   enabled INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE admin_vip_activations (
+CREATE TABLE IF NOT EXISTS admin_vip_activations (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK(kind IN ('trial','formal')),
@@ -25,7 +26,7 @@ CREATE TABLE admin_vip_activations (
   ends_at TEXT NOT NULL
 );
 
-CREATE TABLE app_card_group_mappings (
+CREATE TABLE IF NOT EXISTS app_card_group_mappings (
   id TEXT PRIMARY KEY,
   card_id TEXT NOT NULL REFERENCES app_cards(id) ON DELETE RESTRICT,
   admin_user_id TEXT NOT NULL,
@@ -34,14 +35,18 @@ CREATE TABLE app_card_group_mappings (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   removed_at TEXT,
-  UNIQUE(card_id, group_id)
+  UNIQUE(card_id, group_id),
+  CHECK (
+    (status = 'active' AND removed_at IS NULL) OR
+    (status = 'removed' AND removed_at IS NOT NULL)
+  )
 );
-CREATE INDEX idx_app_card_group_card_owner_status
+CREATE INDEX IF NOT EXISTS idx_app_card_group_card_owner_status
   ON app_card_group_mappings(card_id, admin_user_id, status);
-CREATE INDEX idx_app_card_group_owner_group_status
+CREATE INDEX IF NOT EXISTS idx_app_card_group_owner_group_status
   ON app_card_group_mappings(admin_user_id, group_id, status);
 
-CREATE TABLE app_card_group_admin_requests (
+CREATE TABLE IF NOT EXISTS app_card_group_admin_requests (
   admin_user_id TEXT NOT NULL,
   request_id TEXT NOT NULL,
   payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64),
@@ -50,7 +55,7 @@ CREATE TABLE app_card_group_admin_requests (
   PRIMARY KEY(admin_user_id, request_id)
 );
 
-CREATE TABLE admin_audit_events (
+CREATE TABLE IF NOT EXISTS admin_audit_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   actor_user_id TEXT NOT NULL,
   effective_user_id TEXT NOT NULL,
@@ -65,7 +70,7 @@ CREATE TABLE admin_audit_events (
   detail TEXT NOT NULL
 );
 
-CREATE TRIGGER app_card_group_mapping_owner_insert
+CREATE TRIGGER IF NOT EXISTS app_card_group_mapping_owner_insert
 BEFORE INSERT ON app_card_group_mappings
 WHEN NOT EXISTS (
   SELECT 1 FROM app_cards c JOIN app_groups g
@@ -77,7 +82,7 @@ BEGIN
   SELECT RAISE(ABORT, 'CARD_GROUP_OWNER_OR_MODE_MISMATCH');
 END;
 
-CREATE TRIGGER app_card_group_mapping_owner_update
+CREATE TRIGGER IF NOT EXISTS app_card_group_mapping_owner_update
 BEFORE UPDATE OF card_id, admin_user_id, group_id ON app_card_group_mappings
 WHEN NOT EXISTS (
   SELECT 1 FROM app_cards c JOIN app_groups g
@@ -89,7 +94,7 @@ BEGIN
   SELECT RAISE(ABORT, 'CARD_GROUP_OWNER_OR_MODE_MISMATCH');
 END;
 
-CREATE TRIGGER app_cards_owner_transfer_guard
+CREATE TRIGGER IF NOT EXISTS app_cards_owner_transfer_guard
 BEFORE UPDATE OF admin_user_id ON app_cards
 WHEN OLD.admin_user_id <> NEW.admin_user_id
  AND EXISTS (SELECT 1 FROM app_card_group_mappings m WHERE m.card_id = OLD.id)
@@ -97,7 +102,7 @@ BEGIN
   SELECT RAISE(ABORT, 'CARD_HAS_GROUP_MAPPING_HISTORY');
 END;
 
-CREATE TRIGGER app_groups_owner_transfer_guard
+CREATE TRIGGER IF NOT EXISTS app_groups_owner_transfer_guard
 BEFORE UPDATE OF admin_user_id ON app_groups
 WHEN OLD.admin_user_id <> NEW.admin_user_id
  AND EXISTS (SELECT 1 FROM app_card_group_mappings m WHERE m.group_id = OLD.id)
@@ -105,7 +110,7 @@ BEGIN
   SELECT RAISE(ABORT, 'GROUP_HAS_CARD_MAPPING_HISTORY');
 END;
 
-CREATE TRIGGER app_groups_card_mode_guard
+CREATE TRIGGER IF NOT EXISTS app_groups_card_mode_guard
 BEFORE UPDATE OF mode ON app_groups
 WHEN OLD.mode = 'card' AND NEW.mode <> 'card'
  AND EXISTS (
