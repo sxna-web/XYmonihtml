@@ -169,7 +169,7 @@ test("repeated request id is idempotent and emits one audit",async()=>{
 test("empty replace explicitly clears all card mappings",async()=>{
   const {service,storage}=fixture();
   await service.replace({...scope,groupIds:["g1"]});
-  const r=await service.replace({...scope,groupIds:[]});
+  const r=await service.replace({...scope,requestId:"req-124",groupIds:[]});
   assert.equal(r.ok,true);
   assert.deepEqual(r.groups,[]);
   assert.equal(storage.state.mappings.length,0);
