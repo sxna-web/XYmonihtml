@@ -57,7 +57,7 @@ function fakeDb() {
   return db;
 }
 
-const base={adminId:"a1",actorId:"actor1",requestId:"req1",cardId:"c1",groupIds:["g1"],expectedGroupIds:[]};
+const base={adminId:"a1",actorId:"a1",requestId:"req1",cardId:"c1",groupIds:["g1"],expectedGroupIds:[]};
 
 test("scoped loader reads card, card-mode groups and active mappings without code",async()=>{
   const db=fakeDb();
