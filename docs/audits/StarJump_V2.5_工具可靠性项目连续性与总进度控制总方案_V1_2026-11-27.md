@@ -1612,3 +1612,14 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 本批没有真实 D1 连接或 SQL 执行，没有 DDL/DML、Secrets、部署或合并。生产 schema 仍 NOT VERIFIED。
 - PR #2 保持 Draft/Open/Unmerged；多卡密聚合、卡密映射 migration/adapter/route/UI、APK 多凭据闭环仍为上线阻断。
 - **第七十八批唯一接手卡：**在取得脱敏 schema-only snapshot 后制作分环境版本化 manifest comparison；之后才根据真实字段生成重复映射、孤儿和 owner 冲突的只读计数 SQL。不得在无 snapshot 情况下猜测 schema。
+
+
+## 第七十八批连续性更新（2026-11-28）
+
+- 新增 `tools/database_migrations/schema_manifest.py` 与 `tests/test_schema_manifest.py`，读取既有 schema_snapshot JSON，纯离线生成分环境 manifest 并比较，不连接任何数据库。
+- 固定核验 Batch77 的 7 张 APP/VIP 表；输出列约束、索引属性/键列、外键动作、表/索引/trigger/view 对象的 SHA-256 摘要。默认值和 SQL 定义只输出 hash，不回显原文。
+- 新增 13 项测试覆盖缺表、列/索引/FK 差异、环境标签、非法输入、scope 差异和敏感字面量不回显。由 RC1 既有 unittest discovery 纳入 CI。
+- Manifest MATCH 仅为结构投影相同，不等同语义兼容、D1 事务验证、迁移批准或上线通过。没有真实 snapshot 时，生产 schema 继续 NOT VERIFIED。
+- 本批未连接 D1、未执行 SQL/DDL/DML、未读业务行、未触碰 Secrets/部署/合并。PR #2 保持 Draft/Open/Unmerged。
+- APP 卡密分组 mapping migration、真实 D1 adapter、正式 Worker route、管理 UI、APK 多 entitlement 联调仍是阻断项。
+- **第七十九批唯一接手卡：**核对 Batch78 CI head/run；静态审查 manifest 输入鲁棒性、重复对象、缺失索引详情、SQL/default hash 脱敏与稳定性。若无真实 schema snapshot，不生成业务数据异常 SQL 或生产 migration。
