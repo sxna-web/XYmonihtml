@@ -696,3 +696,50 @@ test("source edit mutation checks final UPDATE result in the ownership batch",as
   assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET name=") && sql.includes("source_ownership so")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
+
+
+// These tests invoke the exported module-worker fetch entry with Node's native
+// Request/Response Web APIs. They are real entrypoint smoke tests, but not workerd/Cloudflare-isolate tests.
+test("module Worker fetch entry serves health with the candidate version and CORS headers",async()=>{
+  const request=new Request("https://worker.test/health",{method:"GET",headers:{Origin:"https://admin.test"}});
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,200);
+  assert.equal(body.ok,true);
+  assert.equal(body.service,"starjump-api");
+  assert.equal(body.version,"2.5.0-rc1");
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.equal(response.headers.get("cache-control"),"no-store");
+});
+
+test("module Worker fetch entry handles allowed CORS preflight without touching D1",async()=>{
+  const request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{
+    method:"OPTIONS",
+    headers:{Origin:"https://admin.test","Access-Control-Request-Method":"PUT","Access-Control-Request-Headers":"authorization,content-type"},
+  });
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  assert.equal(response.status,204);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.match(response.headers.get("access-control-allow-methods")||"",/PUT/);
+});
+
+test("module Worker fetch entry rejects disallowed CORS preflight before D1 access",async()=>{
+  const request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{
+    method:"OPTIONS",headers:{Origin:"https://attacker.test","Access-Control-Request-Method":"PUT"},
+  });
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  assert.equal(response.status,403);
+  assert.equal(response.headers.get("access-control-allow-origin"),null);
+});
+
+test("module Worker fetch entry reports missing D1 binding through the real Response path",async()=>{
+  const request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{
+    method:"GET",headers:{Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.ok,false);
+  assert.match(body.error,/D1 binding DB 未配置/);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
