@@ -15,7 +15,19 @@
 
 因此，本批**不能给出 APP 6.00.48 已支持或不支持 `Idempotency-Key` 的结论**。未从 ZIP 中提取源码或客户端调用证据，不以 6.00.47 或旧 Worker 路由行为代替 6.00.48 事实。
 
-## 2. 服务端当前契约与风险
+## 2. 已读取的后台管理 HTML 调用方证据
+
+另对当前 RC1 后台页面 `releases/v2.5.0-rc1/index.html` 做了只读静态核验：
+- 文件 blob SHA：`3d487758b84e18cd9427f0e9b1276468c3b52a45`。
+- `POST /api/user/app-cards` 两处调用均只发送 `count`、`days`，没有卡密分组配置参数，也没有 `Idempotency-Key`。
+- `GET /api/user/app-cards` 列表展示卡密代码、状态、天数、激活时间和创建时间；操作仅见未激活卡密删除，没有逐卡密分组配置入口。
+- `/api/user/app-groups` 创建调用只发送 `name`、`mode`；没有 cardId/cardIds 关系。
+- 全文件搜索 `Idempotency-Key` / `idempotency-key` 命中 0 次。
+- 相关静态位置：卡密生成约第 2570 行、列表约第 2588 行、删除约第 2601 行；第二处卡密生成约第 3110 行；分组创建约第 2564 行。
+
+这证明当前仓库 RC1 管理 HTML 尚未实现卡密-分组配置 UI，也没有为该功能准备幂等键。它**不是** APP 6.00.48 APK 客户端的请求证据；二者必须分开审计。未来接入应先新增逐卡密配置 UI/调用，并在每次用户操作生成一次 key、同一操作重试复用；不能把卡密生成接口和分组映射 PUT 混为同一契约。
+
+## 3. 服务端当前契约与风险
 
 Protocol66 PUT handler 当前强制要求请求头 `Idempotency-Key`（8–128 字符，限定字符集）；缺失时返回 `400 IDEMPOTENCY_KEY_REQUIRED`。服务端以 `(admin_user_id,idempotency_key)` 作为客户端重试幂等键，服务端 `requestId` 仍单独写入审计追踪字段。
 
@@ -28,7 +40,7 @@ Protocol66 PUT handler 当前强制要求请求头 `Idempotency-Key`（8–128 �
 - 应先在真实调用方增加一次操作生成、重试复用的 key，并补齐成功/超时/重复提交/不同 payload 冲突测试；
 - 在兼容性证明完成前，Protocol66 保持未接正式 Worker route。
 
-## 3. 已确认的安全边界
+## 4. 已确认的安全边界
 
 - Batch 109：分离 client idempotency key 与 server trace requestId。
 - Batch 110：幂等重放前重新核验委托 scope，撤销/过期不允许重放旧成功响应。
@@ -36,7 +48,7 @@ Protocol66 PUT handler 当前强制要求请求头 `Idempotency-Key`（8–128 �
 - 当前真实 Staging schema 快照确认两张候选表尚不存在。
 - 未执行 D1 DDL/DML、未接入正式 Worker route、未访问 Cloudflare Secrets、未部署、未合并。
 
-## 4. 下一步最短路径
+## 5. 下一步最短路径
 
 1. 需要取得可实际解包的 `StarJump-6.00.48-source.zip`（可直接在当前对话上传，或上传到可读取的文件库），再执行只读审计。
 2. 逐一检索 OkHttp/Retrofit/Volley/Ktor 等网络层、所有卡密分组管理请求调用点，形成 method/path/header/body/response/retry 清单；不能只靠搜索字符串判断支持。
@@ -44,7 +56,7 @@ Protocol66 PUT handler 当前强制要求请求头 `Idempotency-Key`（8–128 �
 4. 先补真实调用方兼容与契约测试，再考虑 Worker route 集成。
 5. 只有在用户明确批准、备份恢复点确认后，才可安排真实 Staging DDL。
 
-## 5. 当前判定
+## 6. 当前判定
 
 `APP_6.00.48_SOURCE_UNREADABLE` / `IDEMPOTENCY_HEADER_UNVERIFIED` / `ROUTE_NOT_INTEGRATED` / `NOT_DEPLOYABLE`。
 
