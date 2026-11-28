@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from schema_manifest import ManifestError, TARGET_TABLES, compare_manifests, manifest_from_snapshot
+from schema_manifest import ManifestError, TARGET_TABLES, compare_manifests, manifest_from_snapshot, manifest_from_worker_diagnostic
 
 
 def sample_snapshot():
@@ -29,6 +29,31 @@ def sample_snapshot():
         objects.append(["index", "idx_" + table + "_owner", table,
                         "CREATE UNIQUE INDEX idx_" + table + "_owner ON " + table + "(id)"])
     return {"objects": objects, "tables": tables}
+
+
+def sample_worker_diagnostic():
+    tables = []
+    objects = []
+    for name in TARGET_TABLES:
+        tables.append({
+            "name": name, "present": True, "verification": "OBSERVED_SCHEMA_ONLY",
+            "columns": [{
+                "name": "id", "type": "TEXT", "not_null": True,
+                "default_present": True, "default_sha256": "a" * 64,
+                "primary_key_order": 1,
+            }],
+            "indexes": [{
+                "name": "idx_" + name, "unique": True, "origin": "c",
+                "partial": False, "verification": "OBSERVED",
+                "columns": [{"sequence": 0, "name": "id"}],
+            }],
+            "foreign_keys": [],
+        })
+        objects.append({"type": "trigger", "name": "trg_" + name, "table": name})
+    return {"data": {"app_structure": {
+        "verification": "OBSERVED_SCHEMA_ONLY", "objects_verification": "OBSERVED",
+        "tables": tables, "objects": objects,
+    }}}
 
 
 class SchemaManifestTests(unittest.TestCase):
@@ -144,6 +169,30 @@ class SchemaManifestTests(unittest.TestCase):
         del snap["objects"]
         with self.assertRaises(ManifestError):
             manifest_from_snapshot(snap, "staging")
+
+
+    def test_17_builds_manifest_from_sanitized_worker_diagnostic(self):
+        payload = sample_worker_diagnostic()
+        manifest = manifest_from_worker_diagnostic(payload, "staging")
+        self.assertEqual(manifest["source"], "worker_schema_status_read_only")
+        self.assertEqual(manifest["tables"]["app_card_group_mappings"]["status"], "PRESENT")
+        self.assertEqual(manifest["tables"]["app_cards"]["columns"][0]["default_sha256"], "a" * 64)
+        self.assertFalse(manifest["tables"]["app_cards"]["indexes"][0]["definition_digest_available"])
+        self.assertFalse(manifest["tables"]["app_cards"]["objects"][0]["definition_digest_available"])
+
+    def test_18_refuses_partial_worker_diagnostic(self):
+        payload = sample_worker_diagnostic()
+        payload["data"]["app_structure"]["tables"][0]["verification"] = "PARTIAL_NOT_VERIFIED"
+        with self.assertRaises(ManifestError):
+            manifest_from_worker_diagnostic(payload, "staging")
+
+    def test_19_worker_diagnostic_marks_missing_tables_without_create_advice(self):
+        payload = sample_worker_diagnostic()
+        payload["data"]["app_structure"]["tables"][0] = {
+            "name": "app_cards", "present": False, "verification": "MISSING"
+        }
+        manifest = manifest_from_worker_diagnostic(payload, "staging")
+        self.assertEqual(manifest["tables"]["app_cards"], {"status": "ABSENT"})
 
 
 if __name__ == "__main__":
