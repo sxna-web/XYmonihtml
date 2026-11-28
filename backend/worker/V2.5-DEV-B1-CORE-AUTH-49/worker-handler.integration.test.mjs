@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -28,7 +28,10 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
           return {
             sql, args,
             async first() {
-              if (sql.includes("SELECT count FROM rate_limits WHERE bucket = ?")) return rateBuckets.has(args[0]) ? {count:rateBuckets.get(args[0])} : null;
+              if (sql.includes("FROM rate_limits WHERE bucket = ?")) {
+                if (rateLimitFailure) throw new Error("rate limit store unavailable");
+                return rateBuckets.has(args[0]) ? {count:rateBuckets.get(args[0]),updated_at:"2099-01-01 00:00:00"} : null;
+              }
               if (sql.includes("FROM user_sessions s")) return sessionRow;
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
               if (sql.includes("SELECT * FROM admin_user_scopes WHERE id = ?")) return {id:args[0],target_user_id:"u1",scope:"manage",revoked_at:null};
@@ -49,7 +52,8 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("SELECT id, name FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source"};
               if (sql.includes("SELECT status FROM source_approvals WHERE source_id = ?")) return {status:"pending"};
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
-              if (sql.includes("FROM app_cards WHERE code = ?")) return cardLookupMissing ? null : {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"};
+              if (sql.includes("FROM app_cards WHERE code = ?")) return cardLookupMissing ? null : (cardOverride || {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"});
+              if (sql.includes("FROM app_entitlements WHERE card_id = ? AND device_id = ?")) return replayEntitlement;
               if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
               if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {links_enabled:1,max_links:3,free_group_enabled:1};
               if (sql.includes("COUNT(*) AS n FROM app_links WHERE admin_user_id = ?")) return {n:0};
@@ -353,14 +357,32 @@ test("super APP link delete batches final existence check, delete and audit",asy
 });
 
 
-test("APP redemption rate limit blocks repeated guesses per device before card lookup/write",async()=>{
+test("APP redemption rate limit counts failed guesses only and uses a fixed 15-minute window",async()=>{
   const db=mockDb({cardLookupMissing:true});
   let last;
   for(let i=0;i<6;i++) last=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
   assert.equal(last.res.status,429);
   assert.equal(last.json.code,"REDEEM_RATE_LIMITED");
   const counterSql=db.writes.find(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)"))?.sql || "";
-  assert.match(counterSql,/updated_at = CASE[\s\S]*THEN CURRENT_TIMESTAMP ELSE rate_limits\.updated_at END/);
+  assert.match(counterSql,/updated_at = CASE[\\s\\S]*THEN CURRENT_TIMESTAMP ELSE rate_limits\\.updated_at END/);
+  assert.match(counterSql,/app:redeem:failed:v2/);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
+});
+test("APP successful redemption does not consume the failed-attempt budget",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)")),false);
+});
+test("APP redemption retry on the same device replays the existing live entitlement",async()=>{
+  const db=mockDb({
+    cardOverride:{id:"card-1",admin_user_id:"u1",days:30,status:"used",manual_disabled:0,activated_at:"2026-11-28 10:00:00",used_at:"2026-11-28 10:00:00",expires_at:"2099-01-01 00:00:00"},
+    replayEntitlement:{id:"ent-existing",expires_at:"2099-01-01 00:00:00",purge_at:"2099-01-02 00:00:00",status:"active"},
+  });
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  assert.equal(json.data.entitlement.id,"ent-existing");
+  assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)")),false);
   assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
 test("APP redemption fails closed when rate limit storage is unavailable",async()=>{
