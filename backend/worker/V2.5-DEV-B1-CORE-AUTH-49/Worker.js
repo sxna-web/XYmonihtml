@@ -4030,7 +4030,7 @@ async function migrateRoute(req, env, url, ctx) {
     return json({
       ok: true,
       data: {
-        ready: REQUIRED_TABLES.every(t => have.includes(t)),
+        required_tables_present: REQUIRED_TABLES.every(t => have.includes(t)),
         have,
         missing: REQUIRED_TABLES.filter(t => !have.includes(t)),
         verification: "TABLE_NAMES_ONLY",
