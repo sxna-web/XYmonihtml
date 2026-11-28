@@ -5,6 +5,7 @@ on:
       - release/v2.5.0-rc1-converge
     paths:
       - "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/**"
+      - "releases/v2.5.0-rc1/**"
       - "scripts/rc1_cron_no_source_regression.py"
       - ".github/workflows/v25-rc1-convergence.yml"
   pull_request:
@@ -44,5 +45,6 @@ jobs:
           path: |
             releases/v2.5.0-rc1/Worker.js
             releases/v2.5.0-rc1/index.html
+            releases/v2.5.0-rc1/README_RC1内部验收说明.md
           if-no-files-found: error
           retention-days: 14
