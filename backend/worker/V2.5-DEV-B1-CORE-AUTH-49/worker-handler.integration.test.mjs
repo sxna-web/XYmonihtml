@@ -128,7 +128,15 @@ test("schema diagnostics expose APP metadata only to a direct super-admin sessio
   assert.equal(json.data.app_structure.verification,"OBSERVED_SCHEMA_ONLY");
   assert.equal(json.data.app_structure.baseline_comparison,"NOT_CONFIGURED");
   assert.equal(json.data.app_structure.compatibility_verdict,"NOT_EVALUATED");
-  assert.equal(json.data.app_structure.tables.length,7);
+  assert.equal(json.data.app_structure.tables.length,9);
+  const diagnosticNames=json.data.app_structure.tables.map(table=>table.name);
+  assert.ok(diagnosticNames.includes("app_card_group_mappings"));
+  assert.ok(diagnosticNames.includes("app_card_group_admin_requests"));
+  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(\\"app_card_group_mappings\\"")));
+  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(\\"app_card_group_admin_requests\\"")));
+  assert.ok(db.reads.some(x=>x.sql.includes("type IN ('trigger','view')") &&
+    x.args.includes("app_card_group_mappings") && x.args.includes("app_card_group_admin_requests")));
+  assert.equal(db.reads.some(x=>/SELECT .*response_json|SELECT .*payload_sha256/i.test(x.sql)),false);
   assert.equal(json.data.app_structure.tables[0].columns[1].name,"admin_user_id");
   assert.equal(json.data.app_structure.tables[0].indexes[0].columns[0].name,"admin_user_id");
   assert.equal(businessWrites(db).length,0);
