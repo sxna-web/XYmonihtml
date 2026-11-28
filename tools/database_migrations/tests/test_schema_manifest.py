@@ -127,6 +127,24 @@ class SchemaManifestTests(unittest.TestCase):
         b = manifest_from_snapshot(snap, "production")
         self.assertEqual(compare_manifests(a, b)["comparison"], "MATCH")
 
+    def test_14_rejects_missing_index_detail_collection(self):
+        snap = sample_snapshot()
+        del snap["tables"]["app_cards"]["index_details"]
+        with self.assertRaises(ManifestError):
+            manifest_from_snapshot(snap, "staging")
+
+    def test_15_rejects_duplicate_schema_object_identity(self):
+        snap = sample_snapshot()
+        snap["objects"].append(list(snap["objects"][0]))
+        with self.assertRaises(ManifestError):
+            manifest_from_snapshot(snap, "staging")
+
+    def test_16_rejects_missing_object_collection(self):
+        snap = sample_snapshot()
+        del snap["objects"]
+        with self.assertRaises(ManifestError):
+            manifest_from_snapshot(snap, "staging")
+
 
 if __name__ == "__main__":
     unittest.main()
