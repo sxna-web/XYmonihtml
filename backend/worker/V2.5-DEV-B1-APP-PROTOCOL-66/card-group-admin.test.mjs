@@ -108,6 +108,15 @@ test("activated used cards remain configurable while valid",async()=>{
   assert.equal(r.ok,true);
 });
 
+test("replace passes group_id values, not mapping row ids, into CAS snapshot",async()=>{
+  const {service,storage}=fixture();
+  storage.state.mappings=[{id:"mapping-row-123",admin_user_id:"a1",card_id:"c1",group_id:"g1",status:"active"}];
+  await service.replace({...scope,groupIds:["g1"]});
+  const atomic=storage.events.find(e=>e[0]==="atomic");
+  assert.deepEqual(atomic[1].expectedGroupIds,["g1"]);
+  assert.notDeepEqual(atomic[1].expectedGroupIds,["mapping-row-123"]);
+});
+
 test("D1 integer enabled and expiry projections are normalized safely",async()=>{
   const {service,storage}=fixture();
   storage.state.groups[0].enabled=1;
