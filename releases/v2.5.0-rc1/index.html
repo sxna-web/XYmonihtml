@@ -2136,16 +2136,24 @@ async function loadSources() {
 }
 
 /* ── 数据库只读检查（RC1 安全模式）── */
-$('dbUpgrade').title = '只读检查数据表；迁移暂未开放';
+$('dbUpgrade').title = '只读检查 40 张静态依赖表；迁移暂未开放';
 $('dbUpgrade').textContent = '检查数据库';
 $('dbUpgrade').addEventListener('click', async () => {
   try {
     const st = await api('/api/super/schema-status');
-    const missing = st.data.missing || [];
-    const summary = st.data.required_tables_present
-      ? '候选业务表均存在，但当前仅核对表名，尚未验证字段、索引和约束。'
-      : '仍缺少 ' + missing.length + ' 张候选业务表：\\n' + missing.join('\\n');
-    alert(summary + '\\n\\nRC1 暂不执行自动建表。请先完成数据库结构核对和迁移计划验收，避免对已有数据造成影响。');
+    const d = st.data || {};
+    const coreMissing = d.missing || [];
+    const workerMissing = d.worker_referenced_missing || [];
+    const lines = [
+      '核心表：' + (d.core_table_count ?? 18) + ' 张，存在 ' + (d.have || []).length + ' 张，缺少 ' + coreMissing.length + ' 张。',
+      '其他 Worker SQL 引用表：' + (d.worker_referenced_table_count ?? 22) + ' 张，存在 ' + (d.worker_referenced_have || []).length + ' 张，缺少 ' + workerMissing.length + ' 张。',
+      '总计检查：' + (d.total_checked_table_count ?? 40) + ' 张；全部存在：' + (d.all_worker_tables_present === true ? '是' : '否/尚未完整核验。'),
+    ];
+    if (coreMissing.length) lines.push('核心表缺失：\\n' + coreMissing.join('\\n'));
+    if (workerMissing.length) lines.push('其他引用表缺失：\\n' + workerMissing.join('\\n'));
+    lines.push('检查范围仅为表名，不代表字段、索引、约束或数据完整性已验证。');
+    lines.push('RC1 暂不执行自动建表或迁移。');
+    alert(lines.join('\\n\\n'));
   } catch (e) { alert('只读检查失败：' + e.message); }
 });
 
