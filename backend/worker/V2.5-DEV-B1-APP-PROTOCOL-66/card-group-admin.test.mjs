@@ -26,7 +26,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
     async loadCardGroupState(adminId,cardId) {
       events.push(["load",adminId,cardId]);
       if(adminId!==state.card.admin_user_id||cardId!==state.card.id)return null;
-      return {card:state.card,groups:state.groups.filter(g=>g.admin_user_id===adminId),mappings:state.mappings};
+      return {card:state.card,groups:state.groups.filter(g=>g.admin_user_id===adminId && g.mode==="card"),mappings:state.mappings};
     },
     async replaceCardGroupsAtomically(input) {
       events.push(["atomic",input]);
