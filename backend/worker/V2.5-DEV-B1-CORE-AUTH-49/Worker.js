@@ -4565,7 +4565,8 @@ async function userAppGroupsRoute(req, env, url, ctx) {
     return json({ ok: true, data: { id, name, mode } });
   }
   if (seg.length === 4 && req.method === "DELETE") {
-    if (!(await own(id))) return fail("分组不存在", 404);
+    const row = await own(id);
+    if (!row) return fail("分组不存在", 404);
     const cutoff = ctx.appAuthorization?.formalCutoff || null;
     const ownershipGuard = cutoff
       ? assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?))", [id, ctx.effectiveId, cutoff])
