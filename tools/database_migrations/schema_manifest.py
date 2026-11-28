@@ -155,6 +155,120 @@ def manifest_from_snapshot(snapshot: dict, environment: str) -> dict:
     return manifest
 
 
+
+def manifest_from_worker_diagnostic(payload: dict, environment: str) -> dict:
+    """Build a safe manifest from /api/super/schema-status app_structure JSON.
+
+    Worker diagnostics intentionally omit raw SQL/default literals. This path
+    preserves their supplied hashes and compares only the metadata actually
+    observed; it never upgrades partial observations into a verified manifest.
+    """
+    if environment not in {"staging", "production"}:
+        raise ManifestError("environment must be staging or production")
+    if not isinstance(payload, dict):
+        raise ManifestError("diagnostic payload must be an object")
+    structure = payload.get("data", {}).get("app_structure") if isinstance(payload.get("data"), dict) else None
+    if structure is None and isinstance(payload.get("app_structure"), dict):
+        structure = payload["app_structure"]
+    if not isinstance(structure, dict):
+        raise ManifestError("data.app_structure is required")
+    if structure.get("verification") != "OBSERVED_SCHEMA_ONLY":
+        raise ManifestError("APP schema diagnostic is not complete; refusing manifest")
+    if structure.get("objects_verification") != "OBSERVED":
+        raise ManifestError("schema object metadata is incomplete")
+    raw_tables = structure.get("tables")
+    raw_objects = structure.get("objects")
+    if not isinstance(raw_tables, list) or not isinstance(raw_objects, list):
+        raise ManifestError("diagnostic tables and objects must be lists")
+    by_name = {}
+    for item in raw_tables:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise ManifestError("malformed diagnostic table entry")
+        if item["name"] in by_name:
+            raise ManifestError("duplicate diagnostic table entry")
+        by_name[item["name"]] = item
+
+    object_rows = []
+    for obj in raw_objects:
+        if not isinstance(obj, dict) or not all(isinstance(obj.get(k), str) for k in ("type", "name", "table")):
+            raise ManifestError("malformed diagnostic schema object")
+        object_rows.append(obj)
+
+    tables = {}
+    for name in TARGET_TABLES:
+        raw = by_name.get(name)
+        if raw is None or raw.get("present") is False or raw.get("verification") == "MISSING":
+            tables[name] = {"status": "ABSENT"}
+            continue
+        if raw.get("present") is not True or raw.get("verification") != "OBSERVED_SCHEMA_ONLY":
+            raise ManifestError(f"{name}: diagnostic metadata is partial or unverified")
+        columns_raw = _require_list(raw.get("columns"), f"{name}.columns")
+        columns = []
+        for col in columns_raw:
+            if not isinstance(col, dict) or not isinstance(col.get("name"), str):
+                raise ManifestError(f"{name}: malformed column metadata")
+            digest = col.get("default_sha256")
+            if digest is not None and (not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)):
+                raise ManifestError(f"{name}: invalid default digest")
+            columns.append({
+                "name": col["name"],
+                "type": col.get("type", ""),
+                "not_null": col.get("not_null"),
+                "primary_key_order": col.get("primary_key_order"),
+                "default_present": col.get("default_present"),
+                "default_sha256": digest,
+            })
+        indexes_raw = _require_list(raw.get("indexes"), f"{name}.indexes")
+        indexes = []
+        for idx in indexes_raw:
+            if not isinstance(idx, dict) or idx.get("verification") != "OBSERVED" or not isinstance(idx.get("name"), str):
+                raise ManifestError(f"{name}: index metadata is partial")
+            cols = _require_list(idx.get("columns"), f"{name}.index.columns")
+            indexes.append({
+                "name": idx["name"], "unique": idx.get("unique"),
+                "origin": idx.get("origin"), "partial": idx.get("partial"),
+                "columns": [{"sequence": c.get("sequence"), "name": c.get("name")} for c in cols if isinstance(c, dict)],
+                "definition_digest_available": False,
+            })
+            if len(indexes[-1]["columns"]) != len(cols):
+                raise ManifestError(f"{name}: malformed index column")
+        fks_raw = _require_list(raw.get("foreign_keys"), f"{name}.foreign_keys")
+        foreign_keys = []
+        for fk in fks_raw:
+            if not isinstance(fk, dict):
+                raise ManifestError(f"{name}: malformed foreign key")
+            foreign_keys.append({k: fk.get(src) for k, src in (
+                ("id", "id"), ("sequence", "sequence"), ("table", "table"),
+                ("from", "from"), ("to", "to"), ("on_update", "on_update"),
+                ("on_delete", "on_delete"), ("match", "match"),
+            )})
+        related = sorted(
+            ({"type": obj["type"], "name": obj["name"], "table": obj["table"],
+              "definition_digest_available": False}
+             for obj in object_rows if obj["table"] == name),
+            key=lambda x: (x["type"], x["name"]),
+        )
+        tables[name] = {
+            "status": "PRESENT", "columns": columns,
+            "indexes": sorted(indexes, key=lambda x: x["name"]),
+            "foreign_keys": sorted(foreign_keys, key=lambda x: (x["id"], x["sequence"])),
+            "objects": related,
+        }
+    manifest = {
+        "format_version": FORMAT_VERSION,
+        "environment": environment,
+        "source": "worker_schema_status_read_only",
+        "scope": list(TARGET_TABLES),
+        "tables": tables,
+        "comparison_limitations": [
+            "Worker diagnostic omits raw index/trigger/view SQL; definition-level comparison is unavailable.",
+            "Only metadata returned by the endpoint is compared; this is not semantic compatibility approval.",
+        ],
+    }
+    canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    manifest["manifest_sha256"] = _digest(canonical)
+    return manifest
+
 def compare_manifests(left: dict, right: dict) -> dict:
     """Compare two manifests without assuming either environment is authoritative."""
     for label, manifest in (("left", left), ("right", right)):
@@ -212,6 +326,10 @@ def main() -> int:
     build.add_argument("--input", required=True)
     build.add_argument("--environment", required=True, choices=("staging", "production", "local-fixture"))
     build.add_argument("--output", required=True)
+    diagnostic = sub.add_parser("build-diagnostic", help="build a safe manifest from Worker schema-status JSON")
+    diagnostic.add_argument("--input", required=True)
+    diagnostic.add_argument("--environment", required=True, choices=("staging", "production"))
+    diagnostic.add_argument("--output", required=True)
     compare = sub.add_parser("compare", help="compare two manifests")
     compare.add_argument("--left", required=True)
     compare.add_argument("--right", required=True)
@@ -220,6 +338,8 @@ def main() -> int:
     try:
         if args.command == "build":
             result = manifest_from_snapshot(_read_json(args.input), args.environment)
+        elif args.command == "build-diagnostic":
+            result = manifest_from_worker_diagnostic(_read_json(args.input), args.environment)
         else:
             result = compare_manifests(_read_json(args.left), _read_json(args.right))
         Path(args.output).write_text(
