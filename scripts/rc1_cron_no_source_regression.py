@@ -111,6 +111,10 @@ def main() -> None:
         raise AssertionError("Unsafe legacy DDL path is not fully disabled")
     if "migration_enabled: false" not in migrate or "verification: \"TABLE_NAMES_ONLY\"" not in migrate:
         raise AssertionError("Schema status must disclose its table-name-only verification scope")
+    if "required_tables_present:" not in migrate or "ready:" in migrate:
+        raise AssertionError("Table-name-only status must not expose a misleading generic ready flag")
+    if "st.data.required_tables_present" not in html:
+        raise AssertionError("HTML must consume the explicit table-name-only status field")
     if "api('/api/super/migrate'" in html or "RC1 暂不执行自动建表" not in html:
         raise AssertionError("HTML must remain read-only for database migration in RC1")
 
@@ -127,7 +131,7 @@ def main() -> None:
     print("PASS: all HTML API calls use the configured API base")
     print("PASS: APP token secret validated before card redemption writes")
     print("PASS: DB migration rejects legacy/assist sessions")
-    print("PASS: unsafe legacy DDL disabled; schema status is explicitly read-only")
+    print("PASS: unsafe legacy DDL disabled; schema status is explicitly read-only and has no generic ready flag")
     print("PASS: HTML DB controls cannot trigger DDL")
     print("PASS: Worker SQL table references covered by 40-table evidence inventory")
 
