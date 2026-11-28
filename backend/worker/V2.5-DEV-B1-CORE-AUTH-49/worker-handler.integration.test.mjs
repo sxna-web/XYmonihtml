@@ -431,3 +431,20 @@ test("subscription node override returns conflict when ownership changes before 
   assert.equal(res.status,409);assert.equal(json.code,"NODE_OWNERSHIP_CHANGED");
   assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO node_overrides")).length,0);
 });
+
+
+test("subscription node enabled toggle rechecks source ownership in the same batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO node_overrides")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id")));
+});
+
+test("subscription node enabled toggle rejects ownership change before writing",async()=>{
+  const db=mockDb({failNodeOwnerAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,409);assert.equal(json.code,"NODE_OWNERSHIP_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO node_overrides")).length,0);
+});
