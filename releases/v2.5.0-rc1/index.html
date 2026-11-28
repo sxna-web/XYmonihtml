@@ -1841,9 +1841,16 @@ $('api')?.addEventListener('change', () => {
   if (value) localStorage.setItem('sj-api', value);
   else localStorage.removeItem('sj-api');
 });
-// 生产 Worker 主机名（误发到这里等于对生产操作）；staging 用 starjump-api-staging
+// 生产 Worker 主机名（误发到这里等于对生产操作）；初始化诊断仅允许精确 Staging 域名
 const PROD_HOST = 'blackstarjump-api-dawn-1242';
-function isProdTarget() { try { return new URL(apiBase()).hostname.includes(PROD_HOST); } catch { return false; } }
+const STAGING_HOST = 'starjump-api-staging.synahcooo.workers.dev';
+function isProdTarget() { try { return new URL(apiBase()).hostname.toLowerCase().includes(PROD_HOST); } catch { return false; } }
+function isStagingTarget() {
+  try {
+    const u = new URL(apiBase());
+    return u.protocol === 'https:' && u.hostname.toLowerCase() === STAGING_HOST && (!u.pathname || u.pathname === '/') && !u.search && !u.hash;
+  } catch { return false; }
+}
 function apiUrl(path) {
   const base = apiBase();
   if (!base) throw new Error('请先填写并核实正式 Worker API 根地址');
@@ -2940,21 +2947,20 @@ async function endAssist() {
 
 /* ── 交互 ── */
 $('btGo').addEventListener('click', async () => {
-  const api = apiBase();
   const token = $('btToken').value.trim();
   const username = $('btUser').value.trim();
   const password = $('btPass').value;
   const out = $('btOut');
   if (!token || !username || !password) { setStatus('btStatus', '请填写 Token、用户名、密码', 'bad'); return; }
-  if (isProdTarget()) {
-    setStatus('btStatus', '当前 API 地址指向生产 Worker，初始化诊断禁止对生产执行。请改成 https://starjump-api-staging.synahcooo.workers.dev', 'bad');
+  if (!isStagingTarget()) {
+    setStatus('btStatus', '初始化诊断仅允许发送到已核实的 Staging Worker；当前地址不匹配，已阻止请求。', 'bad');
     return;
   }
   $('btGo').disabled = true;
   setStatus('btStatus', '发送中…', '');
   const t0 = performance.now();
   try {
-    const res = await fetch(api + '/api/auth/bootstrap', {
+    const res = await fetch(apiUrl('/api/auth/bootstrap'), {
       method: 'POST',
       headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token },
       body: JSON.stringify({ username, password }),
