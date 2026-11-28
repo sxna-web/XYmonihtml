@@ -2838,16 +2838,20 @@ async function superRoute(req, env, url, ctx) {
 
     // 解除分配：只删归属 + 停用来源（避免 Cron/手动继续选中），其他数据一律保留
     try {
-      await userBatch(db, ctx, [
+      const unassigned = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM subscription_sources WHERE id = ? AND enabled = ?)", [sourceId, source.enabled]),
         assertStmt(db, "EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)", [sourceId, current.user_id]),
-        db.prepare("DELETE FROM source_ownership WHERE source_id = ?").bind(sourceId),
-        db.prepare("UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(sourceId),
+        db.prepare("DELETE FROM source_ownership WHERE source_id = ? AND user_id = ?").bind(sourceId, current.user_id),
+        db.prepare("UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND enabled = ?").bind(sourceId, source.enabled),
         auditStmt(db, ctx, {
           action: "super.source.unassign", targetType: "source", targetId: sourceId,
           before: { owner: current.user_id, enabled: source.enabled }, after: { owner: null, enabled: 0 },
           detail: "解除归属并停用；节点、覆盖、同步记录与审计全部保留",
         }),
       ]);
+      if (!unassigned[2]?.meta?.changes || !unassigned[3]?.meta?.changes) {
+        return fail("来源归属或启用状态刚刚发生变化，请刷新后重试", 409, { code: "OWNERSHIP_CHANGED" });
+      }
     } catch (e) {
       if (/malformed JSON|assert-failed/i.test(String(e?.message || ""))) {
         return fail("来源归属在操作期间已变化，请刷新后重试", 409, { code: "OWNERSHIP_CHANGED" });
