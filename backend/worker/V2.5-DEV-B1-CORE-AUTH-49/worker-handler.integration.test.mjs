@@ -850,3 +850,51 @@ test("module Worker diagnostic mode never returns internal exception messages",a
   assert.equal(body.detail,undefined);
   assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
 });
+
+
+test("module Worker migration endpoint remains fail-closed for a direct super-admin session",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const request=new Request("https://worker.test/api/super/migrate",{
+    method:"POST",headers:{Authorization:"Bearer test-session","Content-Type":"application/json",Origin:"https://admin.test"},
+    body:JSON.stringify({}),
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,503);
+  assert.equal(body.ok,false);
+  assert.equal(body.code,"MIGRATION_REVIEW_REQUIRED");
+  assert.equal(db.writes.length,0);
+  assert.equal(db.batches.length,0);
+  assert.equal(db.reads.some(x=>/CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE/i.test(x.sql)),false);
+});
+
+test("module Worker migration endpoint rejects legacy ADMIN_TOKEN before migration handler",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const token="legacy-admin-token-that-is-longer-than-thirty-two-characters";
+  const request=new Request("https://worker.test/api/super/migrate",{
+    method:"POST",headers:{Authorization:"Bearer "+token,Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{
+    DB:db,ADMIN_TOKEN:token,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test",
+  });
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.equal(db.writes.length,0);
+  assert.equal(db.batches.length,0);
+});
+
+test("module Worker migration endpoint rejects impersonation sessions before migration handler",async()=>{
+  const db=mockDb({role:"super_admin",actingAs:"target-user"});
+  const request=new Request("https://worker.test/api/super/migrate",{
+    method:"POST",headers:{Authorization:"Bearer test-session",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{
+    DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test",
+  });
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.equal(db.writes.length,0);
+  assert.equal(db.batches.length,0);
+});
