@@ -150,6 +150,14 @@ def main() -> None:
     if "app_link.super_delete" not in super_links or "app_entitlement.rebind" not in super_links:
         raise AssertionError("Super APP link and entitlement mutations must write audit records")
 
+    card_group_route = source.split("async function userAppCardGroupsRoute", 1)[1].split("async function userAppCardsRoute", 1)[0]
+    if "CARD_GROUP_SCHEMA_NOT_READY" not in card_group_route or "app_card_group_mappings" not in card_group_route or "app_card_group_admin_requests" not in card_group_route:
+        raise AssertionError("Protocol66 card-group route must fail closed until both mapping tables exist")
+    if "createCardGroupAdminHandler" not in source or "createCardGroupD1Adapter" not in source:
+        raise AssertionError("Protocol66 handler and D1 adapter must be wired into the authenticated Worker")
+    if 'url.pathname.startsWith("/api/user/app-cards")' not in source or "userAppCardGroupsRoute(req, env, url, ctxWithReq)" not in source:
+        raise AssertionError("Protocol66 route must be dispatched inside the authenticated user API gate")
+
     app_cards = source.split("async function userAppCardsRoute", 1)[1].split("/* ────────────────────────────── 节点生命周期", 1)[0]
     if app_cards.count("assertStmt(db,") < 2 or "APP_CARD_CAPACITY_CHANGED" not in app_cards:
         raise AssertionError("APP card total/stock capacity must be asserted inside the redemption batch")
@@ -294,6 +302,13 @@ def main() -> None:
         raise AssertionError("Guest conversion requests must use the validated API root URL")
     if "fetchWithNetworkPolicy(apiUrl('/api/announcements?scope=web'))" not in html:
         raise AssertionError("Public announcement requests must use the validated API root URL")
+
+    if "uCardGroupsDialog" not in html or "配置分组" not in html:
+        raise AssertionError("APP card list must expose the per-card group configuration editor")
+    if "pendingCardGroupRequests" not in html or "'Idempotency-Key': pending.key" not in html:
+        raise AssertionError("Per-card group writes must retain and reuse the same idempotency key after uncertain network outcomes")
+    if "免费分组不在此处配置" not in html:
+        raise AssertionError("Per-card group editor must keep free groups outside card-specific assignments")
 
     dispatch = source.split('if (url.pathname === "/api/super/schema-status" || url.pathname === "/api/super/migrate")', 1)[1].split("if (url.pathname.startsWith", 1)[0]
     for guard in ("ctx.legacy", "ctx.actorId !== ctx.effectiveId"):
