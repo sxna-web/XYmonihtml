@@ -154,6 +154,16 @@ def main() -> None:
     if app_cards.count("assertStmt(db,") < 2 or "APP_CARD_CAPACITY_CHANGED" not in app_cards:
         raise AssertionError("APP card total/stock capacity must be asserted inside the redemption batch")
 
+    add_download = source.split("async function addDownload", 1)[1].split("async function downloadRoute", 1)[0]
+    if ".run()" in add_download or "assertStmt(db, quotaSql, quotaBinds)" not in add_download or "DOWNLOAD_LIMIT_CHANGED" not in add_download:
+        raise AssertionError("Download-link quota must be rechecked in the same batch as insert and audit")
+    super_downloads = source.split("async function superDownloadsRoute", 1)[1].split("async function userDownloadsRoute", 1)[0]
+    user_downloads = source.split("async function userDownloadsRoute", 1)[1].split("/* ────────────────────────────── 统计与导出", 1)[0]
+    if ".run()" in super_downloads or "await db.batch([" not in super_downloads or "download_link.super_delete" not in super_downloads:
+        raise AssertionError("Super download-link deletion must be atomic and audited")
+    if ".run()" in user_downloads or "WHERE id = ? AND admin_user_id = ?" not in user_downloads or "download_link.delete" not in user_downloads:
+        raise AssertionError("User download-link deletion must retain owner predicate and audit batch")
+
     node_check(source)
     node_check(bundle)
 
