@@ -4938,9 +4938,13 @@ async function appLinksForDevice(req, env, url) {
   if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
   if (!tokens.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
   const ents = await db.prepare(
-    `SELECT id, admin_user_id FROM app_entitlements
-      WHERE device_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
-      ORDER BY created_at DESC`,
+    `SELECT e.id, e.admin_user_id FROM app_entitlements e
+      JOIN app_cards c ON c.id = e.card_id AND c.admin_user_id = e.admin_user_id
+      WHERE e.device_id = ? AND e.status = 'active'
+        AND datetime(e.expires_at) > datetime('now')
+        AND c.status = 'used' AND COALESCE(c.manual_disabled, 0) = 0
+        AND (c.expires_at IS NULL OR datetime(c.expires_at) > datetime('now'))
+      ORDER BY e.created_at DESC`,
   ).bind(deviceId).all();
   const authorized = [];
   for (const ent of ents.results || []) {
@@ -5247,7 +5251,7 @@ async function userAppGroupsRoute(req, env, url, ctx) {
 async function appGroupsForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))].slice(0, 100);
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))];
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
   if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
 
