@@ -4933,24 +4933,38 @@ async function appFreeGroupRoute(req, env, url) {
 async function appLinksForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))];
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))].slice(0, 100);
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
   if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
-  const ent = await db.prepare(
+  if (!tokens.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
+  const ents = await db.prepare(
     `SELECT id, admin_user_id FROM app_entitlements
       WHERE device_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
-      ORDER BY created_at DESC LIMIT 1`,
-  ).bind(deviceId).first();
-  if (!ent) return fail("授权已过期或不存在", 403, { code: "ENTITLEMENT_EXPIRED" });
-  if (!(await verifyEntToken(env, ent.id, deviceId, token))) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
-  const perms = await adminPerms(db, ent.admin_user_id);
-  if (!perms.links_enabled) return json({ ok: true, data: [] });
-  const rows = await db.prepare(
-    "SELECT id, title, url FROM app_links WHERE admin_user_id = ? AND enabled = 1 ORDER BY sort ASC, created_at ASC",
-  ).bind(ent.admin_user_id).all();
-  const list = rows.results || [];
-  if (!list.length) return json({ ok: true, data: [{ id: "default", title: "购买卡密", url: "", default: true }] });
-  return json({ ok: true, data: list });
+      ORDER BY created_at DESC`,
+  ).bind(deviceId).all();
+  const authorized = [];
+  for (const ent of ents.results || []) {
+    for (const candidate of tokens) {
+      if (await verifyEntToken(env, ent.id, deviceId, candidate)) {
+        authorized.push(ent);
+        break;
+      }
+    }
+  }
+  if (!authorized.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
+  const adminIds = [...new Set(authorized.map(x => x.admin_user_id).filter(Boolean))];
+  const out = [];
+  for (const adminId of adminIds) {
+    const perms = await adminPerms(db, adminId);
+    if (!perms.links_enabled) continue;
+    const rows = await db.prepare(
+      "SELECT id, title, url FROM app_links WHERE admin_user_id = ? AND enabled = 1 ORDER BY sort ASC, created_at ASC",
+    ).bind(adminId).all();
+    const list = rows.results || [];
+    if (!list.length) out.push({ id: "default", admin_user_id: adminId, title: "购买卡密", url: "", default: true });
+    else for (const item of list) out.push({ ...item, admin_user_id: adminId });
+  }
+  return json({ ok: true, data: out });
 }
 
 /* ────────────────────────────── 管理员自定义 APP 分组 ────────────────────────────── */
@@ -5233,8 +5247,9 @@ async function userAppGroupsRoute(req, env, url, ctx) {
 async function appGroupsForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const token = s(url.searchParams.get("token"), 200);
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))].slice(0, 100);
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
+  if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
 
   const entitlementResult = await db.prepare(
     `SELECT id, admin_user_id, card_id, expires_at, purge_at, status FROM app_entitlements
