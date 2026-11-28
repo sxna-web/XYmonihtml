@@ -7,6 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER_SOURCE = ROOT / "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js"
+AUTH_ADAPTER = ROOT / "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-auth-adapter.mjs"
 WORKER_BUNDLE = ROOT / "releases/v2.5.0-rc1/Worker.js"
 RELEASE_HTML = ROOT / "releases/v2.5.0-rc1/index.html"
 SCHEMA_INVENTORY = ROOT / "docs/release/V2.5.0_RC1_Worker数据库表字段静态清单_2026-11-28.json"
@@ -59,6 +60,7 @@ def node_check(source: str, suffix: str = ".mjs") -> None:
 
 def main() -> None:
     source = WORKER_SOURCE.read_text(encoding="utf-8")
+    auth_adapter = AUTH_ADAPTER.read_text(encoding="utf-8")
     bundle = WORKER_BUNDLE.read_text(encoding="utf-8")
     html = RELEASE_HTML.read_text(encoding="utf-8")
     inventory = json.loads(SCHEMA_INVENTORY.read_text(encoding="utf-8"))
@@ -102,6 +104,22 @@ def main() -> None:
         raise AssertionError("Cron source selection must carry the source owner into the sync fence")
     if "so.user_id = ?" not in source.split("const FENCE_SQL", 1)[1].split("function fenceBinds", 1)[0]:
         raise AssertionError("Sync stage/commit fence must revalidate source ownership")
+
+    # APP management writes must use the same-batch assist-scope guard.
+    app_groups = source.split("async function userAppGroupsRoute", 1)[1].split("/** APP：按可见性返回分组与节点 */", 1)[0]
+    if ".run()" in app_groups:
+        raise AssertionError("User APP group mutations must not bypass userBatch/scopeGuard")
+    if app_groups.count("await userBatch(db, ctx") < 6:
+        raise AssertionError("APP group create/update/delete/source/member mutations must use userBatch")
+    if "EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)" not in app_groups:
+        raise AssertionError("APP group association removal must retain a final owner predicate")
+    if "const ownershipGuard = cutoff" not in app_groups:
+        raise AssertionError("APP group history delete must assert owner/cutoff before child cleanup")
+    if auth_adapter.count('p.length === 6 && p[4] === "sources" && method === "DELETE") return "associate";') != 1:
+        raise AssertionError("APP source-association removal must be an active-VIP configuration mutation")
+    app_links = source.split("async function addAppLink", 1)[1].split("/* 超管 */", 1)[0]
+    if "await userBatch(db, ctx" not in app_links or "auditStmt(db, ctx" not in app_links:
+        raise AssertionError("APP link creation must share its assist-scope guard and audit batch")
 
     node_check(source)
     node_check(bundle)
