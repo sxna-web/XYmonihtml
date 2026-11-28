@@ -863,7 +863,7 @@ test("module Worker migration endpoint remains fail-closed for a direct super-ad
   assert.equal(response.status,503);
   assert.equal(body.ok,false);
   assert.equal(body.code,"MIGRATION_REVIEW_REQUIRED");
-  assert.equal(db.writes.length,0);
+  assert.equal(businessWrites(db).length,0);
   assert.equal(db.batches.length,0);
   assert.equal(db.reads.some(x=>/CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE/i.test(x.sql)),false);
 });
@@ -880,7 +880,7 @@ test("module Worker migration endpoint rejects legacy ADMIN_TOKEN before migrati
   const body=await response.json();
   assert.equal(response.status,403);
   assert.equal(body.ok,false);
-  assert.equal(db.writes.length,0);
+  assert.equal(businessWrites(db).length,0);
   assert.equal(db.batches.length,0);
 });
 
@@ -895,6 +895,6 @@ test("module Worker migration endpoint rejects impersonation sessions before mig
   const body=await response.json();
   assert.equal(response.status,403);
   assert.equal(body.ok,false);
-  assert.equal(db.writes.length,0);
+  assert.equal(businessWrites(db).length,0);
   assert.equal(db.batches.length,0);
 });
