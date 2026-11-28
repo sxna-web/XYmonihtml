@@ -120,6 +120,37 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(b.checkpoint.alias_receipt_count,5)
         self.assertEqual(b.complete(lease,101),"COMPLETE")
 
+
+    def test_catchup_receipt_and_cursor_commit_together_with_unknown_recovery(self):
+        b=ledger(); lease=b.claim("worker-a",100,10)
+        write_page(b,lease,("",""),("0009","z"))
+        b.set_catch_up_watermark(lease,101,("0012","b"))
+        b.begin_catch_up(lease,101)
+        with self.assertRaises(OutcomeUnknown):
+            b.commit_catch_up_page(lease,101,expected_cursor=("0009","z"),next_cursor=("0012","b"),
+                checksum=checksum("d"),row_count=1,writer_epoch=7,
+                active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2"),
+                simulate_unknown_after_commit=True)
+        self.assertEqual(b.checkpoint.catch_up_cursor,("0012","b"))
+        self.assertEqual(b.checkpoint.alias_receipt_count,4)
+        with self.assertRaises(CheckpointError): b.complete(lease,101)
+        self.assertEqual(b.reconcile_unknown(),"COMMITTED")
+        self.assertEqual(b.commit_catch_up_page(lease,101,expected_cursor=("0009","z"),next_cursor=("0012","b"),
+            checksum=checksum("d"),row_count=1,writer_epoch=7,
+            active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2")),"IDEMPOTENT_REPLAY")
+        self.assertEqual(b.checkpoint.alias_receipt_count,4)
+        self.assertEqual(b.complete(lease,101),"COMPLETE")
+
+    def test_watermark_must_not_precede_snapshot_high_water(self):
+        b=ledger(); lease=b.claim("worker-a",100,10)
+        with self.assertRaises(CursorConflict):
+            b.set_catch_up_watermark(lease,101,("0008","z"))
+
+    def test_cursor_components_must_be_canonical_strings(self):
+        b=ledger(); lease=b.claim("worker-a",100,10)
+        with self.assertRaises(ValueError):
+            write_page(b,lease,(0,""),("0001","a"))
+
     def test_watermark_cannot_move_backwards(self):
         b=ledger(); lease=b.claim("worker-a",100,10)
         b.set_catch_up_watermark(lease,101,("0010","a"))
