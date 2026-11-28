@@ -1857,27 +1857,43 @@ async function userNodesRoute(req, env, url, ctx) {
     if (enabled === null) return fail("enabled 只能是 true/false/1/0", 400);
     const node = await loadSubscriptionNode(db, ctx, id);
     if (node) {
-      await userBatch(db, ctx, [
-        db.prepare(
-          `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by)
-           VALUES(?,?, 'enabled', ?, ?)
-           ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
-             override_value=excluded.override_value, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`,
-        ).bind(ctx.effectiveId, id, String(enabled), ctx.actorId),
-        auditStmt(db, ctx, {
-          action: "node.override.enabled", targetType: "node", targetId: id,
-          before: { enabled: node.enabled }, after: { enabled },
-        }),
-      ]);
+      try {
+        await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "subscription"),
+          db.prepare(
+            `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by)
+             VALUES(?,?, 'enabled', ?, ?)
+             ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
+               override_value=excluded.override_value, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`,
+          ).bind(ctx.effectiveId, id, String(enabled), ctx.actorId),
+          auditStmt(db, ctx, {
+            action: "node.override.enabled", targetType: "node", targetId: id,
+            before: { enabled: node.enabled }, after: { enabled },
+          }),
+        ]);
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { id, enabled } });
     }
     const manual = await loadManualNode(db, ctx, id);
     if (!manual) return fail("节点不存在", 404);
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE user_manual_nodes SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
-        .bind(enabled, id, ctx.effectiveId),
-      auditStmt(db, ctx, { action: "manual_node.enabled", targetType: "manual_node", targetId: id, before: { enabled: manual.enabled }, after: { enabled } }),
-    ]);
+    try {
+      await userBatch(db, ctx, [
+        nodeOwnerAssertStmt(db, ctx, id, "manual"),
+        db.prepare("UPDATE user_manual_nodes SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+          .bind(enabled, id, ctx.effectiveId),
+        auditStmt(db, ctx, { action: "manual_node.enabled", targetType: "manual_node", targetId: id, before: { enabled: manual.enabled }, after: { enabled } }),
+      ]);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { id, enabled } });
   }
 
