@@ -1798,26 +1798,44 @@ async function userNodesRoute(req, env, url, ctx) {
       const body = await readJson(req);
       const built = buildManualNode({ ...existing, ...body }, existing);
       if (built.error) return fail(built.error, 400);
-      await userBatch(db, ctx, [
-        db.prepare(
-          `UPDATE user_manual_nodes SET name=?, protocol=?, server=?, port=?, uri=?, tier=?, enabled=?, remark=?,
-                  updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?`,
-        ).bind(built.node.name, built.node.protocol, built.node.server, built.node.port, built.node.uri,
-          built.node.tier, built.node.enabled, built.node.remark, id, ctx.effectiveId),
-        auditStmt(db, ctx, {
-          action: "manual_node.update", targetType: "manual_node", targetId: id,
-          before: pickNode(existing), after: built.node,
-        }),
-      ]);
+      try {
+        const updated = await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "manual"),
+          db.prepare(
+            `UPDATE user_manual_nodes SET name=?, protocol=?, server=?, port=?, uri=?, tier=?, enabled=?, remark=?,
+                    updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?`,
+          ).bind(built.node.name, built.node.protocol, built.node.server, built.node.port, built.node.uri,
+            built.node.tier, built.node.enabled, built.node.remark, id, ctx.effectiveId),
+          auditStmt(db, ctx, {
+            action: "manual_node.update", targetType: "manual_node", targetId: id,
+            before: pickNode(existing), after: built.node,
+          }),
+        ]);
+        if (!updated[1]?.meta?.changes) return fail("手动节点刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { id } });
     }
     if (seg.length === 5 && method === "DELETE") {
-      await userBatch(db, ctx, [
-        db.prepare("DELETE FROM user_manual_nodes WHERE id = ? AND user_id = ?").bind(id, ctx.effectiveId),
-        db.prepare("DELETE FROM node_user_metadata WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
-        db.prepare("DELETE FROM node_group_members WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
-        auditStmt(db, ctx, { action: "manual_node.delete", targetType: "manual_node", targetId: id, before: pickNode(existing) }),
-      ]);
+      try {
+        const deleted = await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "manual"),
+          db.prepare("DELETE FROM user_manual_nodes WHERE id = ? AND user_id = ?").bind(id, ctx.effectiveId),
+          db.prepare("DELETE FROM node_user_metadata WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
+          db.prepare("DELETE FROM node_group_members WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
+          auditStmt(db, ctx, { action: "manual_node.delete", targetType: "manual_node", targetId: id, before: pickNode(existing) }),
+        ]);
+        if (!deleted[1]?.meta?.changes) return fail("手动节点刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { id } });
     }
     return fail("不支持的手动节点操作", 405);
