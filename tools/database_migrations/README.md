@@ -36,6 +36,15 @@ Claim, renew, reclaim, and completion must use conditional atomic UPDATE stateme
 
 SHA-256 is calculated from the final SQL file bytes after normalizing CRLF/CR to LF; no whitespace trimming or SQL rewriting is performed. A changed migration must use a new migration ID; checksum drift stops execution.
 
+## Schema snapshot coverage (local SQLite only)
+
+The read-only snapshot now records:
+- table columns via `PRAGMA table_info` and extended/generated-column metadata via `table_xinfo`;
+- index list metadata, ordered key columns via `index_info`, extended key/auxiliary columns via `index_xinfo`, and the stored index SQL definition;
+- foreign-key rows and full sqlite_master object definitions for tables, indexes, views, and triggers.
+
+This improves local structural diff evidence but is not a complete semantic equivalence proof. It does not read Cloudflare D1, does not imply production compatibility, and does not automatically repair drift. The local test suite is run in RC1 CI only as a regression check for this isolated verifier.
+
 ## Compatibility boundary
 
 SQLite test success does not establish Cloudflare D1 compatibility, transaction semantics, concurrency guarantees, SQL feature availability, or production schema compatibility. Before any D1 implementation, separately verify supported SQL syntax and transactional behavior against the actual D1 environment and schema, after explicit user approval. No D1 access or migration is included in this batch.
