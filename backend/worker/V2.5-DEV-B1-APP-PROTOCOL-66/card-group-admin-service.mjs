@@ -10,7 +10,7 @@ function safeGroup(group) {
     id: group.id,
     name: group.name,
     mode: group.mode,
-    enabled: group.enabled === true,
+    enabled: group.enabled === true || group.enabled === 1,
   };
 }
 
@@ -77,7 +77,7 @@ export function createCardGroupAdminService({ storage }) {
         id: state.card.id,
         status: state.card.status,
         manual_disabled: state.card.manual_disabled === 1 || state.card.manual_disabled === true,
-        is_expired: state.card.is_expired === true,
+        is_expired: state.card.is_expired === true || state.card.is_expired === 1,
       },
       groups: [...groupById.values()].map(safeGroup),
       mappings: mapped,
