@@ -68,7 +68,7 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
         values = ("a1", "req-1", "a" * 64, '{"groupIds":["g1"]}')
         self.db.execute(
             """INSERT INTO app_card_group_admin_requests
-               (admin_user_id,request_id,payload_sha256,response_json) VALUES(?,?,?,?)""", values
+               (admin_user_id,idempotency_key,payload_sha256,response_json) VALUES(?,?,?,?)""", values
         )
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(
@@ -106,7 +106,7 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
         )
         self.assertEqual(
             self.db.execute(
-                "SELECT count(*) FROM app_card_group_admin_requests WHERE request_id='req-atomic'"
+                "SELECT count(*) FROM app_card_group_admin_requests WHERE idempotency_key='req-atomic'"
             ).fetchone()[0], 0
         )
 
