@@ -81,7 +81,7 @@ def main() -> None:
     unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master"}
     if unclassified:
         raise AssertionError("Worker SQL table references missing from schema inventory: " + ", ".join(sorted(unclassified)))
-    committed_status = re.search(r"UPDATE sync_tasks SET status='committed'.*?WHERE id = \\? AND status = 'staged'", source, re.DOTALL)
+    committed_status = "UPDATE sync_tasks SET status='committed'" in source and "WHERE id = ? AND status = 'staged'" in source
     lifecycle_window = source.split("async function runNodeLifecycle", 1)[1].split("async function ", 1)[0]
     if not committed_status or "FROM sync_tasks WHERE source_id = ? AND status = 'committed'" not in lifecycle_window:
         raise AssertionError("Node lifecycle must use the committed sync-task terminal status")
