@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -29,6 +29,10 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
               if (sql.includes("FROM app_groups WHERE id = ? AND admin_user_id = ?")) return resource;
+              if (sql.includes("FROM node_groups WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"group",sort_order:0,remark:""};
+              if (sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"Manual",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1,remark:""};
+              if (sql.includes("FROM node_records WHERE id = ?")) return {id:args[0],source_id:"src1",name:"Node",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1};
+              if (sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")) return {ok:1};
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
               if (sql.includes("FROM app_cards WHERE code = ?")) return {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"};
               if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
@@ -56,6 +60,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (failCardDeleteAssertion && sql.includes("activated_at IS NULL AND used_at IS NULL AND status <> 'used'")) throw new Error("assert-failed");
               if (failAppLinkCapacityAssertion && sql.includes("COUNT(*) FROM app_links WHERE admin_user_id = ?")) throw new Error("assert-failed");
               if (failDownloadQuotaAssertion && sql.includes("COUNT(*) FROM download_links WHERE scope = ?")) throw new Error("assert-failed");
+              if (failNodeOwnerAssertion && (sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)") || sql.includes("EXISTS (SELECT 1 FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id"))) throw new Error("assert-failed");
               return {meta:{changes:1}};
             },
           };
@@ -71,7 +76,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
   };
 }
 function businessWrites(db) {
-  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards|INSERT INTO download_links|DELETE FROM download_links|INSERT INTO releases|DELETE FROM releases|INSERT INTO announcements|UPDATE announcements|DELETE FROM announcements)/i.test(x.sql.trim()));
+  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards|INSERT INTO download_links|DELETE FROM download_links|INSERT INTO releases|DELETE FROM releases|INSERT INTO announcements|UPDATE announcements|DELETE FROM announcements|INSERT INTO node_user_metadata|INSERT INTO node_overrides|DELETE FROM node_overrides)/i.test(x.sql.trim()));
 }
 async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"},
   authorization="Bearer test-session",sessionPepper="test-pepper-test-pepper-test-pepper"}={}) {
@@ -382,4 +387,47 @@ test("super announcement deletion batches existence assertion, delete and audit"
   assert.equal(res.status,200);assert.equal(json.ok,true);
   const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM announcements")));
   assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("node-group member add batches group and node ownership assertions",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/node-groups/g1/members",method:"POST",body:{node_kind:"manual",node_id:"manual123"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT OR IGNORE INTO node_group_members")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM node_groups WHERE id = ? AND user_id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")));
+});
+
+test("node-group member add rejects ownership change before inserting membership",async()=>{
+  const db=mockDb({failNodeOwnerAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/node-groups/g1/members",method:"POST",body:{node_kind:"manual",node_id:"manual123"}});
+  assert.equal(res.status,409);assert.equal(json.code,"GROUP_MEMBER_STATE_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT OR IGNORE INTO node_group_members")).length,0);
+});
+
+test("manual node metadata update rechecks node ownership in the same batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual123/metadata",method:"PUT",body:{remark:"note"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO node_user_metadata")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")));
+});
+
+test("subscription node override update rechecks source ownership in the same batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/overrides/name",method:"PUT",body:{value:"Changed"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO node_overrides")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id")));
+});
+
+test("subscription node override returns conflict when ownership changes before batch",async()=>{
+  const db=mockDb({failNodeOwnerAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/overrides/name",method:"PUT",body:{value:"Changed"}});
+  assert.equal(res.status,409);assert.equal(json.code,"NODE_OWNERSHIP_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO node_overrides")).length,0);
 });
