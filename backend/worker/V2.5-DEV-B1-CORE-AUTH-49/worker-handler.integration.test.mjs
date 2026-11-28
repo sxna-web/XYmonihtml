@@ -40,6 +40,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")) return {ok:1};
               if (sql.includes("SELECT id, role, status, display_name FROM app_users WHERE id = ?")) return {id:args[0],role:"user",status:"active",display_name:"Tester"};
               if (sql.includes("SELECT id, status FROM app_users WHERE id = ?")) return {id:args[0],status:"active"};
+              if (sql.includes("SELECT * FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source",url:"https://example.test/sub",tier:"free",enabled:1,priority:100,remark:""};
               if (sql.includes("SELECT id, name, enabled FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source",enabled:1};
               if (sql.includes("SELECT id, name FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source"};
               if (sql.includes("SELECT status FROM source_approvals WHERE source_id = ?")) return {status:"pending"};
@@ -605,5 +606,28 @@ test("manual node enabled toggle checks ownership and final UPDATE result",async
   assert.ok(batch);
   assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)")));
   assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET enabled = ?") && sql.includes("WHERE id = ? AND user_id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("source enabled mutation checks final UPDATE result in the ownership batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/sources/src1/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE subscription_sources SET enabled = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET enabled = ?") && sql.includes("source_ownership so")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("source edit mutation checks final UPDATE result in the ownership batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/sources/src1",method:"PUT",body:{name:"Source revised",url:"https://example.test/sub",tier:"free",priority:100,remark:"updated"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE subscription_sources SET name=")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET name=") && sql.includes("source_ownership so")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
