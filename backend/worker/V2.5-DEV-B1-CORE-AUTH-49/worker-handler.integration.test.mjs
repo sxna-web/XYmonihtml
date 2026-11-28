@@ -75,7 +75,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               }
               if (sql.includes("FROM app_card_group_mappings WHERE admin_user_id = ? AND group_id = ?")) return {results:cardGroupMappings};
               if (sql.includes("FROM app_entitlements") && sql.includes("device_id = ?") && sql.includes("status = 'active'")) return {results:appEntitlements};
-              if (sql.includes("FROM app_groups g")) return {results:appGroups};
+              if (sql.includes("FROM app_groups g")) return {results:appGroups.filter(g=>args.slice(0,-1).includes(g.admin_user_id))};
               if (sql.includes("FROM app_card_group_mappings m")) return {results:cardGroupMappings};
               if (sql.includes("FROM app_free_grants WHERE device_id = ?")) return {results:appFreeGrants};
               if (sql.includes("FROM app_groups") && sql.includes("mode = 'free'")) return {results:appGroups.filter(g=>g.mode==="free" && args.includes(g.admin_user_id))};
@@ -446,9 +446,9 @@ test("APP groups merge all active card entitlements and deduplicate free grants 
       {admin_user_id:"admin-b"},{admin_user_id:"admin-old"},
     ],
     cardGroupMappings:[
-      {id:"cg-a",admin_user_id:"admin-a",card_id:"card-1",group_id:"card-a",status:"active",name:"Card A",mode:"card",enabled:1},
-      {id:"cg-a2",admin_user_id:"admin-a",card_id:"card-2",group_id:"card-a",status:"active",name:"Card A",mode:"card",enabled:1},
-      {id:"cg-b",admin_user_id:"admin-b",card_id:"card-3",group_id:"card-b",status:"active",name:"Card B",mode:"card",enabled:1},
+      {id:"card-a",admin_user_id:"admin-a",card_id:"card-1",name:"Card A",mode:"card",enabled:1},
+      {id:"card-a",admin_user_id:"admin-a",card_id:"card-2",name:"Card A",mode:"card",enabled:1},
+      {id:"card-b",admin_user_id:"admin-b",card_id:"card-3",name:"Card B",mode:"card",enabled:1},
     ],
   });
   const {res,json}=await call(db,{path:"/api/app/groups?"+qs.toString(),method:"GET",sessionPepper:secret});
