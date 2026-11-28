@@ -20,6 +20,7 @@ on:
       - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/**"
       - "releases/v2.5.0-rc1/**"
       - "docs/release/**"
+      - "docs/backend/**"
       - "scripts/rc1_cron_no_source_regression.py"
       - "tools/database_migrations/**"
       - ".github/workflows/v25-rc1-convergence.yml"
