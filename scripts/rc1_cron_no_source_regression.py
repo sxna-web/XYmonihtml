@@ -98,7 +98,7 @@ def main() -> None:
         raise AssertionError("Source enabled/update/archive SQL must all carry the final owner predicate")
     if "owner_user_id: own.user_id" not in user_sources:
         raise AssertionError("Manual source sync must carry the verified owner into the sync fence")
-    if "so.user_id AS owner_user_id" not in block:
+    if "so.user_id AS owner_user_id" not in scheduled_block(source):
         raise AssertionError("Cron source selection must carry the source owner into the sync fence")
     if "so.user_id = ?" not in source.split("const FENCE_SQL", 1)[1].split("function fenceBinds", 1)[0]:
         raise AssertionError("Sync stage/commit fence must revalidate source ownership")
