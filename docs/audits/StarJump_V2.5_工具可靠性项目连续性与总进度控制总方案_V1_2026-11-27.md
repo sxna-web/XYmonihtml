@@ -1625,3 +1625,5 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - **第七十九批唯一接手卡：**核对 Batch78 CI head/run；静态审查 manifest 输入鲁棒性、重复对象、缺失索引详情、SQL/default hash 脱敏与稳定性。若无真实 schema snapshot，不生成业务数据异常 SQL 或生产 migration。
 
 - Batch78 CI 复核：PR Run 46124644301 / Job 140916448057 SUCCESS；日志明确显示 schema_manifest 13/13、database_migrations 全套 59/59 tests，最终 OK。该 CI 仅验证离线工具与本地 fixture，不证明真实 D1 schema 或生产兼容。
+
+- Batch78 负面输入审查再加固：manifest builder 对缺失 objects、缺失 index_details 和重复 schema object identity fail closed；新增 3 项测试。最新代码 head `f47b9577cdca896aef6379dcdd637429aa79eb21) 的 PR Run 46124797390 / Job 140916926570 SUCCESS；Schema Manifest 16/16、database_migrations 62/62 tests，最终 OK。之后仅追加测试报告/进度/README/连续性文档；最终文档 head 后续需以分支最新提交复核，不能把该代码 head CI 说成覆盖文档提交。
