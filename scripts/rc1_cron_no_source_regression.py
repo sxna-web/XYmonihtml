@@ -209,6 +209,12 @@ def main() -> None:
     if super_releases.count("await db.batch([") < 5 or super_releases.count("auditStmt(db, ctx") < 5:
         raise AssertionError("Super release/announcement create, toggle and delete paths must be batched and audited")
 
+    user_nodes = source.split("async function userNodesRoute", 1)[1].split("function pickNode", 1)[0]
+    if user_nodes.count('nodeOwnerAssertStmt(db, ctx, id, "manual")') < 2:
+        raise AssertionError("Manual node update and delete must both recheck ownership inside their write batches")
+    if "updated[1]?.meta?.changes" not in user_nodes or "deleted[1]?.meta?.changes" not in user_nodes:
+        raise AssertionError("Manual node update/delete must check final mutation results before reporting success")
+
     node_check(source)
     node_check(bundle)
 
