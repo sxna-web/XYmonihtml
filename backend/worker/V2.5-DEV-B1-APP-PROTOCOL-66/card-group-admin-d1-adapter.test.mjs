@@ -89,6 +89,15 @@ test("replace executes prepared D1 batch and returns only safe mapping rows",asy
   assert.equal(mappingInsert.binds[0].length, 36);
 });
 
+test("trusted direct super-admin flag reaches the final D1 assertion",async()=>{
+  const db=fakeDb();
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically({...base,isSuperAdmin:true});
+  assert.equal(r.ok,true);
+  const assertion=db.calls.find(x=>x.kind==="batch").stmts[0];
+  assert.equal(assertion.binds[0],1);
+});
+
 test("same idempotency key and same digest returns prior response without a second batch",async()=>{
   const db=fakeDb();
   const hash=await digest("c1",["g1"]);
