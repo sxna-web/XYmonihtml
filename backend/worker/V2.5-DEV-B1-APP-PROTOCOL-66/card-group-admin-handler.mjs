@@ -67,6 +67,7 @@ export function createCardGroupAdminHandler({ service, resolveSession }) {
       actorId: session.actorId,
       scope: session.scope || null,
       scopeId,
+      isSuperAdmin: session.isSuperAdmin === true,
       idempotencyKey,
       requestId: session.requestId,
       cardId,
