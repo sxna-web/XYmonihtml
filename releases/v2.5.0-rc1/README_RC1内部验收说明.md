@@ -114,3 +114,11 @@
 - RC1 workflow 在同一次 GitHub Actions checkout/commit 中构建 Worker bundle，并将该 Worker bundle、仓库内 HTML 与本 README 一起上传为同一个候选 artifact；三者由同一 workflow run/commit 绑定，不把工作区临时 Worker.js 误认为已提交源文件。
 - 发布 artifact 是 CI 生成物，必须从同一最终成功 Run 下载；不能把旧 Run 的 Worker.js 与新 HEAD 的 HTML 拼成发布包。
 - 当前仍未获得准确生产 Worker 根 URL、真实 D1 schema-only 快照，也未完成 APP 6.00.48 源码/API 调用审计。上述事项仍阻止正式生产批准。
+
+
+## 第一百零四批初始化诊断环境白名单修复
+
+- 初始化诊断按钮现仅允许 HTTPS + 精确 Staging hostname（starjump-api-staging.synahcooo.workers.dev），不再以“不是已知生产主机”作为放行条件。
+- 初始化请求改用统一 apiUrl()，空 API 地址、非 HTTPS、带子路径或非 Staging 地址均阻止请求。
+- 该保护只针对 Staging 初始化诊断；不代表正式生产 bootstrap 可用，也不替代 Worker 服务端权限验证。
+- 详见 docs/backend/StarJump_V2.5_RC1初始化诊断Staging目标白名单与失败关闭修复报告_第一百零四批_V2.5-DEV-B1-STAGING-ALLOWLIST-104_2026-11-28.md。
