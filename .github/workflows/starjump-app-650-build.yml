@@ -1,0 +1,124 @@
+name: StarJump APP 6.00.50 ARM64 Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'app/versions/6.00.50/StarJump-6.00.50-source.zip'
+      - '.github/workflows/starjump-app-650-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify and extract the version-locked source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="$GITHUB_WORKSPACE/app/versions/6.00.50/StarJump-6.00.50-source.zip"
+          test -s "$ZIP" || { echo "Missing version-locked 6.00.50 source ZIP: $ZIP" >&2; exit 1; }
+          unzip -t "$ZIP"
+          mkdir -p "$RUNNER_TEMP/starjump-source"
+          unzip -q "$ZIP" -d "$RUNNER_TEMP/starjump-source"
+          PROJECT="$RUNNER_TEMP/starjump-source/starjump_work"
+          test -f "$PROJECT/settings.gradle.kts"
+          test -f "$PROJECT/nb4a.properties"
+          grep -Fxq 'VERSION_NAME=6.00.50' "$PROJECT/nb4a.properties"
+          grep -Fxq 'VERSION_CODE=72' "$PROJECT/nb4a.properties"
+          echo "project_dir=$PROJECT" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+
+      - name: Prepare native build and Android SDK
+        shell: bash
+        working-directory: ${{ steps.source.outputs.project_dir }}
+        run: |
+          set -euo pipefail
+          chmod +x ./run ./gradlew
+          find buildScript libcore -type f -name '*.sh' -exec chmod +x {} +
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.1' 'ndk;25.0.8775105'
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          printf 'ndk.dir=%s\n' "$ANDROID_HOME/ndk/25.0.8775105" >> local.properties
+
+      - name: Restore LibCore AAR cache
+        id: libcore-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.source.outputs.project_dir }}/app/libs/libcore.aar
+          key: starjump-libcore-${{ runner.os }}-go1.25.5-650-${{ hashFiles('app/versions/6.00.50/StarJump-6.00.50-source.zip') }}
+
+      - name: Build LibCore AAR
+        if: steps.libcore-cache.outputs.cache-hit != 'true'
+        env:
+          BUILD_PLUGIN: none
+        working-directory: ${{ steps.source.outputs.project_dir }}
+        run: ./run lib core
+
+      - name: Verify LibCore AAR
+        shell: bash
+        working-directory: ${{ steps.source.outputs.project_dir }}
+        run: |
+          set -euo pipefail
+          test -s app/libs/libcore.aar
+          unzip -t app/libs/libcore.aar >/dev/null
+
+      - name: Initialize Gradle assets
+        env:
+          BUILD_PLUGIN: none
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+        working-directory: ${{ steps.source.outputs.project_dir }}
+        run: ./run init action gradle
+
+      - name: Assemble ARM64 OSS release APK
+        env:
+          BUILD_PLUGIN: none
+        working-directory: ${{ steps.source.outputs.project_dir }}
+        run: ./gradlew --no-daemon app:assembleOssRelease
+
+      - name: Verify APK metadata and checksum
+        shell: bash
+        working-directory: ${{ steps.source.outputs.project_dir }}
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk -type f -name '*arm64-v8a*.apk' -print -quit)"
+          test -n "$APK"
+          AAPT="$ANDROID_HOME/build-tools/35.0.1/aapt"
+          BADGING="$("$AAPT" dump badging "$APK")"
+          printf '%s\n' "$BADGING"
+          grep -Fq "package: name='com.xingyue.app'" <<< "$BADGING"
+          grep -Fq "versionCode='360' versionName='6.00.50'" <<< "$BADGING"
+          grep -Fq "application-label:'星跃'" <<< "$BADGING"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "$APK" "$GITHUB_WORKSPACE/dist/StarJump-6.00.50-arm64-v8a.apk"
+          (cd "$GITHUB_WORKSPACE/dist" && sha256sum StarJump-6.00.50-arm64-v8a.apk > StarJump-6.00.50-arm64-v8a.apk.sha256)
+
+      - name: Upload APK and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarJump-6.00.50-ARM64-DEV
+          path: |
+            dist/StarJump-6.00.50-arm64-v8a.apk
+            dist/StarJump-6.00.50-arm64-v8a.apk.sha256
+          if-no-files-found: error
