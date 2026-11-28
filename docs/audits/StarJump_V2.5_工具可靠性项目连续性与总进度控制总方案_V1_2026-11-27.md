@@ -1579,3 +1579,13 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - CI 最终 head `a3694adb0c83df7db57d51a655376cbd6d3ec79a`：Push `46115274952` / PR `46115278626` SUCCESS；Python SQLite 46 tests、Protocol 66 service 16/16、SQL plan 7/7，其他 regression/integration tests 通过。
 - 仍然只是候选 plan/fixture：没有真实 D1 adapter、生产 schema/migration、正式 Worker route、HTML UI 或 APK 多凭据闭环；无生产 D1/Secrets/部署/合并。
 - **第七十五批唯一接手卡：**实现隔离 D1 adapter harness：scoped reads、canonical payload SHA-256、batch 执行、duplicate requestId reread/hash compare、不同 payload 冲突、错误映射和安全投影；不注册正式 route、不创建生产 migration、不连接真实 D1。
+
+
+## 第七十五批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-D1-HARNESS-75`；报告：`docs/backend/StarJump_V2.5_APP卡密分组隔离D1适配器Harness与幂等并发恢复测试报告_第七十五批_V2.5-DEV-B1-APP-D1-HARNESS-75_2026-11-28.md`。
+- Protocol 66 新增隔离 D1 adapter harness：scoped reads、canonical SHA-256、requestId 幂等预查、D1 batch statement plan、冲突后 reread/digest compare、失败后状态分类和安全映射投影。adapter 的 `resolveAccess` 由依赖注入，未接正式 Worker。
+- Service 归一化 D1 INTEGER 布尔值，enabled=1 / is_expired=1 正确处理。
+- 测试 head `20555872b2aa126fd6e7832191232a7b4b6e7b97`：Push `46115692564` 与 PR `46115696474` SUCCESS；Protocol 66 adapter 13/13、service 17/17、SQL plan 7/7、Python SQLite 46 tests。
+- 没有真实 D1 schema、migration、正式 route、HTML UI、APK 多 entitlement 闭环；未触碰生产 D1/Secrets/部署/合并。
+- **第七十六批唯一接手卡：**正式 route 前边界加固：delegated actor/effective owner、VIP/trial/read-only/fail-closed、batch result shape、损坏幂等记录、duplicate mapping、group disable/delete race、requestId 传递；整理真实 D1 schema manifest 只读诊断字段清单。不注册 route、不创建 migration。
