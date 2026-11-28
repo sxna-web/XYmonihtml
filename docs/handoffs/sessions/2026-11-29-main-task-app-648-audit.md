@@ -80,3 +80,11 @@
 - Android Gradle/APK：未执行。
 - APP 多卡密实现：未实现。
 - D1/API/真机/生产：未测试、未部署。
+
+## 最终归档核验
+- 总进度更新 commit：ff61ef0e289f46aa8f5fa8014755f1086cdb165b；read-back SHA：0bacfa709ca4d42b36c80778ca1680afba65335b。
+- 最新接手卡更新 commit：c2991c9614f843e56d792fe22eda6edf77e9af2b；read-back SHA：f51aea4a0e5b712ec3663582a364b24970f37d66。
+- 本会话独立记录创建 commit：c1bc97364443fab1bf7415163a5d008a4e9af7ba；最终内容 read-back SHA 以本次最后提交为准。
+- 源码差距报告创建 commit：92ad7ada47961a21ff91f6f75db685b8c88b9353。
+- 已重新从 GitHub main 读取源码差距报告、独立会话记录、总进度、最新接手卡；确认核心 SHA、分支 head、测试结果和下一会话任务均存在。
+
