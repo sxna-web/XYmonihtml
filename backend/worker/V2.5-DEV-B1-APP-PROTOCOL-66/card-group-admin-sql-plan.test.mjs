@@ -40,7 +40,7 @@ test("replace plan final assertion includes active VIP, card state, owner/mode a
   assert.ok(plan.length>=7);
   const assertion=db.calls[0];
   assert.match(assertion.sql,/admin_vip_activations/);
-  assert.match(assertion.sql,/kind IN \\('formal','trial'\\)/);
+  assert.match(assertion.sql,/kind IN \('formal','trial'\)/);
   assert.match(assertion.sql,/status IN \('normal','used'\)/);
   assert.match(assertion.sql,/manual_disabled/);
   assert.match(assertion.sql,/expires_at/);
