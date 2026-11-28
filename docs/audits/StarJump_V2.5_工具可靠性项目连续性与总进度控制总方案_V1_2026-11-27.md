@@ -1559,3 +1559,13 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 测试 head `b6078a207ce036eb4f160b1e16db75da96f33a23`，Push `46113980630` 与 PR `46113985475` SUCCESS。该证据仅为隔离 SQLite 和现有 mock/integration 测试，不代表 D1 生产约束验证。
 - 没有真实 D1 schema snapshot；候选模型不是可执行生产 DDL。无管理 API/UI、D1 loader、正式 composed route、APK 多凭据闭环；未部署/未合并/未操作 Secrets。
 - **第七十三批唯一接手卡：**做管理员卡密-分组 API 的 handler/SQL adapter contract fixture，测试 owner/VIP/card status/replace semantics/audit 同批次/幂等/脱敏；不接真实 D1，不创建 migration SQL，不注册 route。
+
+
+## 第七十三批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-CARD-API-73`；报告：`docs/backend/StarJump_V2.5_APP卡密分组管理API契约与原子写入边界测试报告_第七十三批_V2.5-DEV-B1-APP-CARD-API-73_2026-11-28.md`。
+- Protocol 66 新增独立 card-group admin service/handler/test contract，CI push/PR 路径已纳入。GET/PUT 逐卡密映射、空数组 replace clear、owner scope、VIP 只读、activated used 卡密可配置、inactive/manual-disabled/expired 拒绝、card-only mode、脱敏响应。
+- Storage adapter 必须在最终 batch 重新校验 VIP/体验期权限、card 状态/过期、owner/mode/enabled，并将 mapping + audit 同批；requestId 幂等与 payload 冲突由 adapter 处理。当前尚无 D1 adapter/正式 Worker route/HTML UI。
+- 最终测试 head `02153a1c6304124f466691a75514fcff970c240c`：Push `46114516960` 和 PR `46114520394` SUCCESS；Protocol 66 15/15，Protocol 65 26/26，其他 Worker/SQLite/static/build checks passed。
+- 本批未访问生产 D1、未修改 Secrets、未部署或合并。PR #2 保持 Draft/Open/Unmerged。
+- **第七十四批唯一接手卡：**实现 D1 adapter SQL statement plan 与 isolated SQLite fixture，验证 owner/card/VIP 最终条件、mapping soft remove/restore、audit 原子性、requestId + payload digest 幂等及敏感字段不读取；真实 schema 未确认前不接入正式 Worker、不创建生产 migration。
