@@ -1416,7 +1416,7 @@ pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:10px;font-size:1
 
 <section class="card" id="loginCard">
   <div class="cardhead"><div><h2 style="font-size:20px" id="loginTitle">登录</h2><div class="subhead" id="loginHint">登录后进入管理台</div></div></div>
-  <label for="api">API 地址（Staging 用 starjump-api-staging；生产是 blackstarjump-api-dawn-1242，别混用）</label><input id="api" type="url" inputmode="url" value="https://starjump-api-staging.synahcooo.workers.dev">
+  <label for="api">API 地址（填写已核实的 Worker 根地址；不要使用 Staging 地址）</label><input id="api" type="url" inputmode="url" placeholder="https://你的正式 Worker 根地址">
   <div class="row">
     <div><label for="username">用户名</label><input id="username" autocomplete="username" autocapitalize="off"></div>
     <div><label for="password">密码</label><input id="password" type="password" autocomplete="current-password"></div>
@@ -1828,14 +1828,25 @@ const PAGE = 20;
 function setStatus(id, msg, kind='') { const el=$(id); if(!el) return; el.textContent=String(msg??''); el.className='status'+(kind?' '+kind:''); el.classList.remove('hidden'); }
 function hideStatus(id) { const el=$(id); if(el) el.classList.add('hidden'); }
 const savedApiBase = localStorage.getItem('sj-api');
-if (savedApiBase && $('api')) $('api').value = savedApiBase;
+function isKnownStagingApi(value) {
+  try { return new URL(value).hostname.toLowerCase().includes('starjump-api-staging'); }
+  catch { return false; }
+}
+// 清除旧版页面遗留的 Staging 地址，避免正式页面静默把操作发往测试环境。
+if (savedApiBase && isKnownStagingApi(savedApiBase)) localStorage.removeItem('sj-api');
+else if (savedApiBase && $('api')) $('api').value = savedApiBase;
 function apiBase() { return $('api').value.trim().replace(/\/+$/, ''); }
-$('api')?.addEventListener('change', () => localStorage.setItem('sj-api', apiBase()));
+$('api')?.addEventListener('change', () => {
+  const value = apiBase();
+  if (value) localStorage.setItem('sj-api', value);
+  else localStorage.removeItem('sj-api');
+});
 // 生产 Worker 主机名（误发到这里等于对生产操作）；staging 用 starjump-api-staging
 const PROD_HOST = 'blackstarjump-api-dawn-1242';
 function isProdTarget() { try { return new URL(apiBase()).hostname.includes(PROD_HOST); } catch { return false; } }
 function apiUrl(path) {
   const base = apiBase();
+  if (!base) throw new Error('请先填写并核实正式 Worker API 根地址');
   if (!/^https:\/\//i.test(base)) throw new Error('API 地址必须以 HTTPS 开头');
   const u = new URL(base);
   if (u.pathname && u.pathname !== '/') throw new Error('请填写 Worker 根地址，不要带子路径');
