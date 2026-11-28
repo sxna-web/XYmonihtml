@@ -180,6 +180,17 @@ def main() -> None:
     if "nodeOwnerAssertStmt(db, ctx, nodeId, kind)" not in groups or "GROUP_MEMBER_STATE_CHANGED" not in groups:
         raise AssertionError("Node-group member add must recheck both group and node ownership inside the batch")
 
+    super_route = source.split("async function superRoute", 1)[1].split("function yamlStr", 1)[0]
+    user_update = super_route.split('if (seg[2] === "users" && seg.length === 4 && method === "PUT")', 1)[1].split('if (seg[2] === "users" && seg.length === 5 && seg[4] === "overview"', 1)[0]
+    if "role = ? AND status = ?" not in user_update or "target.role, target.status" not in user_update or "USER_STATE_CHANGED" not in user_update:
+        raise AssertionError("Super user status/password mutation must compare-and-swap the target snapshot")
+    if "UPDATE user_sessions SET revoked_at" not in user_update or "auditStmt(db, ctx" not in user_update:
+        raise AssertionError("Super user state/password changes must revoke sessions and audit in the same batch")
+    if "EXISTS (SELECT 1 FROM convert_links WHERE id = ? AND group_name = ?)" not in super_route:
+        raise AssertionError("Super conversion-link regroup must recheck old group in the same batch")
+    if "EXISTS (SELECT 1 FROM convert_links WHERE id = ? AND revoked_at IS NULL)" not in super_route:
+        raise AssertionError("Super conversion-link revoke must recheck active state in the same batch")
+
     super_releases = source.split("async function superReleasesRoute", 1)[1].split("/* ────────────────────────────── APP 下载链接", 1)[0]
     if ".run()" in super_releases:
         raise AssertionError("Super release and announcement mutations must not bypass atomic batches")
