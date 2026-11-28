@@ -471,9 +471,9 @@ test("APP groups merge all active card entitlements and deduplicate free grants 
       {admin_user_id:"admin-b"},{admin_user_id:"admin-old"},
     ],
     cardGroupMappings:[
-      {id:"card-a",admin_user_id:"admin-a",card_id:"card-1",name:"Card A",mode:"card",enabled:1},
-      {id:"card-a",admin_user_id:"admin-a",card_id:"card-2",name:"Card A",mode:"card",enabled:1},
-      {id:"card-b",admin_user_id:"admin-b",card_id:"card-3",name:"Card B",mode:"card",enabled:1},
+      {id:"card-a",admin_user_id:"admin-a",card_id:"card-1",entitlement_id:"ent-1",name:"Card A",mode:"card",enabled:1},
+      {id:"card-a",admin_user_id:"admin-a",card_id:"card-2",entitlement_id:"ent-2",name:"Card A",mode:"card",enabled:1},
+      {id:"card-b",admin_user_id:"admin-b",card_id:"card-3",entitlement_id:"ent-3",name:"Card B",mode:"card",enabled:1},
     ],
   });
   const {res,json}=await call(db,{path:"/api/app/groups?"+qs.toString(),method:"GET",sessionPepper:secret});
@@ -505,8 +505,8 @@ test("one card token cannot read another admin's card groups",async()=>{
     ],
     appFreeGrants:[{admin_user_id:"admin-a"}],
     cardGroupMappings:[
-      {id:"card-group-a",admin_user_id:"admin-a",card_id:"card-a",name:"Card A",mode:"card",enabled:1},
-      {id:"card-group-b",admin_user_id:"admin-b",card_id:"card-b",name:"Card B",mode:"card",enabled:1},
+      {id:"card-group-a",admin_user_id:"admin-a",card_id:"card-a",entitlement_id:"ent-a",name:"Card A",mode:"card",enabled:1},
+      {id:"card-group-b",admin_user_id:"admin-b",card_id:"card-b",entitlement_id:"ent-b",name:"Card B",mode:"card",enabled:1},
     ],
   });
   const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token}),method:"GET",sessionPepper:secret});
