@@ -425,8 +425,10 @@ async function appEntitlementToken(secret,entitlementId,deviceId) {
 
 test("APP groups merge all active card entitlements and deduplicate free grants per admin",async()=>{
   const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
-  const token=await appEntitlementToken(secret,"ent-2",deviceId);
-  const qs=new URLSearchParams({device_id:deviceId,token});
+  const qs=new URLSearchParams({device_id:deviceId});
+  qs.append("token",await appEntitlementToken(secret,"ent-3",deviceId));
+  qs.append("token",await appEntitlementToken(secret,"ent-2",deviceId));
+  qs.append("token",await appEntitlementToken(secret,"ent-1",deviceId));
   const db=mockDb({
     cardGroupMappingTable:true,
     appEntitlements:[
@@ -465,6 +467,34 @@ test("APP groups merge all active card entitlements and deduplicate free grants 
   assert.deepEqual(cardA.card_ids,["card-1","card-2"]);
   assert.equal(groups.filter(g=>g.id==="free-a"&&g.admin_user_id==="admin-a").length,1);
 });
+test("one card token cannot read another admin's card groups",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const token=await appEntitlementToken(secret,"ent-a",deviceId);
+  const db=mockDb({
+    cardGroupMappingTable:true,
+    appEntitlements:[
+      {id:"ent-a",admin_user_id:"admin-a",card_id:"card-a",expires_at:"2099-01-01 00:00:00",status:"active"},
+      {id:"ent-b",admin_user_id:"admin-b",card_id:"card-b",expires_at:"2099-01-01 00:00:00",status:"active"},
+    ],
+    appGroups:[
+      {id:"public-a",admin_user_id:"admin-a",name:"Public A",mode:"public",enabled:1},
+      {id:"public-b",admin_user_id:"admin-b",name:"Public B",mode:"public",enabled:1},
+    ],
+    appFreeGrants:[{admin_user_id:"admin-a"}],
+    cardGroupMappings:[
+      {id:"card-group-a",admin_user_id:"admin-a",card_id:"card-a",name:"Card A",mode:"card",enabled:1},
+      {id:"card-group-b",admin_user_id:"admin-b",card_id:"card-b",name:"Card B",mode:"card",enabled:1},
+    ],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,200);
+  assert.equal(json.data.entitlements.length,1);
+  assert.deepEqual(json.data.admin_user_ids,["admin-a"]);
+  assert.ok(json.data.groups.some(g=>g.id==="card-group-a"));
+  assert.equal(json.data.groups.some(g=>g.id==="card-group-b"),false);
+  assert.equal(json.data.groups.some(g=>g.id==="public-b"),false);
+});
+
 test("APP groups retain legacy response when Protocol66 mapping table is not installed",async()=>{
   const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
   const token=await appEntitlementToken(secret,"ent-1",deviceId);
