@@ -18,21 +18,15 @@ CANDIDATE_DDL = CANDIDATE_SCHEMA_PATH.read_text(encoding="utf-8")
 def fixture():
     db = sqlite3.connect(":memory:")
     db.execute("PRAGMA foreign_keys=ON")
+    # The checked-in SQL fixture is the sole candidate DDL source. Install it
+    # before seed data so tests cannot silently shadow its parent-table schema.
+    db.executescript(CANDIDATE_DDL)
     db.executescript("""
-      CREATE TABLE app_cards (
-        id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE,
-        admin_user_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'normal'
-      );
-      CREATE TABLE app_groups (
-        id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL,
-        name TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'assigned',
-        enabled INTEGER NOT NULL DEFAULT 1
-      );
-      INSERT INTO app_cards(id,code,admin_user_id) VALUES
-        ('c1','REDEEM-SECRET-1','a1'), ('c2','REDEEM-SECRET-2','a2');
-      INSERT INTO app_groups(id,admin_user_id,name,mode) VALUES
-        ('g1','a1','Private A','card'), ('g2','a2','Private B','card'),
-        ('gf','a1','Free A','free'), ('ga','a1','Assigned A','assigned');
+      INSERT INTO app_cards(id,admin_user_id,status,manual_disabled,expires_at) VALUES
+        ('c1','a1','normal',0,NULL), ('c2','a2','normal',0,NULL);
+      INSERT INTO app_groups(id,admin_user_id,name,mode,enabled) VALUES
+        ('g1','a1','Private A','card',1), ('g2','a2','Private B','card',1),
+        ('gf','a1','Free A','free',1), ('ga','a1','Assigned A','assigned',1);
     """)
     return db
 
