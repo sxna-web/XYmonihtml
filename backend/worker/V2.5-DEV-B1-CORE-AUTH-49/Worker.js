@@ -5313,6 +5313,23 @@ async function appGroupsForDevice(req, env, url) {
 
   for (const group of legacyGroups.results || []) await addGroup(group);
 
+  // A device keeps each admin's one-time free grant even after that admin's
+  // card entitlement expires; merge these grants once per admin, independently
+  // of which other admin currently has an active card.
+  const freeGrants = await db.prepare(
+    "SELECT admin_user_id FROM app_free_grants WHERE device_id = ? ORDER BY admin_user_id",
+  ).bind(deviceId).all();
+  const freeAdminIds = [...new Set((freeGrants.results || []).map(x => x.admin_user_id).filter(Boolean))];
+  if (freeAdminIds.length) {
+    const freePlaceholders = freeAdminIds.map(() => "?").join(",");
+    const freeGroups = await db.prepare(
+      `SELECT * FROM app_groups
+        WHERE admin_user_id IN (${freePlaceholders}) AND mode = 'free' AND enabled = 1
+        ORDER BY admin_user_id, sort ASC, created_at ASC`,
+    ).bind(...freeAdminIds).all();
+    for (const group of freeGroups.results || []) await addGroup(group);
+  }
+
   let cardGroupsReady = false;
   let cardGroupsError = false;
   try {
@@ -5355,6 +5372,7 @@ async function appGroupsForDevice(req, env, url) {
       // Preserve the old singular field for clients that only understand one admin.
       admin_user_id: entitlements[0].admin_user_id,
       admin_user_ids: adminIds,
+      free_admin_user_ids: freeAdminIds,
       entitlements: entitlements.map(x => ({
         id: x.id, admin_user_id: x.admin_user_id, card_id: x.card_id,
         expires_at: x.expires_at, purge_at: x.purge_at, status: x.status,
