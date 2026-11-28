@@ -78,7 +78,7 @@ def main() -> None:
     if len(required_tables | referenced_tables) != 40:
         raise AssertionError("Read-only schema-status endpoint must cover all 40 inventory tables")
     sql_refs = set(re.findall(r"\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM)\s+[\"'`]?([A-Za-z_][A-Za-z0-9_]*)", source, re.IGNORECASE))
-    unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master"}
+    unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master", "to"}  # "UPDATE to ..." may occur in comments
     if unclassified:
         raise AssertionError("Worker SQL table references missing from schema inventory: " + ", ".join(sorted(unclassified)))
     committed_status = "UPDATE sync_tasks SET status='committed'" in source and "WHERE id = ? AND status = 'staged'" in source
