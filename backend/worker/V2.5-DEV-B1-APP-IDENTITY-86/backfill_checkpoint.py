@@ -250,17 +250,42 @@ class BackfillLedger:
         cp.catch_up_cursor = cp.snapshot_high_water
         return cp.state.value
 
-    def advance_catch_up(self, lease, now, *, expected_cursor, next_cursor,
-                         writer_epoch, active_key_set_epoch, key_versions):
+    def commit_catch_up_page(self, lease, now, *, expected_cursor, next_cursor,
+                             checksum, row_count, writer_epoch,
+                             active_key_set_epoch, key_versions,
+                             simulate_unknown_after_commit=False):
         cp = self.checkpoint
         self._assert_fence(lease, now)
         self._assert_writer_contract(writer_epoch, active_key_set_epoch, key_versions)
         if cp.state != State.CATCH_UP or cp.outcome_unknown:
             raise CheckpointError("catch-up is not writable")
         expected, nxt = _cursor(expected_cursor), _cursor(next_cursor)
+        if len(expected) != len(cp.snapshot_high_water) or len(nxt) != len(cp.snapshot_high_water):
+            raise CursorConflict("catch-up cursor shape differs from snapshot")
+        if not isinstance(checksum, str) or len(checksum) != 64 or any(c not in "0123456789abcdef" for c in checksum):
+            raise ValueError("catch-up checksum must be lowercase SHA-256 hex")
+        if not isinstance(row_count, int) or row_count < 0:
+            raise ValueError("row_count must be non-negative")
+        pid = page_identity(cp.source_snapshot_id + ":catch-up", expected, nxt, checksum)
+        receipt = PageReceipt(pid, checksum, expected, nxt, row_count,
+                              writer_epoch, active_key_set_epoch)
+        old = cp.receipts.get(pid)
+        if old is not None:
+            if old != receipt:
+                raise PageConflict("same catch-up page identity has different receipt")
+            return "IDEMPOTENT_REPLAY"
         if expected != cp.catch_up_cursor or nxt <= expected or nxt > cp.catch_up_watermark:
             raise CursorConflict("catch-up cursor must advance monotonically up to watermark")
+        # Catch-up data receipt and cursor advance are one atomic model operation.
+        cp.receipts[pid] = receipt
+        cp.alias_receipt_count += row_count
         cp.catch_up_cursor = nxt
+        if simulate_unknown_after_commit:
+            cp.outcome_unknown = True
+            cp.unknown_page_id = pid
+            cp.last_error_class = "COMMIT_OUTCOME_UNKNOWN"
+            raise OutcomeUnknown("catch-up commit outcome must be reconciled")
+        return "COMMITTED"
 
     def complete(self, lease, now):
         cp = self.checkpoint
