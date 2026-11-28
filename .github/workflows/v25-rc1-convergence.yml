@@ -1,4 +1,4 @@
-name: V2.5 RC1 Convergence Checks
+name: V2.5 RC1 Convergence Checks # rerun after stabilizing active-trial fixture
 on:
   push:
     branches:
