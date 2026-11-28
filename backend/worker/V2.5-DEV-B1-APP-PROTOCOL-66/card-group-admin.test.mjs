@@ -34,7 +34,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
       if(state.card.status!=="normal" && state.card.status!=="used" ||
         state.card.manual_disabled || state.card.is_expired) return {ok:false,code:"CARD_NOT_WRITABLE"};
       if(failAtomic)return {ok:false,code:"DB_BATCH_ABORTED"};
-      if(committedRequests.has(input.idempotencyKey))return committedRequests.get(input.requestId);
+      if(committedRequests.has(input.idempotencyKey))return committedRequests.get(input.idempotencyKey);
       const selected=state.groups.filter(g=>input.groupIds.includes(g.id));
       if(selected.length!==input.groupIds.length ||
         selected.some(g=>g.admin_user_id!==input.adminId||g.mode!=="card"||!g.enabled)) {
@@ -211,6 +211,22 @@ test("handler authenticates before calling service",async()=>{
   const response=await handler(new Request("https://example.test/api/user/app-cards/card1/groups"));
   assert.equal(response.status,401);
   assert.equal(storage.events.length,0);
+});
+
+test("handler PUT rejects a missing idempotency key before calling service",async()=>{
+  const {service,storage}=fixture();
+  const handler=createCardGroupAdminHandler({
+    service,
+    resolveSession:async()=>({effectiveId:"admin1",actorId:"admin1",requestId:"trace-req-1"}),
+  });
+  const response=await handler(new Request("https://example.test/api/user/app-cards/card1/groups",{
+    method:"PUT",headers:{"content-type":"application/json"},
+    body:JSON.stringify({groupIds:["g1"]}),
+  }));
+  const body=await response.json();
+  assert.equal(response.status,400);
+  assert.equal(body.code,"IDEMPOTENCY_KEY_REQUIRED");
+  assert.equal(storage.events.some(e=>e[0]==="atomic"),false);
 });
 
 test("handler PUT uses explicit groupIds replace contract",async()=>{
