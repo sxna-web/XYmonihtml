@@ -129,3 +129,8 @@
 - 新构建工作流：`.github/workflows/starjump-app-650-build.yml`；待 ZIP 上传后运行。它尚未执行，不得说 APK build 已通过。
 - 下一会话唯一优先任务：确认 6.00.50 ZIP 已进入目标 GitHub 路径；运行 ARM64 workflow；补 Android Room migration instrumentation/Keystore 实机测试。随后接入 `/api/app/groups`、多 token、动态分组、generation/tombstone/24h cleanup/ACK、last-known-good 和手动节点保护。
 - 未决：Staging base hostname 差异和 version API `current=60047` 参数语义未核实，禁止猜改；Staging DDL/部署须用户明确批准。
+
+### APP 6.00.50 最新复测补充
+- 再次 18/18 Python tests PASS；ZIP SHA/完整性 PASS。
+- `bash gradlew --no-daemon :app:compileOssReleaseKotlin` 被环境网络阻断：Gradle 8.10.2 wrapper 下载时 `UnknownHostException: services.gradle.org`，未进入编译阶段；ANDROID_HOME/ANDROID_SDK_ROOT 为空。
+- GitHub main 的目标 ZIP 路径仍为 404，新 workflow 未运行。先让用户上传 ZIP，再跑 Actions。不得声称 APK build 成功。
