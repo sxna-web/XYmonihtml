@@ -66,7 +66,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
                 if (activationFailure) throw new Error("activation store unavailable");
                 return {results:activations};
               }
-              if (sql.includes("sqlite_master") && /type\\s*=\\s*'table'/.test(sql)) {
+              if (sql.includes("sqlite_master") && /type\s*=\s*'table'/.test(sql)) {
                 return {results:args.map(name=>({name}))};
               }
               if (sql.startsWith("PRAGMA table_info(")) {
