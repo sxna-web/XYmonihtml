@@ -64,7 +64,7 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(rows, (1, "active", 1))
 
-    def test_duplicate_request_id_is_rejected(self):
+    def test_duplicate_idempotency_key_is_rejected(self):
         values = ("a1", "req-1", "a" * 64, '{"groupIds":["g1"]}')
         self.db.execute(
             """INSERT INTO app_card_group_admin_requests
