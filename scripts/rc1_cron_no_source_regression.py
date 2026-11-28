@@ -174,6 +174,11 @@ def main() -> None:
         raise AssertionError("Node override set/remove must recheck source ownership inside the batch")
     if "nodeOwnerAssertStmt(db, ctx, nodeId, found.kind)" not in metadata:
         raise AssertionError("Node metadata must recheck manual/subscription ownership inside the batch")
+    source_routes = source.split("async function userSourcesRoute", 1)[1].split("/* ── 用户转换分组", 1)[0]
+    if source_routes.count("changed[updateIndex]?.meta?.changes") < 2:
+        raise AssertionError("Source enable and edit must verify final UPDATE results before reporting success")
+    if "sourceOwnerFence(db, ctx, id)" not in source_routes or "SOURCE_STATE_CHANGED" not in source_routes:
+        raise AssertionError("Source mutations must retain ownership fencing and stale-state conflict handling")
     user_nodes = source.split("async function userNodesRoute", 1)[1].split("function pickNode", 1)[0]
     if "nodeOwnerAssertStmt(db, ctx, id, \"subscription\")" not in user_nodes or "nodeOwnerAssertStmt(db, ctx, id, \"manual\")" not in user_nodes:
         raise AssertionError("Node enabled toggles must recheck subscription/manual node ownership inside the batch")
