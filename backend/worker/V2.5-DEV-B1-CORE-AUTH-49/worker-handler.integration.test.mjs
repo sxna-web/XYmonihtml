@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -73,7 +73,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
                 if (schemaFailure) throw new Error("schema metadata unavailable");
                 return {results:[
                   {cid:0,name:"id",type:"TEXT",notnull:1,dflt_value:null,pk:1},
-                  {cid:1,name:"admin_user_id",type:"TEXT",notnull:1,dflt_value:null,pk:0},
+                  {cid:1,name:"admin_user_id",type:"TEXT",notnull:1,dflt_value:schemaDefault,pk:0},
                 ]};
               }
               if (sql.startsWith("PRAGMA index_list(")) {
@@ -120,8 +120,8 @@ async function call(db,{path="/api/user/app-groups",method="POST",role="user",bo
   return {res,json:await res.json()};
 }
 
-test("schema diagnostics expose APP metadata only to a direct super-admin session",async()=>{
-  const db=mockDb({role:"super_admin"});
+test("schema diagnostics expose APP metadata only to a direct super-admin session and hash defaults",async()=>{
+  const db=mockDb({role:"super_admin",schemaDefault:"'DO_NOT_ECHO_SCHEMA_DEFAULT'"});
   const {res,json}=await call(db,{path:"/api/super/schema-status",method:"GET",role:"super_admin"});
   assert.equal(res.status,200);assert.equal(json.ok,true);
   assert.equal(json.data.verification,"TABLE_NAMES_ONLY");
@@ -138,6 +138,10 @@ test("schema diagnostics expose APP metadata only to a direct super-admin sessio
     x.args.includes("app_card_group_mappings") && x.args.includes("app_card_group_admin_requests")));
   assert.equal(db.reads.some(x=>/SELECT .*response_json|SELECT .*payload_sha256/i.test(x.sql)),false);
   assert.equal(json.data.app_structure.tables[0].columns[1].name,"admin_user_id");
+  assert.equal(json.data.app_structure.tables[0].columns[1].default_present,true);
+  assert.match(json.data.app_structure.tables[0].columns[1].default_sha256,/^[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify(json).includes("DO_NOT_ECHO_SCHEMA_DEFAULT"),false);
+  assert.equal("default_value" in json.data.app_structure.tables[0].columns[1],false);
   assert.equal(json.data.app_structure.tables[0].indexes[0].columns[0].name,"admin_user_id");
   assert.equal(businessWrites(db).length,0);
   assert.equal(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(")),true);
