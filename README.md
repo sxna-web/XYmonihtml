@@ -26,3 +26,14 @@
 - `CHANGELOG.md`：项目文档与实现变更记录
 
 敏感凭证、真实订阅 URL、卡密、令牌和数据库密钥不得提交到仓库。
+
+## StarJump APP 当前开发基线
+
+**后续 APP 研发只使用 6.00.50 DEV。** 6.00.47 / 6.00.48 只读保留，不得自动选用或覆盖。
+
+- [6.00.50 版本基线与交付报告](docs/app/versions/6.00.50/APP_版本基线锁定与DEV交付报告_2026-11-29.md)
+- [6.00.50 源码包目录说明](app/versions/6.00.50/README.md)
+- [6.00.50 ARM64 构建工作流](.github/workflows/starjump-app-650-build.yml)
+- [本次独立会话记录](docs/handoffs/sessions/2026-11-29-app-650-version-lock-and-dev.md)
+
+注意：6.00.50 ZIP 已生成并交付，但尚待用户上传到 `app/versions/6.00.50/StarJump-6.00.50-source.zip`。在该文件进入仓库前，任何新会话必须先索取/上传，不得从 47/48 继续修改。
