@@ -183,10 +183,10 @@ test("adapter batch failure leaves mapping and audit unchanged",async()=>{
   assert.equal(storage.events.some(e=>e[0]==="audit"),false);
 });
 
-test("repeated request id is idempotent and emits one audit",async()=>{
+test("same client idempotency key replays across distinct trace request IDs",async()=>{
   const {service,storage}=fixture();
   const first=await service.replace({...scope,groupIds:["g1"]});
-  const second=await service.replace({...scope,groupIds:["g1"]});
+  const second=await service.replace({...scope,requestId:"trace-req-retry",groupIds:["g1"]});
   assert.equal(first.ok,true);
   assert.equal(second.ok,true);
   assert.equal(storage.events.filter(e=>e[0]==="audit").length,1);
