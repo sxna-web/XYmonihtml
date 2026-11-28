@@ -791,3 +791,62 @@ test("module Worker fetch entry blocks APP VIP denial before business route writ
   assert.equal(businessWrites(db).length,0);
   assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO app_groups")),false);
 });
+
+
+test("module Worker fetch masks public subscription D1 failures and preserves allowed Origin CORS",async()=>{
+  const db={prepare(){throw new Error("SQLITE_ERROR: PRIVATE_SCHEMA_DETAILS");}};
+  const request=new Request("https://worker.test/c/ABCDEF",{
+    method:"GET",headers:{Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.code,"INTERNAL_ERROR");
+  assert.match(body.error,/订阅服务处理失败/);
+  assert.equal(JSON.stringify(body).includes("PRIVATE_SCHEMA_DETAILS"),false);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
+
+test("module Worker fetch masks authenticated route D1 failures without exposing SQL details",async()=>{
+  const base=mockDb();
+  const db={
+    prepare(sql){
+      if(sql.includes("FROM app_groups")) throw new Error("SQLITE_ERROR: PRIVATE_SCHEMA_DETAILS");
+      return base.prepare(sql);
+    },
+    batch:base.batch.bind(base),
+  };
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Bearer test-session",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.ok,false);
+  assert.equal(JSON.stringify(body).includes("PRIVATE_SCHEMA_DETAILS"),false);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
+
+test("module Worker diagnostic mode never returns internal exception messages",async()=>{
+  const base=mockDb();
+  const db={
+    prepare(sql){
+      if(sql.includes("FROM app_groups")) throw new Error("SQLITE_ERROR: PRIVATE_SCHEMA_DETAILS");
+      return base.prepare(sql);
+    },
+    batch:base.batch.bind(base),
+  };
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Bearer test-session",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{
+    DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",
+    ADMIN_ORIGIN:"https://admin.test",DIAGNOSTICS:"1",
+  });
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.code,"INTERNAL_ERROR");
+  assert.equal(JSON.stringify(body).includes("PRIVATE_SCHEMA_DETAILS"),false);
+  assert.equal(body.detail,undefined);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
