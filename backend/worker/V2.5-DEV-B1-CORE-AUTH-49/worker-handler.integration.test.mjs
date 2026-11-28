@@ -356,7 +356,7 @@ test("super release deletion batches existence assertion, delete and audit",asyn
   const {res,json}=await call(db,{path:"/api/super/releases/rel-1",method:"DELETE"});
   assert.equal(res.status,200);assert.equal(json.ok,true);
   const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM releases")));
-  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("SELECT CASE WHEN (EXISTS (SELECT 1 FROM releases"))));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("SELECT CASE WHEN (EXISTS (SELECT 1 FROM releases")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
 
