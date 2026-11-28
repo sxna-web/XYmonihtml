@@ -73,7 +73,7 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
             self.db.execute(
                 """INSERT INTO app_card_group_admin_requests
                    (admin_user_id,request_id,payload_sha256,response_json) VALUES(?,?,?,?)""",
-                ("a1", "req-1", "b" * 64, '{"groupIds":["g2"]}"),
+                ("a1", "req-1", "b" * 64, '{"groupIds":["g2"]}'),
             )
 
     def test_failed_audit_rolls_back_mapping_and_idempotency_together(self):
