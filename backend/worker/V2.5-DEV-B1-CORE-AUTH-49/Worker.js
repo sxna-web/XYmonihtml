@@ -3718,8 +3718,8 @@ async function runNodeLifecycle(db, ctx) {
 
     // 最近 3 次成功同步的时间界：节点 last_seen 早于它 → 视为“这 3 次都没出现”
     const threshold = await db.prepare(
-      `SELECT created_at FROM sync_tasks WHERE source_id = ? AND status = 'success'
-        ORDER BY created_at DESC LIMIT 1 OFFSET 2`,
+      `SELECT created_at FROM sync_tasks WHERE source_id = ? AND status = 'committed'
+        ORDER BY committed_at DESC, created_at DESC LIMIT 1 OFFSET 2`,
     ).bind(n.source_id).first();
 
     let present = true;
