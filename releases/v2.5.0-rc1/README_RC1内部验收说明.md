@@ -28,6 +28,14 @@
 - 数据库迁移安全复核：[查看报告](../../docs/release/V2.5.0_RC1数据库迁移安全复核与暂停记录_2026-11-28.md)。
 - 这些检查是 GitHub runner 上的离线/模拟测试，不等于 Cloudflare Workers runtime、真实 D1 或 APK 联调。
 
+## 数据库静态清单（本轮更新）
+
+- 已建立 40 张表的静态证据清单：18 张历史 CREATE TABLE（A 级）+ 22 张 Worker SQL 引用基础表（B 级）。
+- 人工可读：[Worker 数据库表字段静态清单](../../docs/release/V2.5.0_RC1_Worker数据库表字段静态清单_2026-11-28.md)。
+- 机器可读：[JSON inventory](../../docs/release/V2.5.0_RC1_Worker数据库表字段静态清单_2026-11-28.json)。
+- CI 新增覆盖检查，防止 Worker SQL 引用的表名遗漏出清单。
+- 此清单仍不是生产 D1 schema snapshot；B 级表的字段定义不完整，不能直接生成建表 SQL。
+
 ## 数据库迁移状态（本轮更新）
 
 - RC1 数据库页现为只读检查；`POST /api/super/migrate` 暂时返回 `503 MIGRATION_REVIEW_REQUIRED`。
