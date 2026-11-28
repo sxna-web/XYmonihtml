@@ -120,6 +120,9 @@ def main() -> None:
     app_links = source.split("async function addAppLink", 1)[1].split("/* 超管 */", 1)[0]
     if "await userBatch(db, ctx" not in app_links or "auditStmt(db, ctx" not in app_links:
         raise AssertionError("APP link creation must share its assist-scope guard and audit batch")
+    app_cards = source.split("async function userAppCardsRoute", 1)[1].split("/* ────────────────────────────── 节点生命周期", 1)[0]
+    if app_cards.count("assertStmt(db,") < 2 or "APP_CARD_CAPACITY_CHANGED" not in app_cards:
+        raise AssertionError("APP card total/stock capacity must be asserted inside the redemption batch")
 
     node_check(source)
     node_check(bundle)
