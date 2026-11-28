@@ -282,15 +282,17 @@ def main() -> None:
         raise AssertionError("Bootstrap diagnostics must use a strict Staging hostname allowlist")
     if "if (!isStagingTarget())" not in html:
         raise AssertionError("Bootstrap diagnostics must fail closed for every non-Staging API target")
-    if "fetch(apiUrl('/api/auth/bootstrap')" not in html or "fetch(api + '/api/auth/bootstrap'" in html:
+    if "fetchWithNetworkPolicy(apiUrl('/api/auth/bootstrap')" not in html or "fetch(api + '/api/auth/bootstrap'" in html:
         raise AssertionError("Bootstrap diagnostics must use the validated HTTPS Worker root URL")
     if "fetch(base +" in html or "fetch(base+" in html:
         raise AssertionError("Every direct HTML fetch must use the validated apiUrl() root URL")
-    if "fetch(apiUrl('/api/user/app-cards/export'" not in html:
+    if "fetch(apiUrl(" in html:
+        raise AssertionError("Direct API fetches must use the shared network-policy wrapper")
+    if "const url = apiUrl('/api/user/app-cards/export'" not in html or "fetch(url, { headers: { Authorization: 'Bearer ' + token }" not in html:
         raise AssertionError("APP card export must use the validated API root URL")
-    if "fetch(apiUrl('/api/convert')" not in html or "fetch(apiUrl('/api/convert/groups" not in html:
+    if "fetchWithNetworkPolicy(apiUrl('/api/convert')" not in html or "fetchWithNetworkPolicy(apiUrl('/api/convert/groups" not in html:
         raise AssertionError("Guest conversion requests must use the validated API root URL")
-    if "fetch(apiUrl('/api/announcements?scope=web'))" not in html:
+    if "fetchWithNetworkPolicy(apiUrl('/api/announcements?scope=web'))" not in html:
         raise AssertionError("Public announcement requests must use the validated API root URL")
 
     dispatch = source.split('if (url.pathname === "/api/super/schema-status" || url.pathname === "/api/super/migrate")', 1)[1].split("if (url.pathname.startsWith", 1)[0]
