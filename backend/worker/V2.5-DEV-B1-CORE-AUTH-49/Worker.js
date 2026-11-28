@@ -4020,19 +4020,42 @@ const REQUIRED_TABLES = [
   "app_free_grants", "admin_share_codes", "releases", "announcements", "app_card_events",
 ];
 
+// 另外 22 张表来自 Worker SQL 字段引用静态清单；没有完整 CREATE TABLE 证据。
+// 这里只检查名称是否存在，不据此推断字段结构或迁移安全。
+const WORKER_REFERENCED_TABLES = [
+  "app_users", "user_sessions", "admin_user_scopes", "subscription_sources",
+  "source_ownership", "source_approvals", "subscription_sync_state", "sync_tasks",
+  "sync_task_stage", "sync_task_manifests", "node_records", "node_groups",
+  "node_group_members", "node_overrides", "node_user_metadata", "node_identity_aliases",
+  "user_manual_nodes", "source_quota", "app_settings", "admin_audit",
+  "admin_audit_events", "node_sync_logs",
+];
+
 async function migrateRoute(req, env, url, ctx) {
   const db = env.DB;
   if (url.pathname === "/api/super/schema-status" && req.method === "GET") {
+    const allTables = [...new Set([...REQUIRED_TABLES, ...WORKER_REFERENCED_TABLES])];
     const rows = await db.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_TABLES.map(() => "?").join(",")})`,
-    ).bind(...REQUIRED_TABLES).all();
+      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${allTables.map(() => "?").join(",")})`,
+    ).bind(...allTables).all();
     const have = (rows.results || []).map(r => r.name);
+    const coreHave = REQUIRED_TABLES.filter(t => have.includes(t));
+    const workerHave = WORKER_REFERENCED_TABLES.filter(t => have.includes(t));
+    const missingCore = REQUIRED_TABLES.filter(t => !have.includes(t));
+    const missingWorker = WORKER_REFERENCED_TABLES.filter(t => !have.includes(t));
     return json({
       ok: true,
       data: {
-        required_tables_present: REQUIRED_TABLES.every(t => have.includes(t)),
-        have,
-        missing: REQUIRED_TABLES.filter(t => !have.includes(t)),
+        required_tables_present: missingCore.length === 0,
+        have: coreHave,
+        missing: missingCore,
+        core_table_count: REQUIRED_TABLES.length,
+        worker_referenced_tables_present: missingWorker.length === 0,
+        worker_referenced_have: workerHave,
+        worker_referenced_missing: missingWorker,
+        worker_referenced_table_count: WORKER_REFERENCED_TABLES.length,
+        all_worker_tables_present: missingCore.length === 0 && missingWorker.length === 0,
+        total_checked_table_count: allTables.length,
         verification: "TABLE_NAMES_ONLY",
         migration_enabled: false,
       },
