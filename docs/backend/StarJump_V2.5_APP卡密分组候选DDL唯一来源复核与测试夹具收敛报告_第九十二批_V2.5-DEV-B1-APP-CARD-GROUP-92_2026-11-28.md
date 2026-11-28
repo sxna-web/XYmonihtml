@@ -42,9 +42,11 @@ Worker integration tests 已断言两表进入 metadata 观察范围，并检查
 
 本批提交触发：
 - APP Identity 86 Offline Checkpoint Contract：Run `46128269289`，已 SUCCESS。
-- V2.5 RC1 Convergence Checks：Run `46128269234`，核验时仍为 IN_PROGRESS。
+- V2.5 RC1 Convergence Checks：Run [46128269234](https://github.com/sxna-web/XYmonihtml/actions/runs/46128269234) / Job `140927625657`，SUCCESS；对应提交 `a7a533342fed93cb9a03685fa449639bb6626e4b`。
+- Job logs 确认 `test_app_card_group_mapping_candidate` 的 11 项全部通过；数据库迁移/manifest 测试 62/62，Worker regression 与 bundle/static checks 通过。
+- Artifact `StarJump-V2.5.0-RC1-candidate` ID `15257075662`，最终大小 134,218 bytes。该 artifact 是候选构建产物，不是生产部署包或真实 D1 验证。
 
-因此本报告不提前宣称完整 CI 通过。待该 Run 完成后，以对应 commit SHA 与 job logs 更新本报告和进度记录。
+本批 CI 已通过，但仅证明仓库测试、mock Worker 与隔离 SQLite fixture 通过，不代表真实 Cloudflare D1 schema 或 runtime 已验证。
 
 ## 5. 未完成与保护措施
 
