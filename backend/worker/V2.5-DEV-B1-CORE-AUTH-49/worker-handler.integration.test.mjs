@@ -27,7 +27,9 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
             async first() {
               if (sql.includes("FROM user_sessions s")) return sessionRow;
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
+              if (sql.includes("SELECT * FROM admin_user_scopes WHERE id = ?")) return {id:args[0],target_user_id:"u1",scope:"manage",revoked_at:null};
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
+              if (sql.includes("SELECT COUNT(*) AS n FROM convert_links WHERE group_name = ?")) return {n:2};
               if (sql.includes("FROM app_groups WHERE id = ? AND admin_user_id = ?")) return resource;
               if (sql.includes("FROM node_groups WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"group",sort_order:0,remark:""};
               if (sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"Manual",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1,remark:""};
@@ -447,4 +449,36 @@ test("subscription node enabled toggle rejects ownership change before writing",
   const {res,json}=await call(db,{path:"/api/user/nodes/node123/enabled",method:"PATCH",body:{enabled:false}});
   assert.equal(res.status,409);assert.equal(json.code,"NODE_OWNERSHIP_CHANGED");
   assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO node_overrides")).length,0);
+});
+
+
+test("super scope grant asserts target user in the same batch as grant and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/users/u1/scopes",method:"POST",body:{scope:"manage",reason:"support",expires_in_hours:24}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO admin_user_scopes")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM app_users WHERE id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super scope revoke batches active-scope assertion, revoke and session invalidation",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/scopes/scope-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.revoked,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE admin_user_scopes SET revoked_at")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM admin_user_scopes WHERE id = ? AND revoked_at IS NULL")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_sessions SET revoked_at")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super conversion group rename batches final existence check, update and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/convert-groups/rename",method:"POST",body:{from:"Old",to:"New"}});
+  assert.equal(res.status,200);assert.equal(json.data.links,1);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET group_name")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE group_name = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
