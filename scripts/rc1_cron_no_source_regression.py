@@ -127,8 +127,8 @@ def main() -> None:
         raise AssertionError("Table-name-only status must not expose a misleading generic ready flag")
     if "worker_referenced_tables_present:" not in migrate or "all_worker_tables_present:" not in migrate:
         raise AssertionError("Schema status must report the additional Worker SQL reference table set")
-    if "st.data.required_tables_present" not in html:
-        raise AssertionError("HTML must consume the explicit table-name-only status field")
+    if "required_tables_present" not in html:
+        raise AssertionError("HTML must consume the explicit core table-name-only status field")
     if "worker_referenced_missing" not in html or "all_worker_tables_present" not in html:
         raise AssertionError("HTML must display missing Worker-reference tables and total table-name status")
     if "api('/api/super/migrate'" in html or "RC1 暂不执行自动建表" not in html:
