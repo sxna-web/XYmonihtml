@@ -5252,9 +5252,14 @@ async function appGroupsForDevice(req, env, url) {
   if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
 
   const entitlementResult = await db.prepare(
-    `SELECT id, admin_user_id, card_id, expires_at, purge_at, status FROM app_entitlements
-      WHERE device_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
-      ORDER BY created_at DESC`,
+    `SELECT e.id, e.admin_user_id, e.card_id, e.expires_at, e.purge_at, e.status
+       FROM app_entitlements e
+       JOIN app_cards c ON c.id = e.card_id AND c.admin_user_id = e.admin_user_id
+      WHERE e.device_id = ? AND e.status = 'active'
+        AND datetime(e.expires_at) > datetime('now')
+        AND c.status = 'used' AND COALESCE(c.manual_disabled, 0) = 0
+        AND (c.expires_at IS NULL OR datetime(c.expires_at) > datetime('now'))
+      ORDER BY e.created_at DESC`,
   ).bind(deviceId).all();
   const entitlements = entitlementResult?.results || [];
 
