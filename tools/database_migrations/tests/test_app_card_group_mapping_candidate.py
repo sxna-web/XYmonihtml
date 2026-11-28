@@ -73,7 +73,7 @@ class AppCardGroupMappingCandidateTests(unittest.TestCase):
     def test_04_free_and_assigned_groups_are_not_card_groups(self):
         for group in ("gf", "ga"):
             with self.subTest(group=group):
-                with self.assertRaisesRegex(sqlite3.IntegrityError, "CARD_GROUP_SCOPE_MISMATCH"):
+                with self.assertRaisesRegex(sqlite3.IntegrityError, "CARD_GROUP_OWNER_OR_MODE_MISMATCH"):
                     self.insert(mapping_id="m-" + group, group=group)
 
     def test_05_duplicate_card_group_mapping_is_rejected(self):
