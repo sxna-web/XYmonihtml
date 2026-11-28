@@ -9,7 +9,8 @@ const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"
 
 function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
-  const writes=[];\n  const batches=[];
+  const writes=[];
+  const batches=[];
   const sessionRow={
     id:"session-1",user_id:role==="super_admin"?"root":"u1",acting_as_user_id:actingAs,
     scope_id:actingAs?"scope-1":null,expires_at:"2099-01-01 00:00:00",revoked_at:null,
