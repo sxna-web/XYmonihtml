@@ -110,7 +110,7 @@ test("activated used cards remain configurable while valid",async()=>{
 
 test("replace passes group_id values, not mapping row ids, into CAS snapshot",async()=>{
   const {service,storage}=fixture();
-  storage.state.mappings=[{id:"mapping-row-123",admin_user_id:"a1",card_id:"c1",group_id:"g1",status:"active"}];
+  storage.state.mappings=[{id:"mapping-row-123",admin_user_id:"admin1",card_id:"card1",group_id:"g1",status:"active"}];
   await service.replace({...scope,groupIds:["g1"]});
   const atomic=storage.events.find(e=>e[0]==="atomic");
   assert.deepEqual(atomic[1].expectedGroupIds,["g1"]);
