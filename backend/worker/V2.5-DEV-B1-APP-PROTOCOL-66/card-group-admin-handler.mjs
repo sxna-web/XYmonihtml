@@ -1,0 +1,63 @@
+import { createCardGroupAdminService } from "./card-group-admin-service.mjs";
+
+const HEADERS = {
+  "content-type": "application/json; charset=utf-8",
+  "cache-control": "no-store",
+  "x-content-type-options": "nosniff",
+};
+
+function reply(status, body) {
+  return new Response(JSON.stringify(body), { status, headers: HEADERS });
+}
+
+export function createCardGroupAdminHandler({ service, resolveSession }) {
+  if (!service || typeof service.get !== "function" ||
+      typeof service.replace !== "function" ||
+      typeof resolveSession !== "function") {
+    throw new TypeError("CARD_GROUP_ADMIN_HANDLER_DEPENDENCIES_REQUIRED");
+  }
+
+  return async function handle(request) {
+    const url = new URL(request.url);
+    const match = url.pathname.match(/^\/api\/user\/app-cards\/([A-Za-z0-9_-]{1,128})\/groups$/);
+    if (!match || !["GET", "PUT"].includes(request.method)) {
+      return reply(404, { ok: false, code: "NOT_FOUND" });
+    }
+    let session;
+    try { session = await resolveSession(request); }
+    catch { return reply(401, { ok: false, code: "UNAUTHENTICATED" }); }
+    if (!session || !/^[A-Za-z0-9_-]{1,128}$/.test(session.effectiveId || "") ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(session.actorId || "") ||
+        typeof session.requestId !== "string" || !session.requestId) {
+      return reply(401, { ok: false, code: "UNAUTHENTICATED" });
+    }
+
+    const cardId = match[1];
+    if (request.method === "GET") {
+      const result = await service.get({ adminId: session.effectiveId, cardId });
+      return reply(result.ok ? 200 : result.status || 403, result);
+    }
+
+    let body;
+    try {
+      const raw = await request.text();
+      if (new TextEncoder().encode(raw).byteLength > 16_384) {
+        return reply(413, { ok: false, code: "REQUEST_TOO_LARGE" });
+      }
+      body = JSON.parse(raw);
+    } catch {
+      return reply(400, { ok: false, code: "INVALID_JSON" });
+    }
+    if (!body || !Array.isArray(body.groupIds)) {
+      return reply(400, { ok: false, code: "INVALID_GROUP_IDS" });
+    }
+    const result = await service.replace({
+      adminId: session.effectiveId,
+      actorId: session.actorId,
+      requestId: session.requestId,
+      cardId,
+      groupIds: body.groupIds,
+    });
+    return reply(result.ok ? 200 : result.status || 403, result);
+  };
+}
