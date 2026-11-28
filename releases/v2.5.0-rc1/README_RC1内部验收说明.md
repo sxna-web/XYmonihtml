@@ -28,6 +28,13 @@
 - 数据库迁移安全复核：[查看报告](../../docs/release/V2.5.0_RC1数据库迁移安全复核与暂停记录_2026-11-28.md)。
 - 这些检查是 GitHub runner 上的离线/模拟测试，不等于 Cloudflare Workers runtime、真实 D1 或 APK 联调。
 
+## 本地数据库验证器回归（本轮更新）
+
+- schema snapshot 增强：列扩展元数据、索引有序列/唯一性/索引定义、外键和对象 SQL。
+- 本地 SQLite 测试套件新增索引与生成列元数据测试；当前 25 项。
+- 已纳入 RC1 CI，push Run [46097127196](https://github.com/sxna-web/XYmonihtml/actions/runs/46097127196) 与 PR Run [46097121612](https://github.com/sxna-web/XYmonihtml/actions/runs/46097121612) 均通过。
+- 该测试只验证本地临时 SQLite 工具，不连接 Cloudflare D1，不改变生产部署边界。
+
 ## 数据库静态清单（本轮更新）
 
 - 已建立 40 张表的静态证据清单：18 张历史 CREATE TABLE（A 级）+ 22 张 Worker SQL 引用基础表（B 级）。
