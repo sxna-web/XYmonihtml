@@ -85,6 +85,17 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
       .bind(adminId, idempotencyKey).first();
   }
 
+  async function hasActiveDelegatedScope({ adminId, actorId, scope, scopeId }) {
+    if (actorId === adminId) return true;
+    if (!["operate", "manage"].includes(scope) || !ID_RE.test(scopeId || "")) return false;
+    const row = await db.prepare(`SELECT id FROM admin_user_scopes
+      WHERE id = ? AND admin_user_id = ? AND target_user_id = ?
+        AND scope IN ('operate','manage') AND revoked_at IS NULL
+        AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
+      LIMIT 1`).bind(scopeId, adminId, actorId).first();
+    return !!row;
+  }
+
   function idempotentResult(adminId, cardId, record, digest) {
     if (!record) return null;
     if (record.payload_sha256 !== digest) {
@@ -176,6 +187,13 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
       const access = await accessForAdmin(adminId);
       if (!access.canRead) return { ok: false, code: "APP_CARD_READ_FORBIDDEN" };
       if (!access.canWrite) return { ok: false, code: "VIP_READ_ONLY" };
+      try {
+        if (!await hasActiveDelegatedScope({ adminId, actorId, scope, scopeId })) {
+          return { ok: false, code: "SCOPE_INSUFFICIENT" };
+        }
+      } catch {
+        return { ok: false, code: "SCOPE_CHECK_UNAVAILABLE" };
+      }
 
       let payload;
       let digest;
