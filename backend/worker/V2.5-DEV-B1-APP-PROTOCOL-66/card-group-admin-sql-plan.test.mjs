@@ -83,7 +83,7 @@ test("duplicate request is guarded by unique insert and changes assertion",()=>{
     groupIds:[],expectedGroupIds:[],mappingIds:[],
     payloadSha256:"d".repeat(64),
   });
-  assert.match(db.calls[1].sql,/ON CONFLICT\(admin_user_id, request_id\) DO NOTHING/);
+  assert.match(db.calls[1].sql,/ON CONFLICT\(admin_user_id, idempotency_key\) DO NOTHING/);
   assert.match(db.calls[2].sql,/changes\(\) = 1/);
   assert.equal(db.calls[1].binds[1], "idem-key-32345678");
   const audit = db.calls.find(x => x.sql.startsWith("INSERT INTO admin_audit_events"));
