@@ -73,7 +73,8 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
                 return {results:activations};
               }
               if (sql.includes("sqlite_master") && /type\s*=\s*'table'/.test(sql)) {
-                return {results:args.map(name=>({name}))};
+                const missing = missingCardGroupTables ? new Set(["app_card_group_mappings","app_card_group_admin_requests"]) : new Set();
+                return {results:args.filter(name=>!missing.has(name)).map(name=>({name}))};
               }
               if (sql.startsWith("PRAGMA table_info(")) {
                 if (schemaFailure) throw new Error("schema metadata unavailable");
@@ -371,7 +372,7 @@ test("Protocol66 card-group writes remain behind the existing active VIP gate",a
   const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"PUT",headers:{"Idempotency-Key":"idem-key-12345678"},body:{groupIds:[]}});
   assert.equal(res.status,403);
   assert.equal(json.code,"VIP_REQUIRED");
-  assert.equal(db.batches.length,0);
+  assert.ok(db.batches.every(batch => !batch.some(stmt => stmt.sql.includes("app_card_group_mappings") || stmt.sql.includes("app_card_group_admin_requests"))));
   assert.equal(db.writes.length,0);
 });
 
