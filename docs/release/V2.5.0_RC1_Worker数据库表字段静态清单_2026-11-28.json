@@ -14,29 +14,48 @@
     "No migration SQL is authorized by this inventory."
   ],
   "summary": {
-    "source_ddl_tables": 15,
+    "source_ddl_tables": 18,
     "worker_field_reference_tables": 22,
-    "total_distinct_tables": 37,
+    "total_distinct_tables": 40,
     "indexes": 17
   },
   "source_ddl_tables": [
     {
-      "name": "convert_links",
+      "name": "admin_app_perms",
+      "evidence": "A_SOURCE_DDL",
+      "columns": [
+        "admin_user_id",
+        "links_enabled",
+        "max_links",
+        "free_group_enabled",
+        "updated_at"
+      ],
+      "ddl": "CREATE TABLE IF NOT EXISTS admin_app_perms (\n    admin_user_id TEXT PRIMARY KEY, links_enabled INTEGER NOT NULL DEFAULT 1,\n    max_links INTEGER NOT NULL DEFAULT 1, free_group_enabled INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    },
+    {
+      "name": "admin_share_codes",
+      "evidence": "A_SOURCE_DDL",
+      "columns": [
+        "admin_user_id",
+        "code",
+        "created_at"
+      ],
+      "ddl": "CREATE TABLE IF NOT EXISTS admin_share_codes (\n    admin_user_id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    },
+    {
+      "name": "admin_vip_activations",
       "evidence": "A_SOURCE_DDL",
       "columns": [
         "id",
-        "payload",
-        "targets",
-        "group_name",
-        "owner_user_id",
-        "ip_hash",
-        "hits",
-        "created_at",
-        "last_used_at",
-        "expires_at",
-        "revoked_at"
+        "user_id",
+        "card_id",
+        "days",
+        "kind",
+        "starts_at",
+        "ends_at",
+        "created_at"
       ],
-      "ddl": "CREATE TABLE IF NOT EXISTS convert_links (\n    id TEXT PRIMARY KEY, payload TEXT NOT NULL, targets TEXT NOT NULL DEFAULT '',\n    group_name TEXT NOT NULL DEFAULT '默认分组', owner_user_id TEXT,\n    ip_hash TEXT NOT NULL DEFAULT '', hits INTEGER NOT NULL DEFAULT 0,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT,\n    expires_at TEXT NOT NULL, revoked_at TEXT)"
+      "ddl": "CREATE TABLE IF NOT EXISTS admin_vip_activations (\n    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, card_id TEXT, days INTEGER NOT NULL,\n    kind TEXT NOT NULL DEFAULT 'formal', starts_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    ends_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     },
     {
       "name": "admin_vip_cards",
@@ -55,19 +74,34 @@
       "ddl": "CREATE TABLE IF NOT EXISTS admin_vip_cards (\n    id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, days INTEGER NOT NULL,\n    status TEXT NOT NULL DEFAULT 'unused', note TEXT NOT NULL DEFAULT '',\n    created_by TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    used_by TEXT, used_at TEXT)"
     },
     {
-      "name": "admin_vip_activations",
+      "name": "announcements",
       "evidence": "A_SOURCE_DDL",
       "columns": [
         "id",
-        "user_id",
-        "card_id",
-        "days",
-        "kind",
+        "scope",
+        "title",
+        "body",
+        "level",
+        "active",
         "starts_at",
         "ends_at",
         "created_at"
       ],
-      "ddl": "CREATE TABLE IF NOT EXISTS admin_vip_activations (\n    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, card_id TEXT, days INTEGER NOT NULL,\n    kind TEXT NOT NULL DEFAULT 'formal', starts_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    ends_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+      "ddl": "CREATE TABLE IF NOT EXISTS announcements (\n    id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'web', title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',\n    level TEXT NOT NULL DEFAULT 'info', active INTEGER NOT NULL DEFAULT 1, starts_at TEXT, ends_at TEXT,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    },
+    {
+      "name": "app_card_events",
+      "evidence": "A_SOURCE_DDL",
+      "columns": [
+        "id",
+        "card_id",
+        "admin_user_id",
+        "action",
+        "detail",
+        "device_id",
+        "created_at"
+      ],
+      "ddl": "CREATE TABLE IF NOT EXISTS app_card_events (\n    id INTEGER PRIMARY KEY AUTOINCREMENT, card_id TEXT NOT NULL, admin_user_id TEXT NOT NULL,\n    action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '',\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     },
     {
       "name": "app_cards",
@@ -90,22 +124,6 @@
       "ddl": "CREATE TABLE IF NOT EXISTS app_cards (\n    id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, admin_user_id TEXT NOT NULL,\n    days INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'normal',\n    inactive_reason TEXT NOT NULL DEFAULT '', inactive_at TEXT, restored_at TEXT,\n    manual_disabled INTEGER NOT NULL DEFAULT 0, expires_at TEXT, activated_at TEXT,\n    used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     },
     {
-      "name": "node_lifecycle",
-      "evidence": "A_SOURCE_DDL",
-      "columns": [
-        "node_id",
-        "source_id",
-        "fail_streak",
-        "first_check_at",
-        "last_check_at",
-        "observation_started_at",
-        "stale_at",
-        "state",
-        "updated_at"
-      ],
-      "ddl": "CREATE TABLE IF NOT EXISTS node_lifecycle (\n    node_id TEXT PRIMARY KEY, source_id TEXT NOT NULL, fail_streak INTEGER NOT NULL DEFAULT 0,\n    first_check_at TEXT, last_check_at TEXT, observation_started_at TEXT, stale_at TEXT,\n    state TEXT NOT NULL DEFAULT 'ok', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-    },
-    {
       "name": "app_entitlements",
       "evidence": "A_SOURCE_DDL",
       "columns": [
@@ -122,28 +140,32 @@
       "ddl": "CREATE TABLE IF NOT EXISTS app_entitlements (\n    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, device_id TEXT NOT NULL, card_id TEXT NOT NULL,\n    starts_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, purge_at TEXT,\n    status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     },
     {
-      "name": "rate_limits",
+      "name": "app_free_grants",
       "evidence": "A_SOURCE_DDL",
       "columns": [
-        "bucket",
-        "count",
-        "updated_at"
+        "device_id",
+        "admin_user_id",
+        "granted_at"
       ],
-      "ddl": "CREATE TABLE IF NOT EXISTS rate_limits (\n    bucket TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0,\n    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+      "ddl": "CREATE TABLE IF NOT EXISTS app_free_grants (device_id TEXT NOT NULL, admin_user_id TEXT NOT NULL, granted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (device_id, admin_user_id))"
     },
     {
-      "name": "app_links",
+      "name": "app_group_members",
       "evidence": "A_SOURCE_DDL",
       "columns": [
-        "id",
-        "admin_user_id",
-        "title",
-        "url",
-        "sort",
-        "enabled",
-        "created_at"
+        "group_id",
+        "device_id"
       ],
-      "ddl": "CREATE TABLE IF NOT EXISTS app_links (\n    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL,\n    sort INTEGER NOT NULL DEFAULT 100, enabled INTEGER NOT NULL DEFAULT 1,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+      "ddl": "CREATE TABLE IF NOT EXISTS app_group_members (group_id TEXT NOT NULL, device_id TEXT NOT NULL, PRIMARY KEY (group_id, device_id))"
+    },
+    {
+      "name": "app_group_sources",
+      "evidence": "A_SOURCE_DDL",
+      "columns": [
+        "group_id",
+        "source_id"
+      ],
+      "ddl": "CREATE TABLE IF NOT EXISTS app_group_sources (group_id TEXT NOT NULL, source_id TEXT NOT NULL, PRIMARY KEY (group_id, source_id))"
     },
     {
       "name": "app_groups",
@@ -160,14 +182,36 @@
       "ddl": "CREATE TABLE IF NOT EXISTS app_groups (\n    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, name TEXT NOT NULL,\n    mode TEXT NOT NULL DEFAULT 'assigned', sort INTEGER NOT NULL DEFAULT 100,\n    enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     },
     {
-      "name": "admin_share_codes",
+      "name": "app_links",
       "evidence": "A_SOURCE_DDL",
       "columns": [
+        "id",
         "admin_user_id",
-        "code",
+        "title",
+        "url",
+        "sort",
+        "enabled",
         "created_at"
       ],
-      "ddl": "CREATE TABLE IF NOT EXISTS admin_share_codes (\n    admin_user_id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+      "ddl": "CREATE TABLE IF NOT EXISTS app_links (\n    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL,\n    sort INTEGER NOT NULL DEFAULT 100, enabled INTEGER NOT NULL DEFAULT 1,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    },
+    {
+      "name": "convert_links",
+      "evidence": "A_SOURCE_DDL",
+      "columns": [
+        "id",
+        "payload",
+        "targets",
+        "group_name",
+        "owner_user_id",
+        "ip_hash",
+        "hits",
+        "created_at",
+        "last_used_at",
+        "expires_at",
+        "revoked_at"
+      ],
+      "ddl": "CREATE TABLE IF NOT EXISTS convert_links (\n    id TEXT PRIMARY KEY, payload TEXT NOT NULL, targets TEXT NOT NULL DEFAULT '',\n    group_name TEXT NOT NULL DEFAULT '默认分组', owner_user_id TEXT,\n    ip_hash TEXT NOT NULL DEFAULT '', hits INTEGER NOT NULL DEFAULT 0,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT,\n    expires_at TEXT NOT NULL, revoked_at TEXT)"
     },
     {
       "name": "download_links",
@@ -185,18 +229,30 @@
       "ddl": "CREATE TABLE IF NOT EXISTS download_links (\n    id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'global', admin_user_id TEXT,\n    title TEXT NOT NULL, url TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 100,\n    enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     },
     {
-      "name": "app_card_events",
+      "name": "node_lifecycle",
       "evidence": "A_SOURCE_DDL",
       "columns": [
-        "id",
-        "card_id",
-        "admin_user_id",
-        "action",
-        "detail",
-        "device_id",
-        "created_at"
+        "node_id",
+        "source_id",
+        "fail_streak",
+        "first_check_at",
+        "last_check_at",
+        "observation_started_at",
+        "stale_at",
+        "state",
+        "updated_at"
       ],
-      "ddl": "CREATE TABLE IF NOT EXISTS app_card_events (\n    id INTEGER PRIMARY KEY AUTOINCREMENT, card_id TEXT NOT NULL, admin_user_id TEXT NOT NULL,\n    action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '',\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+      "ddl": "CREATE TABLE IF NOT EXISTS node_lifecycle (\n    node_id TEXT PRIMARY KEY, source_id TEXT NOT NULL, fail_streak INTEGER NOT NULL DEFAULT 0,\n    first_check_at TEXT, last_check_at TEXT, observation_started_at TEXT, stale_at TEXT,\n    state TEXT NOT NULL DEFAULT 'ok', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    },
+    {
+      "name": "rate_limits",
+      "evidence": "A_SOURCE_DDL",
+      "columns": [
+        "bucket",
+        "count",
+        "updated_at"
+      ],
+      "ddl": "CREATE TABLE IF NOT EXISTS rate_limits (\n    bucket TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0,\n    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     },
     {
       "name": "releases",
@@ -214,34 +270,6 @@
         "created_at"
       ],
       "ddl": "CREATE TABLE IF NOT EXISTS releases (\n    id TEXT PRIMARY KEY, platform TEXT NOT NULL DEFAULT 'android', version_code INTEGER NOT NULL,\n    version_name TEXT NOT NULL, min_version_code INTEGER NOT NULL DEFAULT 0, url TEXT NOT NULL,\n    notes TEXT NOT NULL DEFAULT '', force INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-    },
-    {
-      "name": "announcements",
-      "evidence": "A_SOURCE_DDL",
-      "columns": [
-        "id",
-        "scope",
-        "title",
-        "body",
-        "level",
-        "active",
-        "starts_at",
-        "ends_at",
-        "created_at"
-      ],
-      "ddl": "CREATE TABLE IF NOT EXISTS announcements (\n    id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'web', title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',\n    level TEXT NOT NULL DEFAULT 'info', active INTEGER NOT NULL DEFAULT 1, starts_at TEXT, ends_at TEXT,\n    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-    },
-    {
-      "name": "admin_app_perms",
-      "evidence": "A_SOURCE_DDL",
-      "columns": [
-        "admin_user_id",
-        "links_enabled",
-        "max_links",
-        "free_group_enabled",
-        "updated_at"
-      ],
-      "ddl": "CREATE TABLE IF NOT EXISTS admin_app_perms (\n    admin_user_id TEXT PRIMARY KEY, links_enabled INTEGER NOT NULL DEFAULT 1,\n    max_links INTEGER NOT NULL DEFAULT 1, free_group_enabled INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
     }
   ],
   "source_ddl_indexes": [
