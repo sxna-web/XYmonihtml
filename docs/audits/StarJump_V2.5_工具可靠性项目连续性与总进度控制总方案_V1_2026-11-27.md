@@ -1538,3 +1538,14 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - **第七十一批唯一接手卡：**先核查 schema-status 超管鉴权和 Worker build/test wiring；从官方 D1 支持范围确认只读 schema introspection；定义固定 schema manifest 与安全输出；使用 isolated SQLite + Worker integration tests 验证后再实施只读诊断；卡密 mapping migration 继续等真实 D1 schema 证据及用户授权。
 
 - 第七十批 PR CI Run `46113454480` completed/success，head `91a223d656a42e11082823e6baa6d3bf5f4b9cc8`；Worker bundle、Cron/static、SQLite verifier、auth adapter、Worker integration、APP v2 contracts 和 artifact upload 均成功。该 CI 不验证本批设计文档中的 schema introspection 或生产 D1。
+
+
+## 第七十一批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-SCHEMA-DIAG-71`；报告：`docs/backend/StarJump_V2.5_APP数据库只读结构诊断Worker与后台接入实施报告_第七十一批_V2.5-DEV-B1-APP-SCHEMA-DIAG-71_2026-11-28.md`。
+- 在 Batch 49 Worker 的既有 schema-status 上新增 7 张 APP 表的只读结构观察；保留 40 表名称检查。新增列、索引、索引列、外键、trigger/view 元数据；没有批准 schema baseline 时只报告 observed/not_verified，不给兼容性 PASS。
+- HTML 诊断已接入逐表结构信息。本人登录超管路由鉴权未放宽；非超管请求在 schema query 前拒绝。
+- Cloudflare D1 官方文档确认 table_info/index_list/index_info/foreign_key_list 等 metadata PRAGMA 和 sqlite_master 查询属于 D1 支持范围；但本批没有访问真实 D1，仍需隔离/真实目标环境验证。
+- 最终测试 head `3f4980a90ef4c81d45a63b2352b5effbf6d1ff20`：Push Run `46113685467` 与 PR Run `46113689633` 均 SUCCESS；Worker integration 62/62、auth adapter 12/12、APP suites 19/19 + 23/23 + 26/26，bundle/static/SQLite/artifact 全部通过。中间两次 CI 因测试 mock 适配/regex 断言失败，已根据真实日志修复，最终 head 双 CI 通过。
+- 仍无生产 D1 schema snapshot；卡密映射表、管理端配置 API/UI、真实 D1 adapter、正式 route 和 APK 多 entitlement 未完成。迁移保持 fail-closed；未部署、未改 Secrets、未合并。
+- **第七十二批唯一接手卡：**先让用户确认目标 D1 环境和 schema-only snapshot 获取方式；取得只含 schema metadata 的 APP 7 表快照后再建立批准的 manifest comparison；隔离验证 mapping migration 与 rollback；继续旧 mode 兼容审查。不得导出业务行/卡密/令牌，不连生产写入、不部署。
