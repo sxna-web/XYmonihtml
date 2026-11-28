@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import worker from "./Worker.js";
 
 const now = "2026-11-27T12:00:00.000Z";
-const activeTrial = [{kind:"trial",starts_at:"2026-11-20T00:00:00Z",ends_at:"2026-11-28T00:00:00Z"}];
+const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"2099-01-01T00:00:00Z"}];
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
