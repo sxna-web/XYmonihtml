@@ -2303,8 +2303,9 @@ async function superRoute(req, env, url, ctx) {
     // 防锁死：把“是否还有别的有效超管”做成 batch 内的断言，消除“先查后改”的并发窗口
     const losingSuper = target.role === "super_admin" && (role !== "super_admin" || status !== "active");
     const stmts = [
-      db.prepare("UPDATE app_users SET status=?, role=?, display_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-        .bind(status, role, s(body.display_name, 60) || target.display_name, targetId),
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ? AND role = ? AND status = ?)", [targetId, target.role, target.status]),
+      db.prepare("UPDATE app_users SET status=?, role=?, display_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=? AND status=?")
+        .bind(status, role, s(body.display_name, 60) || target.display_name, targetId, target.role, target.status),
       auditStmt(db, ctx, {
         action: "super.user.update", targetType: "user", targetId,
         before: { role: target.role, status: target.status }, after: { role, status },
@@ -2327,11 +2328,15 @@ async function superRoute(req, env, url, ctx) {
       ));
     }
     try {
-      await userBatch(db, ctx, stmts);
+      const updated = await userBatch(db, ctx, stmts);
+      if (!updated[1]?.meta?.changes) return fail("用户状态刚刚发生变化，请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
     } catch (e) {
       if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
-        await auditDenied(db, ctx, "super.user.update", "最后一个总管理员不可降级/停用", "user", targetId);
-        return fail("这是最后一个有效总管理员，不能降级或停用；请先创建另一个总管理员", 409, { code: "LAST_SUPER_ADMIN" });
+        if (losingSuper) {
+          await auditDenied(db, ctx, "super.user.update", "最后一个总管理员不可降级/停用或用户状态已变化", "user", targetId);
+          return fail("管理员状态已变化，或这是最后一个有效总管理员；请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
+        }
+        return fail("用户状态刚刚发生变化，请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
       }
       throw e;
     }
@@ -2593,13 +2598,20 @@ async function superRoute(req, env, url, ctx) {
     }
     const row = await db.prepare("SELECT id, group_name FROM convert_links WHERE id = ?").bind(id).first();
     if (!row) return fail("链接不存在", 404);
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE convert_links SET group_name = ? WHERE id = ?").bind(group, id),
-      auditStmt(db, ctx, {
-        action: "convert.regroup", targetType: "convert_link", targetId: id,
-        before: { group: row.group_name }, after: { group },
-      }),
-    ]);
+    try {
+      const changed = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM convert_links WHERE id = ? AND group_name = ?)", [id, row.group_name]),
+        db.prepare("UPDATE convert_links SET group_name = ? WHERE id = ? AND group_name = ?").bind(group, id, row.group_name),
+        auditStmt(db, ctx, {
+          action: "convert.regroup", targetType: "convert_link", targetId: id,
+          before: { group: row.group_name }, after: { group },
+        }),
+      ]);
+      if (!changed[1]?.meta?.changes) return fail("转换链接刚刚发生变化，请刷新后重试", 409);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("转换链接刚刚发生变化，请刷新后重试", 409);
+      throw e;
+    }
     return json({ ok: true, data: { id, group } });
   }
 
@@ -2662,13 +2674,20 @@ async function superRoute(req, env, url, ctx) {
     const row = await db.prepare("SELECT id, group_name, revoked_at FROM convert_links WHERE id = ?").bind(id).first();
     if (!row) return fail("链接不存在", 404);
     if (row.revoked_at) return json({ ok: true, data: { id, revoked_at: row.revoked_at, already: true } });
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE convert_links SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id),
-      auditStmt(db, ctx, {
-        action: "convert.revoke", targetType: "convert_link", targetId: id,
-        before: { revoked_at: null }, after: { revoked_at: "now" }, detail: `group=${row.group_name}`,
-      }),
-    ]);
+    try {
+      const revoked = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM convert_links WHERE id = ? AND revoked_at IS NULL)", [id]),
+        db.prepare("UPDATE convert_links SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL").bind(id),
+        auditStmt(db, ctx, {
+          action: "convert.revoke", targetType: "convert_link", targetId: id,
+          before: { revoked_at: null }, after: { revoked_at: "now" }, detail: `group=${row.group_name}`,
+        }),
+      ]);
+      if (!revoked[1]?.meta?.changes) return fail("转换链接已变化", 409);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("转换链接已变化，请刷新后重试", 409);
+      throw e;
+    }
     return json({ ok: true, data: { id, revoked: true } });
   }
 
