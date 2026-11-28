@@ -5235,40 +5235,135 @@ async function appGroupsForDevice(req, env, url) {
   const token = s(url.searchParams.get("token"), 200);
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
 
-  const ent = await db.prepare(
-    `SELECT id, admin_user_id FROM app_entitlements
+  const entitlementResult = await db.prepare(
+    `SELECT id, admin_user_id, card_id, expires_at, purge_at, status FROM app_entitlements
       WHERE device_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
-      ORDER BY created_at DESC LIMIT 1`,
-  ).bind(deviceId).first();
-  if (!ent) {
-    // 没有有效授权：只能用“激活过且仍保留”的免费分组
-    const grants = await db.prepare("SELECT admin_user_id FROM app_free_grants WHERE device_id = ?").bind(deviceId).all();
+      ORDER BY created_at DESC`,
+  ).bind(deviceId).all();
+  const entitlements = entitlementResult?.results || [];
+
+  if (!entitlements.length) {
+    // No active card entitlement: keep the existing per-admin free-grant path.
+    const grants = await db.prepare("SELECT admin_user_id FROM app_free_grants WHERE device_id = ? ORDER BY admin_user_id").bind(deviceId).all();
     if (!(grants.results || []).length) return fail("授权已过期或不存在", 403, { code: "ENTITLEMENT_EXPIRED" });
     const out = [];
-    for (const g of grants.results) {
-      const rows = await db.prepare("SELECT * FROM app_groups WHERE admin_user_id = ? AND mode = 'free' AND enabled = 1 ORDER BY sort").bind(g.admin_user_id).all();
-      for (const grp of rows.results || []) {
-        out.push({ id: grp.id, name: grp.name, mode: grp.mode, locked: true, free: true, nodes: await groupNodeList(db, grp.id) });
+    const seen = new Set();
+    for (const grant of grants.results || []) {
+      const rows = await db.prepare("SELECT * FROM app_groups WHERE admin_user_id = ? AND mode = 'free' AND enabled = 1 ORDER BY sort, created_at")
+        .bind(grant.admin_user_id).all();
+      for (const group of rows.results || []) {
+        const key = String(group.admin_user_id) + ":" + String(group.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          id: group.id, admin_user_id: group.admin_user_id,
+          name: group.name, mode: group.mode, locked: true, free: true,
+          card_ids: [], nodes: await groupNodeList(db, group.id),
+        });
       }
     }
-    return json({ ok: true, data: { entitled: false, groups: out } });
+    return json({ ok: true, data: { entitled: false, admin_user_ids: [...new Set((grants.results || []).map(x => x.admin_user_id))], card_groups_ready: false, groups: out } });
   }
-  if (!(await verifyEntToken(env, ent.id, deviceId, token))) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
 
-  const groups = await db.prepare(
+  // A token from any still-active entitlement on this device authorizes the
+  // device's complete active entitlement set. This preserves older clients
+  // that store only one token while allowing the new client to retain all tokens.
+  let tokenValid = false;
+  for (const entitlement of entitlements) {
+    if (await verifyEntToken(env, entitlement.id, deviceId, token)) {
+      tokenValid = true;
+      break;
+    }
+  }
+  if (!tokenValid) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
+
+  const adminIds = [...new Set(entitlements.map(x => x.admin_user_id).filter(Boolean))];
+  if (!adminIds.length) return fail("授权数据无效", 403, { code: "ENTITLEMENT_INVALID" });
+  const adminPlaceholders = adminIds.map(() => "?").join(",");
+  const legacyGroups = await db.prepare(
     `SELECT g.* FROM app_groups g
-      WHERE g.admin_user_id = ? AND g.enabled = 1 AND (
+      WHERE g.admin_user_id IN (${adminPlaceholders}) AND g.enabled = 1 AND (
         g.mode = 'public'
         OR g.mode = 'free'
-        OR (g.mode = 'assigned' AND EXISTS (SELECT 1 FROM app_group_members m WHERE m.group_id = g.id AND m.device_id = ?))
-      ) ORDER BY CASE g.mode WHEN 'free' THEN 2 ELSE 0 END, g.sort ASC, g.created_at ASC`,
-  ).bind(ent.admin_user_id, deviceId).all();
+        OR (g.mode = 'assigned' AND EXISTS (
+          SELECT 1 FROM app_group_members m
+           WHERE m.group_id = g.id AND m.device_id = ?
+        ))
+      )
+      ORDER BY g.admin_user_id,
+        CASE g.mode WHEN 'public' THEN 0 WHEN 'assigned' THEN 1 WHEN 'free' THEN 2 ELSE 3 END,
+        g.sort ASC, g.created_at ASC`,
+  ).bind(...adminIds, deviceId).all();
 
-  const out = [];
-  for (const grp of groups.results || []) {
-    out.push({ id: grp.id, name: grp.name, mode: grp.mode, locked: true, nodes: await groupNodeList(db, grp.id) });
+  const groupMap = new Map();
+  const addGroup = async (group, cardId = null) => {
+    const key = String(group.admin_user_id) + ":" + String(group.id);
+    let item = groupMap.get(key);
+    if (!item) {
+      item = {
+        id: group.id, admin_user_id: group.admin_user_id,
+        name: group.name, mode: group.mode, locked: true,
+        free: group.mode === "free", card_ids: [],
+        nodes: await groupNodeList(db, group.id),
+      };
+      groupMap.set(key, item);
+    }
+    if (cardId && !item.card_ids.includes(cardId)) item.card_ids.push(cardId);
+  };
+
+  for (const group of legacyGroups.results || []) await addGroup(group);
+
+  let cardGroupsReady = false;
+  let cardGroupsError = false;
+  try {
+    const table = await db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    ).bind("app_card_group_mappings").first();
+    if (table) {
+      const mapped = await db.prepare(
+        `SELECT g.*, m.card_id
+           FROM app_card_group_mappings m
+           JOIN app_entitlements e
+             ON e.card_id = m.card_id
+            AND e.admin_user_id = m.admin_user_id
+            AND e.device_id = ?
+            AND e.status = 'active'
+            AND datetime(e.expires_at) > datetime('now')
+           JOIN app_groups g
+             ON g.id = m.group_id
+            AND g.admin_user_id = m.admin_user_id
+            AND g.mode = 'card'
+            AND g.enabled = 1
+          WHERE m.status = 'active'
+          ORDER BY g.admin_user_id, g.sort ASC, g.created_at ASC, m.card_id`,
+      ).bind(deviceId).all();
+      for (const group of mapped.results || []) await addGroup(group, group.card_id);
+      cardGroupsReady = true;
+    }
+  } catch {
+    // New card-group storage is optional until its reviewed D1 migration lands.
+    // Do not break legacy public/free/assigned groups for existing APP users.
+    cardGroupsError = true;
   }
-  return json({ ok: true, data: { entitled: true, admin_user_id: ent.admin_user_id, groups: out } });
+
+  const groups = [...groupMap.values()];
+  for (const group of groups) group.card_ids.sort();
+  return json({
+    ok: true,
+    data: {
+      entitled: true,
+      // Preserve the old singular field for clients that only understand one admin.
+      admin_user_id: entitlements[0].admin_user_id,
+      admin_user_ids: adminIds,
+      entitlements: entitlements.map(x => ({
+        id: x.id, admin_user_id: x.admin_user_id, card_id: x.card_id,
+        expires_at: x.expires_at, purge_at: x.purge_at, status: x.status,
+      })),
+      card_groups_ready: cardGroupsReady,
+      ...(cardGroupsError ? { card_groups_error: true } : {}),
+      groups,
+    },
+  });
 }
 
 /* ────────────────────────────── 管理员分享编号 ────────────────────────────── */
