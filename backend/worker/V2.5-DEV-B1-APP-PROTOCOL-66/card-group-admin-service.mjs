@@ -27,7 +27,8 @@ function validCard(card, adminId) {
  * - loadCardGroupState(adminId, cardId) -> { card, groups, mappings }
  * - replaceCardGroupsAtomically(input) -> { ok:boolean, code?, mappings? }
  *
- * replaceCardGroupsAtomically MUST repeat card/group owner + state predicates
+ * replaceCardGroupsAtomically MUST repeat current admin VIP/experience access,
+ * card status/expiry/manual-disable, and card/group owner + mode predicates
  * inside the same D1 batch as mapping changes and audit INSERT. This service
  * is a contract boundary only; it does not implement a D1 adapter or route.
  */
@@ -104,7 +105,8 @@ export function createCardGroupAdminService({ storage }) {
 
       const state = await loadState(adminId, cardId);
       if (!state.ok) return state;
-      if (state.card.status !== "normal" || state.card.manual_disabled) {
+      if (!["normal", "used"].includes(state.card.status) ||
+          state.card.manual_disabled || state.card.is_expired === true) {
         return fail("CARD_NOT_WRITABLE", 409);
       }
       const allowed = new Set(state.groups.filter(g => g.enabled).map(g => g.id));
@@ -115,7 +117,8 @@ export function createCardGroupAdminService({ storage }) {
         adminId, actorId, requestId, cardId, groupIds: [...groupIds],
       });
       if (!result || result.ok !== true || !Array.isArray(result.mappings)) {
-        return fail(result?.code || "CARD_GROUP_WRITE_CONFLICT", 409);
+        const code = result?.code || "CARD_GROUP_WRITE_CONFLICT";
+        return fail(code, code === "VIP_READ_ONLY" ? 403 : 409);
       }
       const output = [];
       const seen = new Set();
