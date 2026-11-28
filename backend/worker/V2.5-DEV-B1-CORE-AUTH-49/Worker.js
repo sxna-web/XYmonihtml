@@ -4472,7 +4472,7 @@ async function groupNodeList(db, groupId) {
 async function superAppGroupsRoute(req, env, url, ctx) {
   const db = env.DB;
   const seg = url.pathname.split("/").filter(Boolean);   // api,super,app-groups,<id>,<sub>,<key>
-  const id = seg[3];
+  const id = s(seg[3], 80);
 
   if (seg.length === 3 && req.method === "GET") {
     const adminId = s(url.searchParams.get("admin"), 80);
@@ -4490,9 +4490,12 @@ async function superAppGroupsRoute(req, env, url, ctx) {
     if (!name) return fail("分组名不能为空", 400);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 只能是 public/assigned/free", 400);
     const gid = newId();
-    await db.prepare(
-      "INSERT INTO app_groups(id, admin_user_id, name, mode, sort) VALUES(?,?,?,?,?)",
-    ).bind(gid, adminId, name, mode, num(body.sort, 100)).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ?)", [adminId]),
+      db.prepare("INSERT INTO app_groups(id, admin_user_id, name, mode, sort) VALUES(?,?,?,?,?)")
+        .bind(gid, adminId, name, mode, num(body.sort, 100)),
+      auditStmt(db, ctx, { action: "app_group.super_create", targetType: "app_group", targetId: gid, after: { admin_user_id: adminId, name, mode } }),
+    ]);
     return json({ ok: true, data: { id: gid, name, mode } }, 201);
   }
   if (seg.length === 4 && req.method === "PUT") {
@@ -4503,38 +4506,73 @@ async function superAppGroupsRoute(req, env, url, ctx) {
     const mode = body.mode === undefined ? row.mode : s(body.mode, 20);
     const enabled = body.enabled === undefined ? row.enabled : (body.enabled ? 1 : 0);
     const sort = body.sort === undefined ? row.sort : num(body.sort, row.sort);
+    if (!name) return fail("分组名不能为空", 400);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 不合法", 400);
-    await db.prepare("UPDATE app_groups SET name=?, mode=?, enabled=?, sort=? WHERE id=?").bind(name, mode, enabled, sort, id).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("UPDATE app_groups SET name=?, mode=?, enabled=?, sort=? WHERE id=?")
+        .bind(name, mode, enabled, sort, id),
+      auditStmt(db, ctx, { action: "app_group.super_update", targetType: "app_group", targetId: id, before: { admin_user_id: row.admin_user_id, name: row.name, mode: row.mode, enabled: row.enabled, sort: row.sort }, after: { admin_user_id: row.admin_user_id, name, mode, enabled, sort } }),
+    ]);
     return json({ ok: true, data: { id, name, mode, enabled, sort } });
   }
   if (seg.length === 4 && req.method === "DELETE") {
-    await db.prepare("DELETE FROM app_groups WHERE id = ?").bind(id).run();
-    await db.prepare("DELETE FROM app_group_sources WHERE group_id = ?").bind(id).run();
-    await db.prepare("DELETE FROM app_group_members WHERE group_id = ?").bind(id).run();
+    const row = await db.prepare("SELECT * FROM app_groups WHERE id = ?").bind(id).first();
+    if (!row) return fail("分组不存在", 404);
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)").bind(id, id),
+      db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)").bind(id, id),
+      db.prepare("DELETE FROM app_groups WHERE id = ?").bind(id),
+      auditStmt(db, ctx, { action: "app_group.super_delete", targetType: "app_group", targetId: id, before: { admin_user_id: row.admin_user_id, name: row.name, mode: row.mode } }),
+    ]);
     return json({ ok: true, data: { id, deleted: true } });
   }
   if (seg.length === 5 && seg[4] === "sources" && req.method === "POST") {
     const body = await readJson(req);
     const sourceId = s(body.source_id, 80);
+    if (!sourceId) return fail("来源 ID 无效", 400);
     const exists = await db.prepare("SELECT 1 AS ok FROM subscription_sources WHERE id = ?").bind(sourceId).first();
     if (!exists) return fail("来源不存在", 404);
-    await db.prepare("INSERT OR IGNORE INTO app_group_sources(group_id, source_id) VALUES(?,?)").bind(id, sourceId).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?) AND EXISTS (SELECT 1 FROM subscription_sources WHERE id = ?)", [id, sourceId]),
+      db.prepare("INSERT OR IGNORE INTO app_group_sources(group_id, source_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM app_groups WHERE id = ?) AND EXISTS (SELECT 1 FROM subscription_sources WHERE id = ?)")
+        .bind(id, sourceId, id, sourceId),
+      auditStmt(db, ctx, { action: "app_group.super_source_add", targetType: "app_group", targetId: id, after: { source_id: sourceId } }),
+    ]);
     return json({ ok: true, data: { group_id: id, source_id: sourceId } }, 201);
   }
   if (seg.length === 6 && seg[4] === "sources" && req.method === "DELETE") {
-    await db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND source_id = ?").bind(id, s(seg[5], 80)).run();
-    return json({ ok: true, data: { removed: true } });
+    const sourceId = s(seg[5], 80);
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND source_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)")
+        .bind(id, sourceId, id),
+      auditStmt(db, ctx, { action: "app_group.super_source_remove", targetType: "app_group", targetId: id, before: { source_id: sourceId } }),
+    ]);
+    return json({ ok: true, data: { removed: !!deleted[1]?.meta?.changes } });
   }
   if (seg.length === 5 && seg[4] === "members" && req.method === "POST") {
     const body = await readJson(req);
     const deviceId = s(body.device_id, 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
-    await db.prepare("INSERT OR IGNORE INTO app_group_members(group_id, device_id) VALUES(?,?)").bind(id, deviceId).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("INSERT OR IGNORE INTO app_group_members(group_id, device_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM app_groups WHERE id = ?)")
+        .bind(id, deviceId, id),
+      auditStmt(db, ctx, { action: "app_group.super_member_add", targetType: "app_group", targetId: id, after: { device_id: deviceId } }),
+    ]);
     return json({ ok: true, data: { group_id: id, device_id: deviceId } }, 201);
   }
   if (seg.length === 6 && seg[4] === "members" && req.method === "DELETE") {
-    await db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND device_id = ?").bind(id, s(seg[5], 80)).run();
-    return json({ ok: true, data: { removed: true } });
+    const deviceId = s(seg[5], 80);
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND device_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)")
+        .bind(id, deviceId, id),
+      auditStmt(db, ctx, { action: "app_group.super_member_remove", targetType: "app_group", targetId: id, before: { device_id: deviceId } }),
+    ]);
+    return json({ ok: true, data: { removed: !!deleted[1]?.meta?.changes } });
   }
   return fail("接口不存在", 404);
 }
