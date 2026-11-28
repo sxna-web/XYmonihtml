@@ -1,0 +1,30 @@
+name: V2.5 Batch 1 Release Smoke
+on:
+  push:
+    branches:
+      - repair/v2.5-batch1-auth-vip-app
+    paths:
+      - "releases/v2.5-batch1/**"
+      - "scripts/release_smoke_v25.py"
+      - ".github/workflows/v25-batch1-release-smoke.yml"
+  pull_request:
+    paths:
+      - "releases/v2.5-batch1/**"
+      - "scripts/release_smoke_v25.py"
+      - ".github/workflows/v25-batch1-release-smoke.yml"
+permissions:
+  contents: read
+jobs:
+  release-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Parse Worker and inline HTML JavaScript
+        run: python scripts/release_smoke_v25.py
