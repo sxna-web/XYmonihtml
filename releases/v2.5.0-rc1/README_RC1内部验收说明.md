@@ -133,6 +133,6 @@
 
 ## 第一百零六批 Worker 迁移入口安全测试
 
-- 通过真实 module Worker.fetch 入口新增测试：超级管理员本人会话调用迁移必须返回 503 MIGRATION_REVIEW_REQUIRED 且不写数据库；legacy ADMIN_TOKEN 与 impersonation session 均被 403 拒绝。
+- 通过真实 module Worker.fetch 入口新增测试：超级管理员本人会话调用迁移必须返回 503 MIGRATION_REVIEW_REQUIRED 且不产生业务数据写入或 DDL（允许会话 last-seen/拒绝审计）；legacy ADMIN_TOKEN 与 impersonation session 均被 403 拒绝。
 - 详见 docs/backend/StarJump_V2.5_Worker数据库迁移入口真实fetch失败关闭与权限边界测试报告_第一百零六批_V2.5-DEV-B1-MIGRATION-FAIL-CLOSED-106_2026-11-28.md。
 - 测试为 Node 22 + mock D1，不代表真实 Cloudflare runtime 或生产 schema 验证。
