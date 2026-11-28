@@ -1,0 +1,25 @@
+name: APP Identity 86 Offline Checkpoint Contract
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-86/**"
+      - ".github/workflows/worker-app-identity86-review.yml"
+  pull_request:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-86/**"
+      - ".github/workflows/worker-app-identity86-review.yml"
+permissions:
+  contents: read
+jobs:
+  offline-checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run durable checkpoint reference tests
+        working-directory: backend/worker/V2.5-DEV-B1-APP-IDENTITY-86
+        run: python -m unittest -v
