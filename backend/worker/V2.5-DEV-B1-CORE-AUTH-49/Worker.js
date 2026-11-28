@@ -1876,7 +1876,7 @@ async function userNodesRoute(req, env, url, ctx) {
     const node = await loadSubscriptionNode(db, ctx, id);
     if (node) {
       try {
-        await userBatch(db, ctx, [
+        const changed = await userBatch(db, ctx, [
           nodeOwnerAssertStmt(db, ctx, id, "subscription"),
           db.prepare(
             `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by)
@@ -1889,6 +1889,7 @@ async function userNodesRoute(req, env, url, ctx) {
             before: { enabled: node.enabled }, after: { enabled },
           }),
         ]);
+        if (!changed[1]?.meta?.changes) return fail("节点启停状态刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
       } catch (e) {
         if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
           return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
@@ -1900,12 +1901,13 @@ async function userNodesRoute(req, env, url, ctx) {
     const manual = await loadManualNode(db, ctx, id);
     if (!manual) return fail("节点不存在", 404);
     try {
-      await userBatch(db, ctx, [
+      const changed = await userBatch(db, ctx, [
         nodeOwnerAssertStmt(db, ctx, id, "manual"),
         db.prepare("UPDATE user_manual_nodes SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
           .bind(enabled, id, ctx.effectiveId),
         auditStmt(db, ctx, { action: "manual_node.enabled", targetType: "manual_node", targetId: id, before: { enabled: manual.enabled }, after: { enabled } }),
       ]);
+      if (!changed[1]?.meta?.changes) return fail("手动节点启停状态刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
     } catch (e) {
       if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
         return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
