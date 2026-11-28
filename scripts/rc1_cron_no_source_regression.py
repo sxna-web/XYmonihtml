@@ -1,5 +1,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
+import json
 import re
 import subprocess
 import tempfile
@@ -8,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKER_SOURCE = ROOT / "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js"
 WORKER_BUNDLE = ROOT / "releases/v2.5.0-rc1/Worker.js"
 RELEASE_HTML = ROOT / "releases/v2.5.0-rc1/index.html"
+SCHEMA_INVENTORY = ROOT / "docs/release/V2.5.0_RC1_Worker数据库表字段静态清单_2026-11-28.json"
 
 
 class InlineScripts(HTMLParser):
@@ -59,6 +61,14 @@ def main() -> None:
     source = WORKER_SOURCE.read_text(encoding="utf-8")
     bundle = WORKER_BUNDLE.read_text(encoding="utf-8")
     html = RELEASE_HTML.read_text(encoding="utf-8")
+    inventory = json.loads(SCHEMA_INVENTORY.read_text(encoding="utf-8"))
+    known_tables = {item["name"] for item in inventory["source_ddl_tables"] + inventory["worker_referenced_base_tables"]}
+    if len(inventory["source_ddl_tables"]) != 18 or len(inventory["worker_referenced_base_tables"]) != 22 or len(known_tables) != 40:
+        raise AssertionError("Static DB inventory counts must be 18 source-DDL + 22 referenced-base = 40 distinct tables")
+    sql_refs = set(re.findall(r"\\b(?:FROM|JOIN|UPDATE|INTO|DELETE\\s+FROM)\\s+[\"'`]?([A-Za-z_][A-Za-z0-9_]*)", source, re.IGNORECASE))
+    unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master"}
+    if unclassified:
+        raise AssertionError("Worker SQL table references missing from schema inventory: " + ", ".join(sorted(unclassified)))
     node_check(source)
     node_check(bundle)
 
@@ -119,6 +129,7 @@ def main() -> None:
     print("PASS: DB migration rejects legacy/assist sessions")
     print("PASS: unsafe legacy DDL disabled; schema status is explicitly read-only")
     print("PASS: HTML DB controls cannot trigger DDL")
+    print("PASS: Worker SQL table references covered by 40-table evidence inventory")
 
 
 if __name__ == "__main__":
