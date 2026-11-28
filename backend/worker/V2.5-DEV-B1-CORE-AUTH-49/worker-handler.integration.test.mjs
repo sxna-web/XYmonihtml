@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, cardGroupMappingTable=false, cardGroupMappings=[], failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -36,6 +36,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
               if (sql.includes("SELECT * FROM admin_user_scopes WHERE id = ?")) return {id:args[0],target_user_id:"u1",scope:"manage",revoked_at:null};
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
+              if (sql.includes("sqlite_master") && sql.includes("name = ?") && args[0] === "app_card_group_mappings") return cardGroupMappingTable ? {name:"app_card_group_mappings"} : null;
               if (sql.includes("SELECT COUNT(*) AS n FROM convert_links WHERE group_name = ?")) return {n:2};
               if (sql.includes("SELECT id, group_name FROM convert_links WHERE id = ?")) return {id:args[0],group_name:"Old"};
               if (sql.includes("SELECT id, group_name, revoked_at FROM convert_links WHERE id = ?")) return {id:args[0],group_name:"Old",revoked_at:null};
@@ -72,6 +73,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
                 if (activationFailure) throw new Error("activation store unavailable");
                 return {results:activations};
               }
+              if (sql.includes("FROM app_card_group_mappings WHERE admin_user_id = ? AND group_id = ?")) return {results:cardGroupMappings};
               if (sql.includes("sqlite_master") && /type\s*=\s*'table'/.test(sql)) {
                 const missing = missingCardGroupTables ? new Set(["app_card_group_mappings","app_card_group_admin_requests"]) : new Set();
                 return {results:args.filter(name=>!missing.has(name)).map(name=>({name}))};
@@ -357,6 +359,31 @@ test("super APP link delete batches final existence check, delete and audit",asy
   assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
 });
 
+
+test("mapped card groups cannot be physically deleted before APP tombstone cleanup support",async()=>{
+  const db=mockDb({
+    activations:activeTrial,cardGroupMappingTable:true,
+    cardGroupMappings:[{status:"removed"}],
+    resource:{id:"g1",admin_user_id:"u1",name:"Card group",mode:"card",created_at:"2026-10-20 00:00:00"},
+  });
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1",method:"DELETE"});
+  assert.equal(res.status,409);
+  assert.equal(json.code,"APP_GROUP_HAS_CARD_MAPPING_HISTORY");
+  assert.equal(db.batches.length,0);
+  assert.equal(db.writes.length,0);
+});
+test("card group mode cannot change while active card mappings exist",async()=>{
+  const db=mockDb({
+    activations:activeTrial,cardGroupMappingTable:true,
+    cardGroupMappings:[{status:"active"}],
+    resource:{id:"g1",admin_user_id:"u1",name:"Card group",mode:"card",created_at:"2026-10-20 00:00:00"},
+  });
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1",method:"PUT",body:{mode:"free"}});
+  assert.equal(res.status,409);
+  assert.equal(json.code,"APP_GROUP_HAS_ACTIVE_CARD_MAPPINGS");
+  assert.equal(db.batches.length,0);
+  assert.equal(db.writes.length,0);
+});
 
 test("Protocol66 card-group route fails closed while mapping tables are absent",async()=>{
   const db=mockDb({activations:activeTrial,missingCardGroupTables:true});
