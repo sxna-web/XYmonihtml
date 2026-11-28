@@ -367,6 +367,14 @@ test("Protocol66 card-group route fails closed while mapping tables are absent",
   assert.equal(db.batches.length,0);
   assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
 });
+test("active seven-day trial admins pass the VIP gate but schema absence remains isolated",async()=>{
+  const db=mockDb({activations:activeTrial,missingCardGroupTables:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"PUT",body:{groupIds:[]}});
+  assert.equal(res.status,503);
+  assert.equal(json.code,"CARD_GROUP_SCHEMA_NOT_READY");
+  assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
+});
+
 test("Protocol66 card-group writes remain behind the existing active VIP gate",async()=>{
   const db=mockDb({activations:expiredFormal,missingCardGroupTables:true});
   const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"PUT",headers:{"Idempotency-Key":"idem-key-12345678"},body:{groupIds:[]}});
