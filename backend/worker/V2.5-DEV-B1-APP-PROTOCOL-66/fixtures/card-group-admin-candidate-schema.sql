@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS app_card_group_mappings (
   card_id TEXT NOT NULL REFERENCES app_cards(id) ON DELETE RESTRICT,
   admin_user_id TEXT NOT NULL,
   group_id TEXT NOT NULL REFERENCES app_groups(id) ON DELETE RESTRICT,
-  status TEXT NOT NULL CHECK(status IN ('active','removed')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','removed')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   removed_at TEXT,
