@@ -4331,6 +4331,124 @@ const WORKER_REFERENCED_TABLES = [
   "admin_audit_events", "node_sync_logs",
 ];
 
+const APP_SCHEMA_DIAGNOSTIC_TABLES = Object.freeze([
+  "app_cards", "app_entitlements", "app_groups", "app_group_sources",
+  "app_group_members", "app_free_grants", "app_card_events",
+]);
+
+function quoteSchemaIdentifier(value) {
+  return '"' + String(value).replace(/"/g, '""') + '"';
+}
+
+async function schemaAll(db, sql, args = []) {
+  const statement = db.prepare(sql);
+  const result = args.length ? await statement.bind(...args).all() : await statement.all();
+  return Array.isArray(result?.results) ? result.results : [];
+}
+
+/**
+ * Read-only APP schema observation. This deliberately does not compare against
+ * an assumed production schema: without an approved D1 snapshot, observation
+ * is not a pass/fail compatibility verdict.
+ */
+async function inspectAppSchema(db, existingTableNames) {
+  const tables = await Promise.all(APP_SCHEMA_DIAGNOSTIC_TABLES.map(async (table) => {
+    if (!existingTableNames.has(table)) {
+      return { name: table, present: false, verification: "MISSING" };
+    }
+    const quoted = quoteSchemaIdentifier(table);
+    const [columnsResult, indexesResult, foreignKeysResult] = await Promise.allSettled([
+      schemaAll(db, `PRAGMA table_info(${quoted})`),
+      schemaAll(db, `PRAGMA index_list(${quoted})`),
+      schemaAll(db, `PRAGMA foreign_key_list(${quoted})`),
+    ]);
+    const columnsOk = columnsResult.status === "fulfilled";
+    const indexesOk = indexesResult.status === "fulfilled";
+    const foreignKeysOk = foreignKeysResult.status === "fulfilled";
+    const indexRows = indexesOk ? indexesResult.value : [];
+    const indexDetails = await Promise.all(indexRows.map(async (index) => {
+      try {
+        const indexColumns = await schemaAll(db, `PRAGMA index_info(${quoteSchemaIdentifier(index.name)})`);
+        return {
+          name: String(index.name || ""),
+          unique: Number(index.unique) === 1,
+          origin: String(index.origin || ""),
+          partial: Number(index.partial) === 1,
+          columns: indexColumns.map(column => ({
+            sequence: Number(column.seqno),
+            name: column.name == null ? null : String(column.name),
+          })),
+          verification: "OBSERVED",
+        };
+      } catch {
+        return {
+          name: String(index.name || ""),
+          unique: Number(index.unique) === 1,
+          origin: String(index.origin || ""),
+          partial: Number(index.partial) === 1,
+          columns: null,
+          verification: "NOT_VERIFIED",
+        };
+      }
+    }));
+    const complete = columnsOk && indexesOk && foreignKeysOk &&
+      indexDetails.every(index => index.verification === "OBSERVED");
+    return {
+      name: table,
+      present: true,
+      verification: complete ? "OBSERVED_SCHEMA_ONLY" : "PARTIAL_NOT_VERIFIED",
+      columns: columnsOk ? columnsResult.value.map(column => ({
+        name: String(column.name),
+        type: String(column.type || ""),
+        not_null: Number(column.notnull) === 1,
+        default_value: column.dflt_value == null ? null : String(column.dflt_value),
+        primary_key_order: Number(column.pk || 0),
+      })) : null,
+      indexes: indexesOk ? indexDetails : null,
+      foreign_keys: foreignKeysOk ? foreignKeysResult.value.map(fk => ({
+        id: Number(fk.id),
+        sequence: Number(fk.seq),
+        table: String(fk.table || ""),
+        from: String(fk.from || ""),
+        to: String(fk.to || ""),
+        on_update: String(fk.on_update || ""),
+        on_delete: String(fk.on_delete || ""),
+        match: String(fk.match || ""),
+      })) : null,
+    };
+  }));
+  let objects = [];
+  let objectsVerification = "OBSERVED";
+  try {
+    objects = await schemaAll(
+      db,
+      `SELECT type, name, tbl_name FROM sqlite_master
+       WHERE type IN ('trigger','view') AND tbl_name IN (${APP_SCHEMA_DIAGNOSTIC_TABLES.map(() => "?").join(",")})
+       ORDER BY tbl_name, type, name`,
+      APP_SCHEMA_DIAGNOSTIC_TABLES,
+    );
+    objects = objects.map(row => ({
+      type: String(row.type || ""),
+      name: String(row.name || ""),
+      table: String(row.tbl_name || ""),
+    }));
+  } catch {
+    objectsVerification = "NOT_VERIFIED";
+  }
+  const complete = tables.every(table => table.verification === "OBSERVED_SCHEMA_ONLY" || table.verification === "MISSING") &&
+    objectsVerification === "OBSERVED";
+  return {
+    scope: "APP_SCHEMA_DIAGNOSTIC_TABLES_ONLY",
+    verification: complete ? "OBSERVED_SCHEMA_ONLY" : "PARTIAL_NOT_VERIFIED",
+    baseline_comparison: "NOT_CONFIGURED",
+    compatibility_verdict: "NOT_EVALUATED",
+    table_count: tables.length,
+    tables,
+    objects,
+    objects_verification: objectsVerification,
+  };
+}
+
 async function migrateRoute(req, env, url, ctx) {
   const db = env.DB;
   if (url.pathname === "/api/super/schema-status" && req.method === "GET") {
@@ -4339,6 +4457,7 @@ async function migrateRoute(req, env, url, ctx) {
       `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${allTables.map(() => "?").join(",")})`,
     ).bind(...allTables).all();
     const have = (rows.results || []).map(r => r.name);
+    const appStructure = await inspectAppSchema(db, new Set(have));
     const coreHave = REQUIRED_TABLES.filter(t => have.includes(t));
     const workerHave = WORKER_REFERENCED_TABLES.filter(t => have.includes(t));
     const missingCore = REQUIRED_TABLES.filter(t => !have.includes(t));
@@ -4357,6 +4476,7 @@ async function migrateRoute(req, env, url, ctx) {
         all_worker_tables_present: missingCore.length === 0 && missingWorker.length === 0,
         total_checked_table_count: allTables.length,
         verification: "TABLE_NAMES_ONLY",
+        app_structure: appStructure,
         migration_enabled: false,
       },
     });
