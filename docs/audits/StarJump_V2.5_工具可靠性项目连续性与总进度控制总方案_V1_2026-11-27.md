@@ -1508,3 +1508,19 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - GitHub Actions Run `46057517659` / Job `140703508367` completed/success；Python 3.13.18，29/29 tests passed（20 model + 9 manifest validator）；只证明离线模型和静态结构，不证明 D1/HMAC/Worker 生产行为。
 - 未连接 D1、未执行 SQL/DDL/migration、未读取 Secrets、未修改 Worker/API/HTML/APK/Room/Cloudflare、不部署。U80-01..08 等既有待确认项保持 fail closed。
 - **第八十五批接手卡：**负面复核 active-version config drift、cross-worker concurrency、owner/admin/tenant/dimension-type scope、event/dimension cleanup；审查 durable backfill cursor/high-water/writer epoch/snapshot token 契约；扩展三类 manifest metadata skeleton（owner/method/result/error/receipt/audit/assertion dependencies）但不写 SQL；核查旧 K1 可信重算来源。保持离线，不连 D1、不部署。
+
+
+---
+
+## 第八十五批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-IDENTITY-85`；报告：`docs/backend/StarJump_V2.5_HMAC作用域隔离并发配置漂移与回填检查点契约报告_第八十五批_V2.5-DEV-B1-APP-IDENTITY-85_2026-11-28.md`。
+- 负面复核修正 Batch 84 模型的两个结构缺口：alias 缺少 tenant/owner scope；event_id 未按 owner scope。Batch 85 参考模型将逻辑维度范围定义为 tenant_id + owner_id + dimension_type，事件唯一范围定义为 tenant + owner + event_id。
+- active key set/config epoch 漂移必须在原子写入边界验证；陈旧 Worker 配置必须 fail closed。进程内 RLock 不证明多 Worker/D1 并发。
+- event cleanup 与 dimension alias retirement 必须分离；事件清理不能删除仍有引用的别名。dimension alias retirement 还需独立验证零引用、retry、active-window、rollback 和 writer shutdown horizon；不得擅自设定 retention 数值。
+- Durable backfill checkpoint 字段契约：migration_id、source_snapshot_id、snapshot_consistency_token、稳定复合 snapshot_high_water、last_committed_cursor、catch_up_watermark/cursor、writer_epoch、active_key_set_epoch、expected key versions/coverage、page identity/checksum、lease_epoch/fencing_token、state/attempt/outcome_unknown/error_class。游标推进与对应页 alias 写入必须原子提交。
+- 三类 statement manifests 升级 1.1，增加 owner/method/purpose/result/error/receipt/audit/assertion dependency metadata；SQL/hash/placeholders/binds 继续空白；disposable harness 与生产 adapter 保持隔离。
+- 没有发现可信 K1 canonical-input 重算来源。旧 K1 fingerprint 不可逆，K1 retirement 继续 BLOCKED；禁止按时间或计数推测映射。
+- 新增 scoped alias 模型与测试、manifest schema/validator/tests、Batch 85 workflow。CI 通过状态须由 Actions 实际日志另行确认；不把 workflow 文件存在等同于测试通过。
+- 未连接 D1、未读取 Secrets、未执行 SQL/迁移、未修改 Worker/HTML/APK/Room/Cloudflare 配置、未部署。
+- **第八十六批唯一接手卡：**建立持久化 backfill checkpoint 离线状态机；复核 scoped alias 在 owner/tenant 迁移、软删除、重放及 dimension_type 版本演进下的唯一性；将 manifest metadata 与八方法 statement matrix、D1-001..034 对齐；继续验证 K1 重算证据；保持离线不部署。
