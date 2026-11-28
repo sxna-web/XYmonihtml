@@ -1951,20 +1951,27 @@ async function userOverridesRoute(req, env, url, ctx) {
           .bind(ctx.effectiveId, nodeId).all()).results,
       ), "subscription");
 
-      await userBatch(db, ctx, [
-        nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
-        db.prepare(
-          `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by, reason)
-           VALUES(?,?,?,?,?,?)
-           ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
-             override_value=excluded.override_value, updated_by=excluded.updated_by,
-             updated_at=CURRENT_TIMESTAMP, reason=excluded.reason`,
-        ).bind(ctx.effectiveId, nodeId, field, checked.value, ctx.actorId, s(body.reason, 200)),
-        auditStmt(db, ctx, {
-          action: "node.override.set", targetType: "node", targetId: nodeId,
-          before: { [field]: before[field] }, after: { [field]: checked.value }, reason: s(body.reason, 200),
-        }),
-      ]);
+      try {
+        await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
+          db.prepare(
+            `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by, reason)
+             VALUES(?,?,?,?,?,?)
+             ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
+               override_value=excluded.override_value, updated_by=excluded.updated_by,
+               updated_at=CURRENT_TIMESTAMP, reason=excluded.reason`,
+          ).bind(ctx.effectiveId, nodeId, field, checked.value, ctx.actorId, s(body.reason, 200)),
+          auditStmt(db, ctx, {
+            action: "node.override.set", targetType: "node", targetId: nodeId,
+            before: { [field]: before[field] }, after: { [field]: checked.value }, reason: s(body.reason, 200),
+          }),
+        ]);
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { node_id: nodeId, field, value: checked.value } });
     }
 
@@ -1973,15 +1980,22 @@ async function userOverridesRoute(req, env, url, ctx) {
         "SELECT override_value FROM node_overrides WHERE user_id = ? AND node_id = ? AND field_name = ?",
       ).bind(ctx.effectiveId, nodeId, field).first();
       if (!existing) return fail("该字段没有覆盖记录", 404);
-      await userBatch(db, ctx, [
-        nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
-        db.prepare("DELETE FROM node_overrides WHERE user_id = ? AND node_id = ? AND field_name = ?")
-          .bind(ctx.effectiveId, nodeId, field),
-        auditStmt(db, ctx, {
-          action: "node.override.remove", targetType: "node", targetId: nodeId,
-          before: { [field]: existing.override_value }, after: { [field]: node[field] },
-        }),
-      ]);
+      try {
+        await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
+          db.prepare("DELETE FROM node_overrides WHERE user_id = ? AND node_id = ? AND field_name = ?")
+            .bind(ctx.effectiveId, nodeId, field),
+          auditStmt(db, ctx, {
+            action: "node.override.remove", targetType: "node", targetId: nodeId,
+            before: { [field]: existing.override_value }, after: { [field]: node[field] },
+          }),
+        ]);
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { node_id: nodeId, field, restored: node[field] } });
     }
   }
@@ -2070,26 +2084,38 @@ async function userGroupsRoute(req, env, url, ctx) {
     const sortOrder = body.sort_order === undefined ? group.sort_order : num(body.sort_order, group.sort_order);
     if (!Number.isInteger(sortOrder)) return fail("sort_order 不合法", 400);
     const remark = body.remark === undefined ? group.remark : s(body.remark, 200);
-    const updated = await userBatch(db, ctx, [
-      assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
-      db.prepare("UPDATE node_groups SET name=?, sort_order=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?")
-        .bind(name, sortOrder, remark, groupId, ctx.effectiveId),
-      auditStmt(db, ctx, {
-        action: "group.update", targetType: "group", targetId: groupId,
-        before: { name: group.name, sort_order: group.sort_order }, after: { name, sort_order: sortOrder },
-      }),
-    ]);
+    let updated;
+    try {
+      updated = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
+        db.prepare("UPDATE node_groups SET name=?, sort_order=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?")
+          .bind(name, sortOrder, remark, groupId, ctx.effectiveId),
+        auditStmt(db, ctx, {
+          action: "group.update", targetType: "group", targetId: groupId,
+          before: { name: group.name, sort_order: group.sort_order }, after: { name, sort_order: sortOrder },
+        }),
+      ]);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("分组已变化", 409);
+      throw e;
+    }
     if (!updated[1]?.meta?.changes) return fail("分组已变化", 409);
     return json({ ok: true, data: { id: groupId } });
   }
 
   if (seg.length === 4 && method === "DELETE") {
-    const deleted = await userBatch(db, ctx, [
-      assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
-      db.prepare("DELETE FROM node_group_members WHERE group_id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
-      db.prepare("DELETE FROM node_groups WHERE id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
-      auditStmt(db, ctx, { action: "group.delete", targetType: "group", targetId: groupId, before: { name: group.name } }),
-    ]);
+    let deleted;
+    try {
+      deleted = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
+        db.prepare("DELETE FROM node_group_members WHERE group_id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
+        db.prepare("DELETE FROM node_groups WHERE id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
+        auditStmt(db, ctx, { action: "group.delete", targetType: "group", targetId: groupId, before: { name: group.name } }),
+      ]);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("分组已变化", 409);
+      throw e;
+    }
     if (!deleted[2]?.meta?.changes) return fail("分组已变化", 409);
     return json({ ok: true, data: { id: groupId } });
   }
@@ -2170,19 +2196,26 @@ async function userMetadataRoute(req, env, url, ctx) {
   const sortOrder = body.sort_order === undefined ? (prev?.sort_order ?? 0) : num(body.sort_order, NaN);
   if (!Number.isInteger(sortOrder) || Math.abs(sortOrder) > 1_000_000) return fail("sort_order 不合法", 400);
 
-  await userBatch(db, ctx, [
-    nodeOwnerAssertStmt(db, ctx, nodeId, found.kind),
-    db.prepare(
-      `INSERT INTO node_user_metadata(user_id, node_kind, node_id, remark, favorite, sort_order)
-       VALUES(?,?,?,?,?,?)
-       ON CONFLICT(user_id, node_kind, node_id) DO UPDATE SET
-         remark=excluded.remark, favorite=excluded.favorite, sort_order=excluded.sort_order, updated_at=CURRENT_TIMESTAMP`,
-    ).bind(ctx.effectiveId, found.kind, nodeId, remark, favorite, sortOrder),
-    auditStmt(db, ctx, {
-      action: "node.metadata", targetType: "node", targetId: nodeId,
-      after: { node_kind: found.kind, remark, favorite, sort_order: sortOrder },
-    }),
-  ]);
+  try {
+    await userBatch(db, ctx, [
+      nodeOwnerAssertStmt(db, ctx, nodeId, found.kind),
+      db.prepare(
+        `INSERT INTO node_user_metadata(user_id, node_kind, node_id, remark, favorite, sort_order)
+         VALUES(?,?,?,?,?,?)
+         ON CONFLICT(user_id, node_kind, node_id) DO UPDATE SET
+           remark=excluded.remark, favorite=excluded.favorite, sort_order=excluded.sort_order, updated_at=CURRENT_TIMESTAMP`,
+      ).bind(ctx.effectiveId, found.kind, nodeId, remark, favorite, sortOrder),
+      auditStmt(db, ctx, {
+        action: "node.metadata", targetType: "node", targetId: nodeId,
+        after: { node_kind: found.kind, remark, favorite, sort_order: sortOrder },
+      }),
+    ]);
+  } catch (e) {
+    if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+      return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+    }
+    throw e;
+  }
   return json({ ok: true, data: { node_id: nodeId, node_kind: found.kind, remark, favorite, sort_order: sortOrder } });
 }
 
