@@ -4281,22 +4281,31 @@ async function appRedeemRoute(req, env, url, ctx) {
 
     const throttle = await checkAppRedeemRateLimit(db, req, deviceId, env);
     if (throttle.unavailable) return fail("激活服务暂不可用，请稍后重试", 503, { code: "REDEEM_THROTTLE_UNAVAILABLE" });
-    if (!throttle.ok) {
-      return new Response(JSON.stringify({ ok: false, message: "尝试次数过多，请 15 分钟后重试", code: "REDEEM_RATE_LIMITED" }), {
-        status: 429,
-        headers: { "content-type": "application/json; charset=utf-8", "retry-after": "900", "cache-control": "no-store" },
-      });
-    }
+    if (!throttle.ok) return appRedeemRateLimited();
 
     const card = await db.prepare(
       "SELECT id, admin_user_id, days, status, manual_disabled, activated_at, used_at, expires_at FROM app_cards WHERE code = ?",
     ).bind(code).first();
-    if (!card) return fail("卡密不存在", 404);
-    if (card.manual_disabled) return fail("卡密已停用", 409, { code: "CARD_DISABLED" });
-    if (card.activated_at || card.used_at || card.status === "used") return fail("卡密已被使用", 409, { code: "CARD_USED" });
-    if (card.status !== "normal") return fail("卡密当前不可用", 409, { code: "CARD_INACTIVE" });
+    if (!card) return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密不存在", 404));
+
+    // A response may be lost after the activation transaction committed. If the
+    // same device retries this same card, return the original live entitlement
+    // and deterministic token instead of consuming the card twice or reporting
+    // a misleading "already used" error.
+    if (card.activated_at || card.used_at || card.status === "used") {
+      const existing = await db.prepare(
+        `SELECT id, expires_at, purge_at, status FROM app_entitlements
+          WHERE card_id = ? AND device_id = ? AND status = 'active'
+            AND datetime(expires_at) > datetime('now')
+          ORDER BY created_at DESC LIMIT 1`,
+      ).bind(card.id, deviceId).first();
+      if (existing) return appRedeemSuccess(db, env, existing, deviceId, card.admin_user_id, Number(card.days));
+      return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密已被使用", 409, { code: "CARD_USED" }));
+    }
+    if (card.manual_disabled) return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密已停用", 409, { code: "CARD_DISABLED" }));
+    if (card.status !== "normal") return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密当前不可用", 409, { code: "CARD_INACTIVE" }));
     const notExpired = await db.prepare("SELECT 1 AS ok WHERE datetime(?) > datetime('now')").bind(card.expires_at).first();
-    if (!notExpired) return fail("卡密已过期", 410, { code: "CARD_EXPIRED" });
+    if (!notExpired) return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密已过期", 410, { code: "CARD_EXPIRED" }));
 
     const days = Number(card.days);
     const id = newId();
@@ -4324,17 +4333,8 @@ async function appRedeemRoute(req, env, url, ctx) {
     const ent = await db.prepare(
       "SELECT id, expires_at, purge_at, status FROM app_entitlements WHERE id = ?",
     ).bind(id).first();
-    return json({
-      ok: true,
-      data: {
-        entitlement: ent,
-        admin_user_id: card.admin_user_id,
-        token,
-        days,
-        local_retention_hours: ENT_LOCAL_RETENTION_HOURS,
-        note: "到期后停止更新，本地节点保留 24 小时；新卡密属于新授权",
-      },
-    }, 201);
+    if (!ent) return fail("激活结果暂未确认，请刷新授权状态后再试", 503, { code: "REDEEM_RESULT_UNCONFIRMED" });
+    return appRedeemSuccess(db, env, ent, deviceId, card.admin_user_id, days);
   }
 
   if (url.pathname === "/api/app/status" && req.method === "GET") {
