@@ -51,3 +51,14 @@
 2. 在 GitHub Actions 运行 `.github/workflows/starjump-app-650-build.yml`，确认是否可构建；失败按日志修复，不降低测试断言。
 3. 完成 Room 6/7→8 真正 Android instrumentation migration tests、Keystore迁移/失败回滚测试。
 4. 然后接入 `/api/app/groups` 多 token、动态分组和安全同步协议；保持 Staging DDL/部署需要用户明确批准。
+
+### 2026-11-29 后续复测补充（用户要求继续）
+
+- 重新从独立 DEV 源码目录逐个执行全部 `test_*.py`：18/18 PASS。
+- 再次校验 `/mnt/data/StarJump-6.00.50-source.zip`：大小约2.3MiB；SHA-256 `1a031e2dc18115e2448b42873d9ace957dc256a2daeb050468fbb9ec3bcbe018`；`unzip -t` PASS。
+- 尝试执行 `bash gradlew --no-daemon :app:compileOssReleaseKotlin`。未进入 Gradle 项目配置/编译阶段：Gradle wrapper 需要下载 Gradle 8.10.2，但当前环境 DNS/网络不可用（`UnknownHostException: services.gradle.org`）。因此不能把它记为 Kotlin 编译失败，也不能记为编译通过。
+- 直接执行 `./gradlew` 时因 ZIP 解包后的 wrapper 执行权限不足返回 Permission denied；改用 `bash gradlew` 后到达上述 wrapper 下载网络阻断。GitHub Actions workflow 中会显式 chmod +x。
+- 当前环境 ANDROID_HOME 与 ANDROID_SDK_ROOT 均为空；无本地 Android SDK。
+- 源码包仍未上传 GitHub：确认 `app/versions/6.00.50/StarJump-6.00.50-source.zip` 当前 GitHub main 返回 404。新 workflow 未触发。不可声称 APK 已构建。
+- 本轮没有修改源码/ZIP/Worker/D1/Cloudflare/Secrets；没有部署、没有合并。
+- 下一步仍为用户上传 6.00.50 ZIP 到目标路径，再运行 GitHub Actions 构建；随后真实 Android Room instrumentation 与 Keystore 实机测试。
