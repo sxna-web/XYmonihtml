@@ -85,3 +85,14 @@ page_identity 仅对 catch-up 的 snapshot_id 拼接 ':catch-up'。阶段信息�
 ## 7. 下一批接手卡
 
 优先完成 Batch85 statement manifest 源文件定位与 SQL/bind 合同清点；并准备一份面向用户的 staging schema-only 导出步骤。不得再新增重复 checkpoint fixture。真实 schema 未取得前，不创建生产 DDL、不注册 Protocol65/66 正式路由。
+## 8. Batch85 三类 statement manifest 源文件核验补充
+
+已按候选分支实际路径逐一读取：
+- backend/worker/V2.5-DEV-B1-APP-IDENTITY-85/identity_adapter-statement-manifest.json
+- backend/worker/V2.5-DEV-B1-APP-IDENTITY-85/limiter_adapter-statement-manifest.json
+- backend/worker/V2.5-DEV-B1-APP-IDENTITY-85/disposable_harness-statement-manifest.json
+- backend/worker/V2.5-DEV-B1-APP-IDENTITY-85/statement-manifest.schema.json
+
+三份 manifest 均为 manifest_version=1.1、status=DESIGN_ONLY_NO_SQL、production_sql_permitted=false，且 statements 数组均为空。schema 仅定义未来 statement metadata 字段，并要求 sql_state=NOT_FROZEN、sql_sha256=null、placeholders=[]、binds=[]。因此目前不存在可冻结的 statement_id、SQL 文本、placeholder 顺序或 bind contract；不能把 schema 字段定义误认为已实现 SQL。
+
+同时读取 Batch70 的 D1-STATEMENT-CONTRACT.md：其中列出八种逻辑方法及示例 SQL，但文档明确标注 implementation specification only，表名/列名为 logical design names，不是已验证生产标识。该文档没有提供可直接对应三类 manifest 的冻结 D1-001..034 statement IDs。故 D1-001..034 映射继续 BLOCKED；不得从 Batch70 示例 SQL 自动填充 Batch85 manifest。
