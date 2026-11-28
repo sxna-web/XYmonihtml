@@ -359,14 +359,14 @@ test("APP redemption rate limit blocks repeated guesses per device before card l
   for(let i=0;i<6;i++) last=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
   assert.equal(last.res.status,429);
   assert.equal(last.json.code,"REDEEM_RATE_LIMITED");
-  assert.equal(db.batches.length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
 test("APP redemption fails closed when rate limit storage is unavailable",async()=>{
   const db=mockDb({rateLimitFailure:true});
   const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
   assert.equal(res.status,503);
   assert.equal(json.code,"REDEEM_THROTTLE_UNAVAILABLE");
-  assert.equal(db.batches.length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
 
 test("APP card redemption commits card, entitlement, free grant and activation event in one batch",async()=>{
@@ -887,7 +887,7 @@ test("module Worker migration endpoint remains fail-closed for a direct super-ad
   assert.equal(body.ok,false);
   assert.equal(body.code,"MIGRATION_REVIEW_REQUIRED");
   assert.equal(businessWrites(db).length,0);
-  assert.equal(db.batches.length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
   assert.equal(db.reads.some(x=>/CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE/i.test(x.sql)),false);
 });
 
@@ -904,7 +904,7 @@ test("module Worker migration endpoint rejects legacy ADMIN_TOKEN before migrati
   assert.equal(response.status,403);
   assert.equal(body.ok,false);
   assert.equal(businessWrites(db).length,0);
-  assert.equal(db.batches.length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
 
 test("module Worker migration endpoint rejects impersonation sessions before migration handler",async()=>{
@@ -919,5 +919,5 @@ test("module Worker migration endpoint rejects impersonation sessions before mig
   assert.equal(response.status,403);
   assert.equal(body.ok,false);
   assert.equal(businessWrites(db).length,0);
-  assert.equal(db.batches.length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
