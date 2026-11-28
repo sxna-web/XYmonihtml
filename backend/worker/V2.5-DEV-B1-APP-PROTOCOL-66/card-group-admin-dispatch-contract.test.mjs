@@ -82,7 +82,8 @@ test("real Worker outer exception boundary converts handler throws to CORS-wrapp
   assert.match(tail, /GUEST_KEY_REQUIRED/);
   assert.match(tail, /ASSERTION_FAILED/);
   assert.match(tail, /return withCors\(fail\("服务器处理失败，请检查 Worker 日志", 500\)\)/);
-  assert.match(tail, /return withCors\(json\(/);
+  assert.match(tail, /code: "INTERNAL_ERROR"/);
+  assert.doesNotMatch(tail, /detail: String\(e\?\.message/);
 });
 
 test("real Worker dispatcher wraps each route response at the route boundary",()=>{
