@@ -12,7 +12,9 @@ function dbCapture() {
   return {
     calls,
     prepare(sql) {
-      return {bind(...binds){calls.push({sql,binds});return {sql,binds};}};
+      const item = { sql, binds: [] };
+      calls.push(item);
+      return { bind(...binds) { item.binds = binds; return item; } };
     },
   };
 }
