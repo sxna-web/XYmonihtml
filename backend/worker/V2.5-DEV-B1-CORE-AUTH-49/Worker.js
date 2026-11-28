@@ -4933,8 +4933,9 @@ async function appFreeGroupRoute(req, env, url) {
 async function appLinksForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))].slice(0, 50);
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))];
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
+  if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
   const ent = await db.prepare(
     `SELECT id, admin_user_id FROM app_entitlements
       WHERE device_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
@@ -5339,10 +5340,9 @@ async function appGroupsForDevice(req, env, url) {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
     ).bind("app_card_group_mappings").first();
     if (table) {
-      const entitlementIds = authorizedEntitlements.map(x => x.id);
-      const entitlementPlaceholders = entitlementIds.map(() => "?").join(",");
+      const authorizedIds = new Set(authorizedEntitlements.map(x => x.id));
       const mapped = await db.prepare(
-        `SELECT g.*, m.card_id
+        `SELECT g.*, m.card_id, e.id AS entitlement_id
            FROM app_card_group_mappings m
            JOIN app_entitlements e
              ON e.card_id = m.card_id
@@ -5356,10 +5356,11 @@ async function appGroupsForDevice(req, env, url) {
             AND g.mode = 'card'
             AND g.enabled = 1
           WHERE m.status = 'active'
-            AND e.id IN (${entitlementPlaceholders})
           ORDER BY g.admin_user_id, g.sort ASC, g.created_at ASC, m.card_id`,
-      ).bind(deviceId, ...entitlementIds).all();
-      for (const group of mapped.results || []) await addGroup(group, group.card_id);
+      ).bind(deviceId).all();
+      for (const group of mapped.results || []) {
+        if (authorizedIds.has(group.entitlement_id)) await addGroup(group, group.card_id);
+      }
       cardGroupsReady = true;
     }
   } catch {
