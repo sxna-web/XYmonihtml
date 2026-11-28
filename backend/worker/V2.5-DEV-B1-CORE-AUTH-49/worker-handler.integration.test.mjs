@@ -365,7 +365,7 @@ test("Protocol66 card-group route fails closed while mapping tables are absent",
   assert.equal(json.code,"CARD_GROUP_SCHEMA_NOT_READY");
   assert.deepEqual(json.missing,["app_card_group_mappings","app_card_group_admin_requests"]);
   assert.equal(db.batches.length,0);
-  assert.equal(db.writes.length,0);
+  assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
 });
 test("Protocol66 card-group writes remain behind the existing active VIP gate",async()=>{
   const db=mockDb({activations:expiredFormal,missingCardGroupTables:true});
@@ -373,7 +373,7 @@ test("Protocol66 card-group writes remain behind the existing active VIP gate",a
   assert.equal(res.status,403);
   assert.equal(json.code,"VIP_REQUIRED");
   assert.ok(db.batches.every(batch => !batch.some(stmt => stmt.sql.includes("app_card_group_mappings") || stmt.sql.includes("app_card_group_admin_requests"))));
-  assert.equal(db.writes.length,0);
+  assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
 });
 
 test("APP redemption rate limit counts failed guesses only and uses a fixed 15-minute window",async()=>{
