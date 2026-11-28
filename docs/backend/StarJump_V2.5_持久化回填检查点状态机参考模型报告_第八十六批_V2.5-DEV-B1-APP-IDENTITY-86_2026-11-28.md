@@ -3,7 +3,7 @@
 - 批次：V2.5-DEV-B1-APP-IDENTITY-86
 - 日期：2026-11-28
 - 基线：release/v2.5.0-rc1-converge
-- 状态：OFFLINE_REFERENCE_MODEL / SYNTHETIC_TESTED_PENDING_CI / D1_NOT_TESTED / NOT_DEPLOYABLE
+- 状态：OFFLINE_REFERENCE_MODEL / SYNTHETIC_TESTED_PASS / D1_NOT_TESTED / NOT_DEPLOYABLE
 
 ## 本批实施
 
@@ -22,7 +22,7 @@
 
 这是用于检查契约和状态迁移的合成参考模型，不执行 HMAC，不存储真实维度，不访问 D1/SQLite/Worker/Cloudflare，不生成 SQL/DDL，不访问 Secrets。Python 对象中的原子更新仅代表模型内单次方法执行，不证明数据库事务原子性或多 Worker 并发。
 
-本批不把三类 Batch85 statement manifests 填入 SQL，也不建立 D1-001..034 语句映射：当前三个 manifest 的 statements 均为空，尚无已冻结 statement IDs / SQL / bind contract；强行映射会制造虚假完成证据。此项保持 BLOCKED_BY_NO_FROZEN_STATEMENT_CONTRACT。
+本批不把三类 Batch85 statement manifests 填入 SQL，也不建立 D1-001..034 语句映射：当前三个 manifest 的 statements 均为空，尚无已冻结 statement IDs / SQL / bind contract；强行映射会制造虚假完成证据。此项保持 BLOCKED_BY_NO_FROZEN_STATEMENT_CONTRACT。Run `46125953487` 只执行本批 Python 离线状态机测试，不包含 D1/Worker/HMAC 或 RC1 部署产物验收。
 
 ## 测试
 
