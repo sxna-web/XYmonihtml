@@ -23,6 +23,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
       return {
         bind(...args) {
           return {
+            sql, args,
             async first() {
               if (sql.includes("FROM user_sessions s")) return sessionRow;
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
@@ -55,7 +56,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
       };
     },
     async batch(statements) {
-      batches.push(statements.map(statement => statement.sql));
+      batches.push(statements.map(statement => statement.sql || ""));
       const results = [];
       for (const statement of statements) results.push(await statement.run());
       return results;
