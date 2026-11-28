@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -34,6 +34,8 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
               if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {links_enabled:1,max_links:3,free_group_enabled:1};
               if (sql.includes("COUNT(*) AS n FROM app_links WHERE admin_user_id = ?")) return {n:0};
+              if (sql.includes("COUNT(*) AS n FROM download_links")) return {n:0};
+              if (sql.includes("FROM download_links WHERE id = ?")) return {id:args[0],scope:"admin",admin_user_id:"u1",title:"Downloads",url:"https://example.test/file.apk"};
               if (sql.includes("FROM app_entitlements WHERE id = ?")) return {id:args[0],admin_user_id:"u1",device_id:"old-device-123456"};
               if (sql.includes("FROM app_links WHERE id = ?")) return {id:args[0],admin_user_id:"u1",title:"Support",url:"https://example.test"};
               if (sql.includes("FROM subscription_sources s JOIN source_ownership")) return {id:"src1"};
@@ -51,6 +53,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (failCapacityAssertion && sql.includes("COUNT(*) FROM app_cards")) throw new Error("assert-failed");
               if (failCardDeleteAssertion && sql.includes("activated_at IS NULL AND used_at IS NULL AND status <> 'used'")) throw new Error("assert-failed");
               if (failAppLinkCapacityAssertion && sql.includes("COUNT(*) FROM app_links WHERE admin_user_id = ?")) throw new Error("assert-failed");
+              if (failDownloadQuotaAssertion && sql.includes("COUNT(*) FROM download_links WHERE scope = ?")) throw new Error("assert-failed");
               return {meta:{changes:1}};
             },
           };
@@ -66,7 +69,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
   };
 }
 function businessWrites(db) {
-  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards)/i.test(x.sql.trim()));
+  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards|INSERT INTO download_links|DELETE FROM download_links)/i.test(x.sql.trim()));
 }
 async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"},
   authorization="Bearer test-session",sessionPepper="test-pepper-test-pepper-test-pepper"}={}) {
@@ -298,4 +301,41 @@ test("APP link creation returns conflict when concurrent request consumes the la
   const {res,json}=await call(db,{path:"/api/user/app-links",method:"POST",body:{title:"Support",url:"https://example.test"}});
   assert.equal(res.status,409);assert.equal(json.code,"LINKS_LIMIT_CHANGED");
   assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_links")).length,0);
+});
+
+
+test("user download link creation batches quota assertion, insert and audit",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/downloads",method:"POST",body:{title:"Downloads",url:"https://example.test/file.apk"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO download_links")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("COUNT(*) FROM download_links WHERE scope = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("download link creation rejects concurrent quota exhaustion",async()=>{
+  const db=mockDb({failDownloadQuotaAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/downloads",method:"POST",body:{title:"Downloads",url:"https://example.test/file.apk"}});
+  assert.equal(res.status,409);assert.equal(json.code,"DOWNLOAD_LIMIT_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO download_links")).length,0);
+});
+
+test("user download deletion keeps owner predicate in the final SQL and audit batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/downloads/dl-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM download_links"));
+  assert.ok(del);assert.match(del.sql,/WHERE id = \? AND admin_user_id = \?/);
+  assert.deepEqual(del.args,["dl-1","u1"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super download deletion batches existence assertion, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/downloads/dl-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.deleted,true);
+  const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM download_links"));
+  assert.ok(del);assert.deepEqual(del.args,["dl-1"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
 });
