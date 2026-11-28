@@ -222,8 +222,8 @@ function scopeSatisfies(granted, needed) {
 async function resolveSession(req, env) {
   const header = req.headers.get("Authorization") || "";
   if (!header) return null;
-  if (!/^Bearer\\s+/i.test(header)) throw sessionError("INVALID_SESSION", "Authorization 格式无效");
-  const token = header.replace(/^Bearer\\s+/i, "").trim();
+  if (!/^Bearer\s+/i.test(header)) throw sessionError("INVALID_SESSION", "Authorization 格式无效");
+  const token = header.replace(/^Bearer\s+/i, "").trim();
   if (!token) throw sessionError("INVALID_SESSION", "Bearer Token 为空");
 
   // 旧后台凭据：ADMIN_TOKEN 直通（只用于 /api/admin/* 与 bootstrap，不产生用户态数据访问）
