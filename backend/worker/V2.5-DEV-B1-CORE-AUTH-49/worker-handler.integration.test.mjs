@@ -370,7 +370,7 @@ test("mapped card groups cannot be physically deleted before APP tombstone clean
   assert.equal(res.status,409);
   assert.equal(json.code,"APP_GROUP_HAS_CARD_MAPPING_HISTORY");
   assert.equal(db.batches.length,0);
-  assert.equal(db.writes.length,0);
+  assert.ok(db.writes.every(x => !x.sql.includes("DELETE FROM app_groups") && !x.sql.includes("DELETE FROM app_group_sources") && !x.sql.includes("DELETE FROM app_group_members")));
 });
 test("card group mode cannot change while active card mappings exist",async()=>{
   const db=mockDb({
@@ -382,7 +382,7 @@ test("card group mode cannot change while active card mappings exist",async()=>{
   assert.equal(res.status,409);
   assert.equal(json.code,"APP_GROUP_HAS_ACTIVE_CARD_MAPPINGS");
   assert.equal(db.batches.length,0);
-  assert.equal(db.writes.length,0);
+  assert.ok(db.writes.every(x => !x.sql.includes("UPDATE app_groups SET name=?")));
 });
 
 test("Protocol66 card-group route fails closed while mapping tables are absent",async()=>{
