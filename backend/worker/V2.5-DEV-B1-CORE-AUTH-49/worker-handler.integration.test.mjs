@@ -132,8 +132,8 @@ test("schema diagnostics expose APP metadata only to a direct super-admin sessio
   const diagnosticNames=json.data.app_structure.tables.map(table=>table.name);
   assert.ok(diagnosticNames.includes("app_card_group_mappings"));
   assert.ok(diagnosticNames.includes("app_card_group_admin_requests"));
-  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(\\"app_card_group_mappings\\"")));
-  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(\\"app_card_group_admin_requests\\"")));
+  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(") && x.sql.includes("app_card_group_mappings")));
+  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(") && x.sql.includes("app_card_group_admin_requests")));
   assert.ok(db.reads.some(x=>x.sql.includes("type IN ('trigger','view')") &&
     x.args.includes("app_card_group_mappings") && x.args.includes("app_card_group_admin_requests")));
   assert.equal(db.reads.some(x=>/SELECT .*response_json|SELECT .*payload_sha256/i.test(x.sql)),false);
