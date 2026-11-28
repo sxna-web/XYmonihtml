@@ -52,7 +52,7 @@ def main():
         raise SystemExit("Scheduled maintenance is skipped when there are no sync sources")
     if 'if(!token)return fail("缺少 APP 授权令牌",401' not in worker:
         raise SystemExit("APP status token gate missing")
-    if 'const secret=String(env.CONVERT_KEY || env.SESSION_PEPPER || "starjump-convert")' not in worker:
+    if 'const secret = String(env.CONVERT_KEY || env.SESSION_PEPPER || "starjump-convert")' not in worker:
         raise SystemExit("Unexpected CONVERT_KEY compatibility behavior; review before release")
     print(f"PASS: Worker syntax; {len(parser.items)} inline HTML scripts; release safety assertions")
 
