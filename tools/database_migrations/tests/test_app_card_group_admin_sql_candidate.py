@@ -25,9 +25,10 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
     def insert_mapping(self, card="c1", admin="a1", group="g1", status="active"):
         self.db.execute(
             """INSERT INTO app_card_group_mappings
-               (id,card_id,admin_user_id,group_id,status)
-               VALUES(?,?,?,?,?)""",
-            (f"map-{card}-{group}", card, admin, group, status),
+               (id,card_id,admin_user_id,group_id,status,removed_at)
+               VALUES(?,?,?,?,?,?)""",
+            (f"map-{card}-{group}", card, admin, group, status,
+             "2026-11-28T00:00:00Z" if status == "removed" else None),
         )
 
     def test_same_owner_card_mode_mapping_is_allowed(self):
