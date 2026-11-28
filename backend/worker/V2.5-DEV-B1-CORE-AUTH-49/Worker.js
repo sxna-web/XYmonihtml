@@ -3859,8 +3859,12 @@ function b64url(bytes) {
 
 /** 授权令牌：HMAC(pepper, entitlementId|deviceId)，防止别人拿到 device_id 就冒用 */
 async function entToken(env, entitlementId, deviceId) {
+  const secret = String(env.APP_HMAC_SECRET || env.SESSION_PEPPER || "");
+  if (secret.length < 32) {
+    throw sessionError("SECRET_NOT_CONFIGURED", "APP_HMAC_SECRET/SESSION_PEPPER 未配置或长度不足");
+  }
   const key = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(String(env.SESSION_PEPPER || "starjump-app")),
+    "raw", new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${entitlementId}|${deviceId}`));
@@ -3893,6 +3897,8 @@ async function appRedeemRoute(req, env, url, ctx) {
 
     const days = Number(card.days);
     const id = newId();
+    // Validate the APP token secret before consuming the card or creating the entitlement.
+    const token = await entToken(env, id, deviceId);
     await userBatch(db, ctx, [
       assertStmt(db, "EXISTS (SELECT 1 FROM app_cards WHERE id = ? AND status='normal' AND manual_disabled=0 AND activated_at IS NULL AND used_at IS NULL)", [card.id]),
       db.prepare(
@@ -3917,7 +3923,7 @@ async function appRedeemRoute(req, env, url, ctx) {
       data: {
         entitlement: ent,
         admin_user_id: card.admin_user_id,
-        token: await entToken(env, id, deviceId),
+        token,
         days,
         local_retention_hours: ENT_LOCAL_RETENTION_HOURS,
         note: "到期后停止更新，本地节点保留 24 小时；新卡密属于新授权",
