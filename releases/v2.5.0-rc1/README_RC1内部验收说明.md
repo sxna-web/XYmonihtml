@@ -122,3 +122,10 @@
 - 初始化请求改用统一 apiUrl()，空 API 地址、非 HTTPS、带子路径或非 Staging 地址均阻止请求。
 - 该保护只针对 Staging 初始化诊断；不代表正式生产 bootstrap 可用，也不替代 Worker 服务端权限验证。
 - 详见 docs/backend/StarJump_V2.5_RC1初始化诊断Staging目标白名单与失败关闭修复报告_第一百零四批_V2.5-DEV-B1-STAGING-ALLOWLIST-104_2026-11-28.md。
+
+
+## 第一百零五批前端 API 根地址统一校验
+
+- APP 卡密 CSV 导出、访客转换、公告读取、访客历史分组/链接管理等原先直接拼接 apiBase() 的请求，现统一经 apiUrl() 校验 HTTPS 与 Worker 根地址。
+- 卡密导出状态参数进行 URL 编码；静态回归禁止新增 fetch(base + ...) 直连绕过。
+- 详见 docs/backend/StarJump_V2.5_RC1前端API请求统一根地址校验与直连绕过修复报告_第一百零五批_V2.5-DEV-B1-API-ROOT-GUARD-105_2026-11-28.md。
