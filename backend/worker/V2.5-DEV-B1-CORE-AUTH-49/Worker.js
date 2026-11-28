@@ -2725,10 +2725,11 @@ async function superRoute(req, env, url, ctx) {
     // - 通过：不改 enabled（避免把管理员手动停用的来源重新启用）
     // - 拒绝：强制停用（不能继续同步）
     const stmts = [
+      assertStmt(db, "EXISTS (SELECT 1 FROM source_approvals WHERE source_id = ? AND status = ?)", [sourceId, approval.status]),
       db.prepare(
         `UPDATE source_approvals SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, reason = ?
-          WHERE source_id = ?`,
-      ).bind(approve ? "approved" : "rejected", ctx.actorId, reason, sourceId),
+          WHERE source_id = ? AND status = ?`,
+      ).bind(approve ? "approved" : "rejected", ctx.actorId, reason, sourceId, approval.status),
     ];
     if (!approve) {
       stmts.push(
@@ -2743,7 +2744,15 @@ async function superRoute(req, env, url, ctx) {
       reason,
       detail: approve ? "审核通过（不改变启用状态，需手动启用）" : "审核拒绝并停用",
     }));
-    await userBatch(db, ctx, stmts);
+    try {
+      const reviewed = await userBatch(db, ctx, stmts);
+      if (!reviewed[approve ? 1 : 1]?.meta?.changes) return fail("审核状态刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_APPROVAL_CHANGED" });
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("审核状态刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_APPROVAL_CHANGED" });
+      }
+      throw e;
+    }
     return json({
       ok: true,
       data: { source_id: sourceId, approval_status: approve ? "approved" : "rejected", enabled_auto_changed: !approve },
