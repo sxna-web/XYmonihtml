@@ -2588,14 +2588,33 @@ $('uDlAdd').addEventListener('click', async () => {
 });
 $('uCfApply').addEventListener('click', () => loadUserCards().catch(e => setStatus('uStatus', e.message, 'bad')));
 $('uCfExport').addEventListener('click', async () => {
+  let objectUrl = '';
   try {
     const st = $('uCfStatus').value;
-    const res = await fetch(apiUrl('/api/user/app-cards/export' + (st ? '?status=' + encodeURIComponent(st) : '')), { headers: { Authorization: 'Bearer ' + token } });
+    const url = apiUrl('/api/user/app-cards/export' + (st ? '?status=' + encodeURIComponent(st) : ''));
+    let res = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+      try {
+        res = await fetch(url, { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store', redirect: 'error', signal: controller.signal });
+      } catch (error) {
+        if (attempt === 2) throw new Error(error.name === 'AbortError' ? '导出等待超时，请检查网络后重试。' : (navigator.onLine === false ? '当前设备处于离线状态，请恢复网络后重试。' : '导出连接失败，请检查网络后重试。'));
+      } finally { clearTimeout(timeout); }
+      if (res && [502, 503, 504].includes(res.status) && attempt === 1) {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        continue;
+      }
+      break;
+    }
+    if (res.status === 401) { token=''; showLogin('会话已失效，请重新登录'); throw new Error('登录状态已失效，请重新登录'); }
+    if (!res.ok) throw new Error('导出暂时失败（HTTP ' + res.status + '），请稍后重试。');
     const blob = await res.blob();
+    objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = 'app-cards.csv'; a.click();
-    URL.revokeObjectURL(a.href);
-  } catch (e) { setStatus('uStatus', e.message, 'bad'); }
+    a.href = objectUrl; a.download = 'app-cards.csv'; a.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  } catch (e) { setStatus('uStatus', e.message || '导出失败，请检查网络后重试', 'bad'); }
 });
 $('uReload').addEventListener('click', () => loadUserPanel().catch(e => setStatus('uStatus', e.message, 'bad')));
 $('uSrcAdd').addEventListener('click', async () => {
