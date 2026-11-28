@@ -3362,24 +3362,26 @@ function randomCode() {
 }
 
 async function vipStatus(db, userId) {
-  // 新表可能还没建（首次部署）：VIP 状态失败不能连带登录/鉴权一起 500
+  // 当前有效期必须同时满足 starts_at <= now < ends_at；is_formal 保留历史语义。
   try {
     const row = await db.prepare(
-      `SELECT MAX(ends_at) AS until,
-              SUM(CASE WHEN kind = 'formal' THEN 1 ELSE 0 END) AS formal_count,
-              SUM(CASE WHEN kind = 'trial' THEN 1 ELSE 0 END) AS trial_count
-         FROM admin_vip_activations WHERE user_id = ?`,
+      `SELECT
+         MAX(CASE WHEN datetime(starts_at) <= datetime('now') AND datetime(ends_at) > datetime('now') THEN ends_at END) AS until,
+         MAX(CASE WHEN kind='formal' AND datetime(starts_at) <= datetime('now') AND datetime(ends_at) > datetime('now') THEN 1 ELSE 0 END) AS active_formal,
+         SUM(CASE WHEN kind='formal' THEN 1 ELSE 0 END) AS formal_count,
+         SUM(CASE WHEN kind='trial' THEN 1 ELSE 0 END) AS trial_count
+       FROM admin_vip_activations WHERE user_id = ?`,
     ).bind(userId).first();
     const until = row?.until || null;
-    const active = until ? await db.prepare("SELECT 1 AS ok WHERE datetime(?) > datetime('now')").bind(until).first() : null;
     return {
       until,
-      active: !!active,
-      is_formal: Number(row?.formal_count || 0) > 0,   // 只看正式卡密激活历史
+      active: !!until,
+      is_formal: Number(row?.formal_count || 0) > 0,
+      active_formal: Number(row?.active_formal || 0) > 0,
       has_trial: Number(row?.trial_count || 0) > 0,
     };
-  } catch (e) {
-    return { until: null, active: false, is_formal: false, has_trial: false, unavailable: true };
+  } catch {
+    return { until: null, active: false, is_formal: false, active_formal: false, has_trial: false, unavailable: true };
   }
 }
 
