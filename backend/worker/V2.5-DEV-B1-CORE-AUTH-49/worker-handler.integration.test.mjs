@@ -7,9 +7,9 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
-  const writes=[];
+  const writes=[];\n  const batches=[];
   const sessionRow={
     id:"session-1",user_id:role==="super_admin"?"root":"u1",acting_as_user_id:actingAs,
     scope_id:actingAs?"scope-1":null,expires_at:"2099-01-01 00:00:00",revoked_at:null,
@@ -17,6 +17,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
   };
   return {
     writes,
+    batches,
     prepare(sql) {
       return {
         bind(...args) {
@@ -27,6 +28,8 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
               if (sql.includes("FROM app_groups WHERE id = ? AND admin_user_id = ?")) return resource;
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
+              if (sql.includes("FROM app_cards WHERE code = ?")) return {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"};
+              if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
               if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {free_group_enabled:1};
               if (sql.includes("FROM app_entitlements WHERE id = ?")) return {id:args[0],admin_user_id:"u1",device_id:"old-device-123456"};
               if (sql.includes("FROM app_links WHERE id = ?")) return {id:args[0],admin_user_id:"u1",title:"Support",url:"https://example.test"};
@@ -43,6 +46,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
             async run() {
               writes.push({sql,args});
               if (failCapacityAssertion && sql.includes("COUNT(*) FROM app_cards")) throw new Error("assert-failed");
+              if (failCardDeleteAssertion && sql.includes("activated_at IS NULL AND used_at IS NULL AND status <> 'used'")) throw new Error("assert-failed");
               return {meta:{changes:1}};
             },
           };
@@ -50,6 +54,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
       };
     },
     async batch(statements) {
+      batches.push(statements.map(statement => statement.sql));
       const results = [];
       for (const statement of statements) results.push(await statement.run());
       return results;
@@ -248,4 +253,27 @@ test("super APP link delete batches final existence check, delete and audit",asy
   const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM app_links"));
   assert.ok(del);assert.deepEqual(del.args,["link-1"]);
   assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("APP card redemption commits card, entitlement, free grant and activation event in one batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO app_entitlements")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE app_cards SET status='used'")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT OR IGNORE INTO app_free_grants")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO app_card_events")));
+  const update=db.writes.find(x=>x.sql.startsWith("UPDATE app_cards SET status='used'"));
+  assert.match(update.sql,/admin_user_id = \? AND days = \?/);
+  assert.match(update.sql,/manual_disabled=0/);
+  assert.match(update.sql,/datetime\(expires_at\) > datetime\('now'\)/);
+});
+
+test("APP card soft-delete rejects a concurrent activation before writing",async()=>{
+  const db=mockDb({failCardDeleteAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1",method:"DELETE",body:{}});
+  assert.equal(res.status,409);assert.equal(json.code,"CARD_STATE_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("UPDATE app_cards")).length,0);
 });
