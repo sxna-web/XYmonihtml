@@ -1852,7 +1852,6 @@ function isStagingTarget() {
   } catch { return false; }
 }
 function apiUrl(path) {
-  const base = apiBase();
   if (!base) throw new Error('请先填写并核实正式 Worker API 根地址');
   if (!/^https:\/\//i.test(base)) throw new Error('API 地址必须以 HTTPS 开头');
   const u = new URL(base);
@@ -2544,9 +2543,8 @@ $('uDlAdd').addEventListener('click', async () => {
 $('uCfApply').addEventListener('click', () => loadUserCards().catch(e => setStatus('uStatus', e.message, 'bad')));
 $('uCfExport').addEventListener('click', async () => {
   try {
-    const base = apiBase();
     const st = $('uCfStatus').value;
-    const res = await fetch(base + '/api/user/app-cards/export' + (st ? '?status=' + st : ''), { headers: { Authorization: 'Bearer ' + token } });
+    const res = await fetch(apiUrl('/api/user/app-cards/export' + (st ? '?status=' + encodeURIComponent(st) : '')), { headers: { Authorization: 'Bearer ' + token } });
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'app-cards.csv'; a.click();
@@ -3133,9 +3131,8 @@ $('uDlAdd').addEventListener('click', async () => {
 $('uCfApply').addEventListener('click', () => loadUserCards().catch(e => setStatus('uStatus', e.message, 'bad')));
 $('uCfExport').addEventListener('click', async () => {
   try {
-    const base = apiBase();
     const st = $('uCfStatus').value;
-    const res = await fetch(base + '/api/user/app-cards/export' + (st ? '?status=' + st : ''), { headers: { Authorization: 'Bearer ' + token } });
+    const res = await fetch(apiUrl('/api/user/app-cards/export' + (st ? '?status=' + encodeURIComponent(st) : '')), { headers: { Authorization: 'Bearer ' + token } });
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'app-cards.csv'; a.click();
@@ -5571,9 +5568,8 @@ var qrcode = function() {
     return k;
   }
   async function loadGroups() {
-    const base = apiBase();
     try {
-      const res = await fetch(base + '/api/convert/groups?guest_key=' + encodeURIComponent(guestKey()));
+      const res = await fetch(apiUrl('/api/convert/groups?guest_key=' + encodeURIComponent(guestKey())));
       const d = await res.json();
       const dl = $$('cvGroups'); if (!dl || !d.ok) return;
       dl.replaceChildren();
@@ -5583,8 +5579,7 @@ var qrcode = function() {
   loadGroups();
   (async () => {
     try {
-      const base = apiBase();
-      const r = await fetch(base + '/api/announcements?scope=web').then(x => x.json());
+      const r = await fetch(apiUrl('/api/announcements?scope=web')).then(x => x.json());
       const box = $$('webAnn');
       if (!r.ok || !r.data.length) return;
       box.replaceChildren();
@@ -5629,9 +5624,8 @@ var qrcode = function() {
       }).filter(Boolean),
     };
     const btn = $$('cvGo'); btn.disabled = true; setStatus('正在抓取并转换…', '');
-    const base = apiBase();
     try {
-      const res = await fetch(base + '/api/convert', {
+      const res = await fetch(apiUrl('/api/convert'), {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-key': guestKey() },
         body: JSON.stringify({ sources, nodes, targets, filename: $$('cvName').value.trim(), group: ($$('cvGroup')?.value || '').trim(), filters }),
       });
@@ -5644,8 +5638,7 @@ var qrcode = function() {
       loadGroups();
   (async () => {
     try {
-      const base = apiBase();
-      const r = await fetch(base + '/api/announcements?scope=web').then(x => x.json());
+      const r = await fetch(apiUrl('/api/announcements?scope=web')).then(x => x.json());
       const box = $$('webAnn');
       if (!r.ok || !r.data.length) return;
       box.replaceChildren();
@@ -5696,13 +5689,12 @@ var qrcode = function() {
   $$('qrBox').addEventListener('click', (e) => { if (e.target === $$('qrBox')) $$('qrBox').classList.add('hidden'); });
 
   async function loadMine() {
-    const base = apiBase();
     const gk = guestKey();
     const box = $$('cvMine');
     try {
       const [gr, lr] = await Promise.all([
-        fetch(base + '/api/convert/groups?guest_key=' + encodeURIComponent(gk)).then(r => r.json()),
-        fetch(base + '/api/convert/links?guest_key=' + encodeURIComponent(gk)).then(r => r.json()),
+        fetch(apiUrl('/api/convert/groups?guest_key=' + encodeURIComponent(gk))).then(r => r.json()),
+        fetch(apiUrl('/api/convert/links?guest_key=' + encodeURIComponent(gk))).then(r => r.json()),
       ]);
       const links = (lr.data || []);
       if (!links.length) { box.textContent = '还没有生成过链接。'; return; }
@@ -5719,7 +5711,7 @@ var qrcode = function() {
         rn.addEventListener('click', async () => {
           const to = prompt('新分组名', name); if (!to || to === name) return;
           try {
-            await fetch(base + '/api/convert/groups/rename', {
+            await fetch(apiUrl('/api/convert/groups/rename'), {
               method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-key': gk },
               body: JSON.stringify({ from: name, to }),
             });
@@ -5736,7 +5728,7 @@ var qrcode = function() {
             const kill = document.createElement('button'); kill.className = 'danger smallbtn'; kill.textContent = '失效';
             kill.addEventListener('click', async () => {
               try {
-                await fetch(base + '/api/convert/links/' + encodeURIComponent(l.id) + '/revoke', {
+                await fetch(apiUrl('/api/convert/links/' + encodeURIComponent(l.id) + '/revoke'), {
                   method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-key': gk }, body: '{}',
                 });
                 await loadMine();
