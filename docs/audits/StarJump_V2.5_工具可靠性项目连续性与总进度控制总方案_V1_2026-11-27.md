@@ -1601,3 +1601,14 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - Artifact `15252361198`（134,139 bytes，expires 2026-12-12T06:27:43Z）。PR #2 继续 Draft/Open/Unmerged。
 - 仍无真实 D1 schema/migration、正式 route、生产 VIP resolver、HTML UI、APK 多 entitlement 端到端；未操作生产 D1/Secrets/部署/合并。
 - **第七十七批唯一接手卡：**设计真实 D1 schema manifest 只读诊断：table_info、index_list/index_info、foreign_key_list、sqlite_master triggers/index SQL；检查历史重复/孤儿/owner 冲突只输出脱敏计数；产出 staging/production 只读 SQL 与人工执行说明，不执行 DDL/DML，不注册 route。
+
+
+## 第七十七批连续性更新（2026-11-28）
+
+- 批次 V2.5-DEV-B1-APP-SCHEMA-MANIFEST-77 已提交人工 schema-only 诊断 SQL 与实施报告。
+- 核验清单固定为 7 张表：app_cards、app_groups、admin_vip_activations、admin_user_scopes、admin_audit_events、候选 app_card_group_mappings、候选 app_card_group_admin_requests。
+- 诊断只读取 sqlite_master 与 PRAGMA table_info/index_list/foreign_key_list；索引列需按实际返回索引名另行读取 index_info/index_xinfo。缺表或空结果不是创建授权，也不是 PASS。
+- 数据异常计数暂缓，直到真实 schema manifest 确认列、FK、索引和状态语义；后续查询只允许 COUNT_ONLY 脱敏计数，不返回业务行、卡密 code、session/APP token 或订阅 URL。
+- 本批没有真实 D1 连接或 SQL 执行，没有 DDL/DML、Secrets、部署或合并。生产 schema 仍 NOT VERIFIED。
+- PR #2 保持 Draft/Open/Unmerged；多卡密聚合、卡密映射 migration/adapter/route/UI、APK 多凭据闭环仍为上线阻断。
+- **第七十八批唯一接手卡：**在取得脱敏 schema-only snapshot 后制作分环境版本化 manifest comparison；之后才根据真实字段生成重复映射、孤儿和 owner 冲突的只读计数 SQL。不得在无 snapshot 情况下猜测 schema。
