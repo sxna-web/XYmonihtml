@@ -4984,9 +4984,29 @@ async function addDownload(db, ctx, scope, adminId, body) {
   ).bind(scope, adminId || "").first();
   if (Number(count?.n || 0) >= 20) return fail("最多 20 条下载链接", 409);
   const id = newId();
-  await db.prepare(
-    "INSERT INTO download_links(id, scope, admin_user_id, title, url, sort) VALUES(?,?,?,?,?,?)",
-  ).bind(id, scope, adminId, title, url, num(body.sort, 100)).run();
+  const quotaSql = scope === "admin"
+    ? "EXISTS (SELECT 1 FROM app_users WHERE id = ?) AND (SELECT COUNT(*) FROM download_links WHERE scope = ? AND COALESCE(admin_user_id,'') = ?) < 20"
+    : "(SELECT COUNT(*) FROM download_links WHERE scope = ? AND COALESCE(admin_user_id,'') = ?) < 20";
+  const quotaBinds = scope === "admin"
+    ? [adminId, scope, adminId || ""]
+    : [scope, adminId || ""];
+  try {
+    await userBatch(db, ctx, [
+      assertStmt(db, quotaSql, quotaBinds),
+      db.prepare(
+        "INSERT INTO download_links(id, scope, admin_user_id, title, url, sort) VALUES(?,?,?,?,?,?)",
+      ).bind(id, scope, adminId, title, url, num(body.sort, 100)),
+      auditStmt(db, ctx, {
+        action: "download_link.create", targetType: "download_link", targetId: id,
+        after: { scope, admin_user_id: adminId, title, url },
+      }),
+    ]);
+  } catch (e) {
+    if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+      return fail("下载链接数量或管理员状态刚刚发生变化，请刷新后重试", 409, { code: "DOWNLOAD_LIMIT_CHANGED" });
+    }
+    throw e;
+  }
   return json({ ok: true, data: { id, title, url, scope } }, 201);
 }
 
@@ -5020,7 +5040,15 @@ async function superDownloadsRoute(req, env, url, ctx) {
     return addDownload(db, ctx, adminId ? "admin" : "global", adminId || null, body);
   }
   if (seg.length === 4 && req.method === "DELETE") {
-    await db.prepare("DELETE FROM download_links WHERE id = ?").bind(s(seg[3], 80)).run();
+    const id = s(seg[3], 80);
+    const row = await db.prepare("SELECT * FROM download_links WHERE id = ?").bind(id).first();
+    if (!row) return fail("链接不存在", 404);
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM download_links WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM download_links WHERE id = ?").bind(id),
+      auditStmt(db, ctx, { action: "download_link.super_delete", targetType: "download_link", targetId: id, before: { scope: row.scope, admin_user_id: row.admin_user_id, title: row.title } }),
+    ]);
+    if (!deleted[1]?.meta?.changes) return fail("链接已变化", 409);
     return json({ ok: true, data: { deleted: true } });
   }
   return fail("接口不存在", 404);
@@ -5038,9 +5066,14 @@ async function userDownloadsRoute(req, env, url, ctx) {
   }
   if (seg.length === 4 && req.method === "DELETE") {
     const id = s(seg[3], 80);
-    const row = await db.prepare("SELECT id FROM download_links WHERE id = ? AND admin_user_id = ?").bind(id, ctx.effectiveId).first();
+    const row = await db.prepare("SELECT id, scope, title FROM download_links WHERE id = ? AND admin_user_id = ?").bind(id, ctx.effectiveId).first();
     if (!row) return fail("链接不存在", 404);
-    await db.prepare("DELETE FROM download_links WHERE id = ?").bind(id).run();
+    const deleted = await userBatch(db, ctx, [
+      assertStmt(db, "EXISTS (SELECT 1 FROM download_links WHERE id = ? AND admin_user_id = ?)", [id, ctx.effectiveId]),
+      db.prepare("DELETE FROM download_links WHERE id = ? AND admin_user_id = ?").bind(id, ctx.effectiveId),
+      auditStmt(db, ctx, { action: "download_link.delete", targetType: "download_link", targetId: id, before: { scope: row.scope, title: row.title } }),
+    ]);
+    if (!deleted[1]?.meta?.changes) return fail("链接已变化", 409);
     return json({ ok: true, data: { deleted: true } });
   }
   return fail("接口不存在", 404);
