@@ -67,4 +67,4 @@ SQLite test success does not establish Cloudflare D1 compatibility, transaction 
 - Scope is fixed to the seven APP/VIP tables in Batch 77. Missing tables are explicitly marked `ABSENT`; table presence mismatch is not treated as a safe-to-create recommendation.
 - Column defaults and sqlite_master/index/trigger SQL are represented by SHA-256 digests, not echoed. Column names/types/NOT NULL/PK, index uniqueness/origin/partial/key columns, foreign-key actions, and object identities are compared.
 - Output is a structural comparison only. A MATCH is not proof of semantic compatibility, data integrity, migration safety, D1 transaction semantics, or production readiness. Keep staging and production source snapshots and manifests separately labelled; do not overwrite an approved baseline without review.
-- New regression tests: 13. The whole unittest suite is run by the existing RC1 convergence workflow against local in-memory fixtures only.
+- New regression tests: 16. The latest full suite reports 62 tests passed. The whole unittest suite is run by the existing RC1 convergence workflow against local in-memory fixtures only.
