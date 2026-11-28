@@ -133,7 +133,7 @@ export function buildCardGroupReplaceStatements(db, input) {
         admin_user_id = excluded.admin_user_id,
         status = 'active', updated_at = CURRENT_TIMESTAMP, removed_at = NULL
       WHERE app_card_group_mappings.admin_user_id = excluded.admin_user_id`)
-      .bind(mappingIds[desired.indexOf(groupId)], cardId, adminId, groupId)),
+      .bind(mappingIds[groupIds.indexOf(groupId)], cardId, adminId, groupId)),
     db.prepare(`INSERT INTO admin_audit_events
       (actor_user_id, effective_user_id, action, target_type, target_id,
        request_id, before_json, after_json, result, reason, detail)
