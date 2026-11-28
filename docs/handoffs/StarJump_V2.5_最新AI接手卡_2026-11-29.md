@@ -73,3 +73,44 @@
 - 本会话未修改 Worker/API/D1/APP/Secrets/Cloudflare；未执行业务测试；未部署。
 - 下一会话先读取本文件、AGENTS.md、上述会话记录、总进度、工具可靠性总方案，再继续定位 APP 卡密管理 DEV v1.5 实际源码。
 
+## 7. 主任务续接更新（2026-11-29｜以当前源码复核为准）
+
+### 7.1 当前候选分支状态
+- 后端 RC1 候选分支：`release/v2.5.0-rc1-converge`。
+- 本次核查 head：`a14cf0b90c05fa9547d458aeac59c75ed65efac1`。
+- PR #2：Draft/Open/Unmerged；不得把候选分支当 main 已合并代码。
+- 该 head 的 Convergence Run `46144348910`、APP Identity Offline Checkpoint Run `46144348914` 均 SUCCESS；候选 artifact `15263073193`，148,280 bytes。只证明 CI 指定自动化检查，不证明真实 D1/Cloudflare/APP 实机或生产。
+- Worker 候选已注册 Protocol66 卡密分组管理 handler；`GET /api/app/groups` 和 `GET /api/app/links` 支持重复 token 参数（最多100）；旧 `/api/app/nodes` 仍是单 token/最新 entitlement 路径。两张映射表尚未在 Staging 创建，缺表时 fail-closed 503。
+
+### 7.2 APP 6.00.48 源码已恢复
+- 从此前 Actions artifact `15262037576` 恢复原始 ZIP，SHA-256：`1d4f49790ef358d2d8de807fa95fd18c331f06692e1a15c4d9030c6cad8b8012`；2,323,467 bytes；ZIP integrity PASS；628 entries、193 个 Kotlin/Java 文件。
+- 完整差距报告：`docs/app/StarJump_APP_6.00.48_多卡密客户端接入差距与源码复核报告_2026-11-29.md`；commit `92ad7ada47961a21ff91f6f75db685b8c88b9353`。
+- 本会话独立记录：`docs/handoffs/sessions/2026-11-29-main-task-app-648-audit.md`；commit `c1bc97364443fab1bf7415163a5d008a4e9af7ba`。
+- 总进度追加本轮源码审计：commit `ff61ef0e289f46aa8f5fa8014755f1086cdb165b`；内容 SHA `0bacfa709ca4d42b36c80778ca1680afba65335b`。
+
+### 7.3 客户端确认阻断项
+1. APP 当前只存一条 token/expires/admin；新激活会覆盖旧授权。
+2. StarJumpApi 只实现 redeem/resolve/links/version；links 单 token；没有 groups/free/nodes 客户端调用。
+3. Room version 7，当前启用 `fallbackToDestructiveMigration()`；新 schema 必须显式 7→8 迁移并验证保留所有本地节点/分组/规则。
+4. token 当前存普通 SharedPreferences，未见加密封装；新实现须 Android Keystore 加密并安全迁移旧值。
+5. ProxyGroup 无远端 admin/card/group/entitlement/generation/tombstone/cleanup ACK 字段；五个固定 Paste.gg 槽位不等于动态服务端分组。
+6. APP DEFAULT_BASE 主机名与 RC1 Staging 文档拼写有差异；版本检查 current 仍传 60047。未核实前禁止猜测修正。
+7. APP 6.00.48 版本元数据 VERSION_CODE=71，现有 Gradle helper 乘5，APK 预期 versionCode=355。
+
+### 7.4 本轮测试与边界
+- PASS：`python3 test_five_starjump_slots.py`
+- PASS：`python3 test_starjump_646_ui_requirements.py`
+- PASS：`python3 test_offline_recovery.py`
+- PASS：原始 ZIP 完整性与 SHA-256 核验。
+- Android Gradle/APK build 未执行（当前执行环境无可用 Android SDK/ANDROID_HOME）。
+- 未做真实 Android、弱网、Worker runtime、D1 测试；未执行 DDL/DML；未部署、未合并；未修改 APP/Worker/HTML/Secrets/bindings。
+
+### 7.5 下一会话唯一优先任务
+在独立 DEV 源码副本实施多 entitlement 加密持久化与 Room 7→8 非破坏性迁移骨架：
+- 每个 entitlement 独立保存 admin/card/expiry/status/token ciphertext；
+- Android Keystore 加密 token，旧单 token 一次性迁移先加密写入并回读验证，成功后才清旧明文；
+- Room 显式迁移，移除静默 destructive fallback；迁移失败必须保留原库；
+- 补旧库升级、回滚、多卡多管理员隔离测试；
+- 随后接入重复 token groups/links API、动态分组与 generation/tombstone/24h cleanup/ACK。
+保留 6.00.48 原始 ZIP，下一版另建版本目录/ZIP。Staging DDL 仍须用户明确批准。此前 APP 卡密 hash 算法/诊断 DEV v1.5 定位任务仍是独立待办，不能把它误认为本轮已解决。
+
