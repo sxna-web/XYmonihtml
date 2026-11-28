@@ -157,10 +157,12 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
 
     async replaceCardGroupsAtomically(input) {
       const {
-        adminId, actorId, requestId, cardId, groupIds, expectedGroupIds,
+        adminId, actorId, scope = null, scopeId = null, requestId, cardId, groupIds, expectedGroupIds,
       } = input || {};
       if (!ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
-          !ID_RE.test(cardId || "") || typeof requestId !== "string" ||
+          !ID_RE.test(cardId || "") ||
+          (actorId !== adminId && (!["operate", "manage"].includes(scope) || !ID_RE.test(scopeId || ""))) ||
+          typeof requestId !== "string" ||
           !requestId.trim() || requestId.length > 80 ||
           !Array.isArray(groupIds) || !Array.isArray(expectedGroupIds) ||
           groupIds.length > 100 || expectedGroupIds.length > 100 ||
@@ -215,6 +217,7 @@ export function createCardGroupD1Adapter({ db, resolveAccess }) {
       try {
         batch = buildCardGroupReplaceStatements(db, {
           ...inputWithDigest,
+          scopeId,
           expectedGroupIds,
           beforeJson,
         });
