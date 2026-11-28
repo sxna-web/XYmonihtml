@@ -90,3 +90,14 @@
 - 本次独立会话记录：`docs/handoffs/sessions/2026-11-29-app-650-version-lock-and-dev.md`。
 - APP 6.00.50 的 Android 构建入口：`.github/workflows/starjump-app-650-build.yml`。仅当版本 ZIP 已上传后运行；CI 成功不替代真机、Room instrumentation、D1/API 或生产验收。
 - 6.00.50 仍是 DEV 源码包，不是已签名/已验证 APK；不得将未运行的构建工作流写成构建成功。
+
+
+## 2026-11-29｜6.00.50 ZIP 已上传与构建状态更正
+
+以下事实覆盖本文件中关于 6.00.50 ZIP 尚未上传/尚未进入 GitHub 的旧记录：
+- 6.00.50 源码 ZIP 已存在于 `app/versions/6.00.50/StarJump-6.00.50-source.zip`（main）。
+- ZIP Git blob SHA：`176f88023962f27c759157f456cb85e0b295b563`；与交付包 SHA-256 `1a031e2dc18115e2448b42873d9ace957dc256a2daeb050468fbb9ec3bcbe018`、2,355,724 bytes 的身份核验已完成。
+- GitHub Actions 构建运行：`46184869195`；job：`141102408156`；head SHA：`84546b5042ae2fafd84b8574f662ba21e0f60c04`。
+- 最近核验时，源码校验解压、Java 21、Go、Android SDK、LibCore AAR 构建/校验、Gradle assets 初始化均成功；`Assemble ARM64 OSS release APK` 仍 in_progress；APK 元数据校验与 Artifact 上传尚未开始。当前没有可下载 APK Artifact。
+- 旧记录中“ZIP 尚未上传、GitHub 目标路径 404、需用户上传”的描述仅作为历史记录保留，不再代表当前状态。
+- 未取得 APK Artifact 前不得声称构建成功；未完成设备验证前不得声称可正式发布。
