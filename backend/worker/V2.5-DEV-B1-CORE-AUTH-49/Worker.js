@@ -4346,9 +4346,14 @@ async function superAppLinksRoute(req, env, url, ctx) {
   }
   if (seg[2] === "app-links" && seg.length === 4 && req.method === "DELETE") {
     const id = s(seg[3], 80);
-    const row = await db.prepare("SELECT id FROM app_links WHERE id = ?").bind(id).first();
+    const row = await db.prepare("SELECT * FROM app_links WHERE id = ?").bind(id).first();
     if (!row) return fail("入口不存在", 404);
-    await db.prepare("DELETE FROM app_links WHERE id = ?").bind(id).run();
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_links WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_links WHERE id = ?").bind(id),
+      auditStmt(db, ctx, { action: "app_link.super_delete", targetType: "app_link", targetId: id, before: { admin_user_id: row.admin_user_id, title: row.title, url: row.url } }),
+    ]);
+    if (!deleted[1]?.meta?.changes) return fail("入口已变化", 409);
     return json({ ok: true, data: { id, deleted: true } });
   }
   if (seg[2] === "app-perms" && seg.length === 4 && req.method === "PUT") {
@@ -4358,19 +4363,25 @@ async function superAppLinksRoute(req, env, url, ctx) {
     const enabled = body.links_enabled === undefined ? 1 : (body.links_enabled ? 1 : 0);
     const maxLinks = num(body.max_links, 1);
     if (!Number.isInteger(maxLinks) || maxLinks < 0 || maxLinks > 10) return fail("max_links 需为 0-10", 400);
+    const hasFreeGroup = body.free_group_enabled === undefined ? 0 : 1;
     const cur = await db.prepare("SELECT free_group_enabled FROM admin_app_perms WHERE admin_user_id = ?").bind(adminId).first();
     const freeGroup = body.free_group_enabled === undefined
       ? (cur ? Number(cur.free_group_enabled) : 0)
       : (body.free_group_enabled ? 1 : 0);
-    await db.prepare(
-      `INSERT INTO admin_app_perms(admin_user_id, links_enabled, max_links, free_group_enabled) VALUES(?,?,?,?)
-       ON CONFLICT(admin_user_id) DO UPDATE SET links_enabled=excluded.links_enabled, max_links=excluded.max_links,
-         free_group_enabled=excluded.free_group_enabled, updated_at=CURRENT_TIMESTAMP`,
-    ).bind(adminId, enabled, maxLinks, freeGroup).run();
-    await auditStmt(db, ctx, {
-      action: "app_perm.update", targetType: "user", targetId: adminId,
-      after: { links_enabled: enabled, max_links: maxLinks, free_group_enabled: freeGroup },
-    }).run().catch(() => {});
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ?)", [adminId]),
+      db.prepare(
+        `INSERT INTO admin_app_perms(admin_user_id, links_enabled, max_links, free_group_enabled) VALUES(?,?,?,?)
+         ON CONFLICT(admin_user_id) DO UPDATE SET links_enabled=excluded.links_enabled, max_links=excluded.max_links,
+           free_group_enabled=CASE WHEN ? = 1 THEN excluded.free_group_enabled ELSE admin_app_perms.free_group_enabled END,
+           updated_at=CURRENT_TIMESTAMP`,
+      ).bind(adminId, enabled, maxLinks, freeGroup, hasFreeGroup),
+      auditStmt(db, ctx, {
+        action: "app_perm.update", targetType: "user", targetId: adminId,
+        before: cur ? { free_group_enabled: cur.free_group_enabled } : null,
+        after: { links_enabled: enabled, max_links: maxLinks, free_group_enabled: freeGroup },
+      }),
+    ]);
     return json({ ok: true, data: { admin_user_id: adminId, links_enabled: enabled, max_links: maxLinks, free_group_enabled: freeGroup } });
   }
   if (seg[2] === "app-entitlements" && seg.length === 5 && seg[4] === "rebind" && req.method === "POST") {
@@ -4378,14 +4389,21 @@ async function superAppLinksRoute(req, env, url, ctx) {
     const body = await readJson(req);
     const deviceId = s(body.device_id, 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
-    const row = await db.prepare("SELECT id, device_id FROM app_entitlements WHERE id = ?").bind(id).first();
+    const row = await db.prepare("SELECT id, admin_user_id, device_id FROM app_entitlements WHERE id = ?").bind(id).first();
     if (!row) return fail("授权不存在", 404);
-    await db.prepare("UPDATE app_entitlements SET device_id = ? WHERE id = ?").bind(deviceId, id).run();
-    await auditStmt(db, ctx, {
-      action: "app_entitlement.rebind", targetType: "app_entitlement", targetId: id,
-      before: { device_id: row.device_id }, after: { device_id: deviceId }, detail: "换绑设备",
-    }).run().catch(() => {});
-    return json({ ok: true, data: { id, device_id: deviceId, token: await entToken(env, id, deviceId) } });
+    const token = await entToken(env, id, deviceId);
+    const updated = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_entitlements WHERE id = ? AND device_id = ?)", [id, row.device_id]),
+      db.prepare("UPDATE app_entitlements SET device_id = ? WHERE id = ? AND device_id = ?")
+        .bind(deviceId, id, row.device_id),
+      auditStmt(db, ctx, {
+        action: "app_entitlement.rebind", targetType: "app_entitlement", targetId: id,
+        before: { admin_user_id: row.admin_user_id, device_id: row.device_id },
+        after: { admin_user_id: row.admin_user_id, device_id: deviceId }, detail: "换绑设备",
+      }),
+    ]);
+    if (!updated[1]?.meta?.changes) return fail("授权已被其他操作更新，请刷新后重试", 409);
+    return json({ ok: true, data: { id, device_id: deviceId, token } });
   }
   return fail("接口不存在", 404);
 }
