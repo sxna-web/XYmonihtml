@@ -120,6 +120,8 @@ def main() -> None:
     app_links = source.split("async function addAppLink", 1)[1].split("/* 超管 */", 1)[0]
     if "await userBatch(db, ctx" not in app_links or "auditStmt(db, ctx" not in app_links:
         raise AssertionError("APP link creation must share its assist-scope guard and audit batch")
+    if "assertStmt(db," not in app_links or "LINKS_LIMIT_CHANGED" not in app_links or "COUNT(*) FROM app_links WHERE admin_user_id = ?" not in app_links:
+        raise AssertionError("APP link creation must recheck current permission and max-link quota inside the insert batch")
     super_groups = source.split("async function superAppGroupsRoute", 1)[1].split("/** 管理员管理自己的分组", 1)[0]
     if ".run()" in super_groups:
         raise AssertionError("Super APP group writes must not bypass atomic D1 batches")
