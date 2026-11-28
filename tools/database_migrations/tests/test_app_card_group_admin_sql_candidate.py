@@ -73,7 +73,7 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(
                 """INSERT INTO app_card_group_admin_requests
-                   (admin_user_id,request_id,payload_sha256,response_json) VALUES(?,?,?,?)""",
+                   (admin_user_id,idempotency_key,payload_sha256,response_json) VALUES(?,?,?,?)""",
                 ("a1", "req-1", "b" * 64, '{"groupIds":["g2"]}'),
             )
 
@@ -83,7 +83,7 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
         self.db.execute("BEGIN")
         self.db.execute(
             """INSERT INTO app_card_group_admin_requests
-               (admin_user_id,request_id,payload_sha256,response_json)
+               (admin_user_id,idempotency_key,payload_sha256,response_json)
                VALUES('a1','req-atomic',?,?)""", ("c" * 64, '{"groupIds":["g2"]}')
         )
         self.db.execute(
@@ -128,6 +128,45 @@ class AppCardGroupAdminSqlCandidateTests(unittest.TestCase):
             self.db.execute("DELETE FROM app_cards WHERE id='c1'")
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute("DELETE FROM app_groups WHERE id='g1'")
+
+    def test_mapping_indexes_match_owner_card_and_group_access_paths(self):
+        indexes = {
+            row[1] for row in self.db.execute("PRAGMA index_list(app_card_group_mappings)")
+        }
+        self.assertIn("ix_card_group_mappings_admin_card_status", indexes)
+        self.assertIn("ix_card_group_mappings_group_status", indexes)
+
+    def test_mapping_status_and_removed_at_must_be_consistent(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                """INSERT INTO app_card_group_mappings
+                   (id,card_id,admin_user_id,group_id,status,removed_at)
+                   VALUES('bad-active','c1','a1','g1','active','2026-11-28T00:00:00Z')"""
+            )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                """INSERT INTO app_card_group_mappings
+                   (id,card_id,admin_user_id,group_id,status,removed_at)
+                   VALUES('bad-removed','c1','a1','g1','removed',NULL)"""
+            )
+
+    def test_idempotency_key_is_scoped_by_admin_not_globally_unique(self):
+        self.db.execute(
+            """INSERT INTO app_card_group_admin_requests
+               (admin_user_id,idempotency_key,payload_sha256,response_json)
+               VALUES('a1','shared-key-01',?,?)""",
+            ("a" * 64, '{"groupIds":["g1"]}'),
+        )
+        self.db.execute(
+            """INSERT INTO app_card_group_admin_requests
+               (admin_user_id,idempotency_key,payload_sha256,response_json)
+               VALUES('a2','shared-key-01',?,?)""",
+            ("b" * 64, '{"groupIds":["g2"]}'),
+        )
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM app_card_group_admin_requests").fetchone()[0],
+            2,
+        )
 
     def test_schema_has_no_redeem_code_or_token_columns(self):
         columns = {
