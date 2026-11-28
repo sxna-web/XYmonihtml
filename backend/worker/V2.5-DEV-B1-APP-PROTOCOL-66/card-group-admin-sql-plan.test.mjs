@@ -104,3 +104,15 @@ test("invalid scope, duplicate IDs and malformed digest fail closed",()=>{
     groupIds:[],expectedGroupIds:[],payloadSha256:"not-a-hash",
   }));
 });
+
+test("replace SQL plan binds delegated actor and scope for final batch guard",()=>{
+  const db={prepare(sql){return {sql,binds:[],bind(...binds){this.binds=binds;return this;}};}};
+  const statements=buildCardGroupReplaceStatements(db,{
+    adminId:"admin1",actorId:"super1",scopeId:"scope-1",requestId:"req-scope",
+    cardId:"card1",groupIds:["g1"],expectedGroupIds:[],
+    payloadSha256:"a".repeat(64),
+  });
+  assert.match(statements[0].sql,/admin_user_scopes/);
+  assert.ok(statements[0].binds.includes("scope-1"));
+  assert.ok(statements[0].binds.includes("super1"));
+});
