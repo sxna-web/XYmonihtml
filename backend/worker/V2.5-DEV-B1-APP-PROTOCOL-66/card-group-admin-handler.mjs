@@ -31,7 +31,12 @@ export function createCardGroupAdminHandler({ service, resolveSession }) {
     }
 
     const cardId = match[1];
+    const delegated = session.actorId !== session.effectiveId;
+    const scopeId = session.scopeId || session.session?.scopeId || null;
     if (request.method === "GET") {
+      if (delegated && !["read", "operate", "manage"].includes(session.scope)) {
+        return reply(403, { ok: false, code: "SCOPE_INSUFFICIENT" });
+      }
       const result = await service.get({ adminId: session.effectiveId, cardId });
       return reply(result.ok ? 200 : result.status || 403, result);
     }
@@ -49,9 +54,15 @@ export function createCardGroupAdminHandler({ service, resolveSession }) {
     if (!body || !Array.isArray(body.groupIds)) {
       return reply(400, { ok: false, code: "INVALID_GROUP_IDS" });
     }
+    if (delegated && (!["operate", "manage"].includes(session.scope) ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(scopeId || ""))) {
+      return reply(403, { ok: false, code: "SCOPE_INSUFFICIENT" });
+    }
     const result = await service.replace({
       adminId: session.effectiveId,
       actorId: session.actorId,
+      scope: session.scope || null,
+      scopeId,
       requestId: session.requestId,
       cardId,
       groupIds: body.groupIds,
