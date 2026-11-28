@@ -114,3 +114,18 @@
 - 随后接入重复 token groups/links API、动态分组与 generation/tombstone/24h cleanup/ACK。
 保留 6.00.48 原始 ZIP，下一版另建版本目录/ZIP。Staging DDL 仍须用户明确批准。此前 APP 卡密 hash 算法/诊断 DEV v1.5 定位任务仍是独立待办，不能把它误认为本轮已解决。
 
+## 8. APP 版本基线锁定与 6.00.50 DEV 更新（2026-11-29｜最新优先级，覆盖旧 APP 接手顺序）
+
+- 后续 APP 开发唯一基线：**6.00.50 DEV**。不得继续在 6.00.47/6.00.48 上直接修改，不得删除/覆盖两个历史源包。
+- 对比证据、SHA、文件差异和风险详见：`docs/app/versions/6.00.50/APP_版本基线锁定与DEV交付报告_2026-11-29.md`。
+- 6.00.47 ZIP：Library，2,377,487 bytes，SHA-256 `5a45da3d6e6e42a6aabf776336fdfff8424af0e9c7d756a8fea17f882459f7ab`，VERSION_CODE 70。
+- 6.00.48 ZIP：GitHub main 根目录存在，Git blob SHA `2b8b6d105019fb90341c7178438b2d6b0473699f`；恢复件 2,323,467 bytes，SHA-256 `1d4f49790ef358d2d8de807fa95fd18c331f06692e1a15c4d9030c6cad8b8012`，VERSION_CODE 71。对比47新增6文件/修改5文件/删除0文件，48为更完整原始基线。
+- 新版本：6.00.50，VERSION_CODE 72，预期 APK versionCode 360，applicationId com.xingyue.app。
+- 新 ZIP：`StarJump-6.00.50-source.zip`，2,355,724 bytes，SHA-256 `1a031e2dc18115e2448b42873d9ace957dc256a2daeb050468fbb9ec3bcbe018`，ZIP integrity PASS，756 entries。
+- 6.00.50 已有多 entitlement Room entity/DAO、Keystore AES-GCM vault、旧 token 安全迁移、显式 Room 6→7→8、主配置 DB 移除 destructive fallback、重复 token links 和按授权独立的 Gate。
+- 18/18 Python tests PASS；SQLite 合成迁移测试通过。Android Gradle/APK build 未执行（无 SDK）；真机/Room instrumentation/Worker/D1/API 测试未执行；未部署。
+- GitHub 已提交版本报告、目录说明、ARM64 workflow 和独立会话记录；提交依次为 `fca0b5dcf1ff11dd1e992c1e30c82f1086517fa4`、`c08329962191651f45f5e345df539c05bf61cb06`、`42b9b0eaa9579008483665575dc78f3a18758781`、`867d774230668b1b1cbedcc7e181dadfd57c6cd0`。
+- **ZIP 尚未上传 GitHub**：目标路径 `app/versions/6.00.50/StarJump-6.00.50-source.zip` 已预留，当前 GitHub 二进制写入不可用且 Library 已满。用户需要上传本次下载的 ZIP。若后续 AI 发现该路径仍无 ZIP，必须先请用户上传，不得改回47/48。
+- 新构建工作流：`.github/workflows/starjump-app-650-build.yml`；待 ZIP 上传后运行。它尚未执行，不得说 APK build 已通过。
+- 下一会话唯一优先任务：确认 6.00.50 ZIP 已进入目标 GitHub 路径；运行 ARM64 workflow；补 Android Room migration instrumentation/Keystore 实机测试。随后接入 `/api/app/groups`、多 token、动态分组、generation/tombstone/24h cleanup/ACK、last-known-good 和手动节点保护。
+- 未决：Staging base hostname 差异和 version API `current=60047` 参数语义未核实，禁止猜改；Staging DDL/部署须用户明确批准。
