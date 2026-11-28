@@ -7,11 +7,12 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
   const reads=[];
+  const rateBuckets=new Map();
   const sessionRow={
     id:"session-1",user_id:role==="super_admin"?"root":"u1",acting_as_user_id:actingAs,
     scope_id:actingAs?"scope-1":null,expires_at:"2099-01-01 00:00:00",revoked_at:null,
@@ -27,6 +28,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
           return {
             sql, args,
             async first() {
+              if (sql.includes("SELECT count FROM rate_limits WHERE bucket = ?")) return rateBuckets.has(args[0]) ? {count:rateBuckets.get(args[0])} : null;
               if (sql.includes("FROM user_sessions s")) return sessionRow;
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
               if (sql.includes("SELECT * FROM admin_user_scopes WHERE id = ?")) return {id:args[0],target_user_id:"u1",scope:"manage",revoked_at:null};
@@ -88,6 +90,11 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
             },
             async run() {
               writes.push({sql,args});
+              if (sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)")) {
+                if (rateLimitFailure) throw new Error("rate limit store unavailable");
+                const current=rateBuckets.get(args[0]) || 0;
+                rateBuckets.set(args[0], current + 1);
+              }
               if (failCapacityAssertion && sql.includes("COUNT(*) FROM app_cards")) throw new Error("assert-failed");
               if (failCardDeleteAssertion && sql.includes("activated_at IS NULL AND used_at IS NULL AND status <> 'used'")) throw new Error("assert-failed");
               if (failAppLinkCapacityAssertion && sql.includes("COUNT(*) FROM app_links WHERE admin_user_id = ?")) throw new Error("assert-failed");
@@ -345,6 +352,24 @@ test("super APP link delete batches final existence check, delete and audit",asy
   assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
 });
 
+
+test("APP redemption rate limit blocks repeated guesses per device before card lookup/write",async()=>{
+  const db=mockDb();
+  let last;
+  for(let i=0;i<6;i++) last=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(last.res.status,429);
+  assert.equal(last.json.code,"REDEEM_RATE_LIMITED");
+  assert.equal(db.reads.some(x=>x.sql.includes("FROM app_cards WHERE code = ?")),false);
+  assert.equal(db.batches.length,0);
+});
+test("APP redemption fails closed when rate limit storage is unavailable",async()=>{
+  const db=mockDb({rateLimitFailure:true});
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,503);
+  assert.equal(json.code,"REDEEM_THROTTLE_UNAVAILABLE");
+  assert.equal(db.reads.some(x=>x.sql.includes("FROM app_cards WHERE code = ?")),false);
+  assert.equal(db.batches.length,0);
+});
 
 test("APP card redemption commits card, entitlement, free grant and activation event in one batch",async()=>{
   const db=mockDb();
