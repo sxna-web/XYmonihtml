@@ -1196,6 +1196,15 @@ body.sb-collapsed .nav-row{justify-content:center}
   table{font-size:12px}
   th,td{padding:8px 8px}
 }
+#uCardGroupsDialog{border:0;border-radius:16px;padding:0;width:min(560px,calc(100% - 24px));max-height:min(82vh,760px);color:var(--text);background:var(--card);box-shadow:var(--shadow-lg)}
+#uCardGroupsDialog::backdrop{background:rgba(15,23,42,.48);backdrop-filter:blur(3px)}
+.u-card-groups-head,.u-card-groups-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.u-card-groups-foot{border-top:1px solid var(--line);border-bottom:0;justify-content:flex-end}
+.u-card-groups-body{padding:14px 16px;overflow:auto;max-height:58vh}
+.u-card-group-option{display:flex;align-items:flex-start;gap:10px;padding:10px 8px;border-bottom:1px solid var(--line);cursor:pointer}
+.u-card-group-option input{margin-top:4px;flex:none}
+.u-card-group-option .meta{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.u-card-group-option .state{margin-left:auto;color:var(--warn);font-size:11px;white-space:nowrap}
 </style>
 <style>
 /* ===== 桥接层：让既有组件在参考稿设计系统内正常显示 ===== */
@@ -1607,8 +1616,13 @@ pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:10px;font-size:1
     </div>
     <div class="tablewrap" style="margin-top:8px"><table>
       <thead><tr><th>卡密</th><th>状态</th><th>天数</th><th>激活</th><th>创建</th><th>操作</th></tr></thead>
-      <tbody id="uCardRows"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+      <tbody id="uCardRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
     </table></div>
+    <dialog id="uCardGroupsDialog" aria-labelledby="uCardGroupsTitle">
+      <div class="u-card-groups-head"><div><b id="uCardGroupsTitle">卡密分组配置</b><div id="uCardGroupsSubtitle" class="muted" style="font-size:11px;margin-top:3px"></div></div><button type="button" class="secondary smallbtn" id="uCardGroupsClose">关闭</button></div>
+      <div class="u-card-groups-body"><div id="uCardGroupsHint" class="muted" style="margin-bottom:8px"></div><div id="uCardGroupsOptions"></div></div>
+      <div class="u-card-groups-foot"><button type="button" class="secondary smallbtn" id="uCardGroupsCancel">取消</button><button type="button" id="uCardGroupsSave">保存分组</button></div>
+    </dialog>
 
     <h3 style="font-size:15px;margin-top:14px">我的入口链接</h3>
     <div class="row" style="margin-top:6px">
@@ -2684,6 +2698,112 @@ $('uLinkAdd').addEventListener('click', async () => {
   } catch (e) { setStatus('uStatus', e.message, 'bad'); }
 });
 
+const pendingCardGroupRequests = new Map();
+let activeCardGroupEditor = null;
+
+function newCardGroupIdempotencyKey() {
+  if (!globalThis.crypto || typeof crypto.getRandomValues !== 'function') throw new Error('当前环境无法安全生成请求编号，请更新浏览器后重试');
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return 'card-group-' + [...bytes].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function closeCardGroupEditor() {
+  const dialog = $('uCardGroupsDialog');
+  if (dialog && dialog.open) dialog.close();
+  activeCardGroupEditor = null;
+}
+
+async function openCardGroupEditor(card) {
+  try {
+    const result = await api('/api/user/app-cards/' + encodeURIComponent(card.id) + '/groups');
+    activeCardGroupEditor = { id: card.id, code: card.code, state: result };
+    $('uCardGroupsSubtitle').textContent = '卡密：' + card.code;
+    const box = $('uCardGroupsOptions'); box.replaceChildren();
+    const selected = new Set((result.mappings || []).map(x => x.id));
+    const readOnly = !['normal','used'].includes(result.card?.status) ||
+      result.card?.manual_disabled === true || result.card?.is_expired === true;
+    $('uCardGroupsHint').textContent = readOnly
+      ? '此卡密当前为只读状态，可查看已配置分组，但不能修改。'
+      : '仅显示此 VIP 管理员创建的卡密分组。免费分组不在此处配置，避免同一管理员的免费分组按卡密重复发放。';
+    for (const group of (result.groups || [])) {
+      const row = document.createElement('label'); row.className = 'u-card-group-option';
+      const check = document.createElement('input'); check.type = 'checkbox';
+      check.checked = selected.has(group.id); check.disabled = readOnly;
+      check.addEventListener('change', () => {
+        if (check.checked && !group.enabled) {
+          check.checked = false;
+          setStatus('uStatus', '该分组已停用，不能重新分配；取消勾选后可从此卡密移除。', 'bad');
+        }
+        updateCardGroupSaveState();
+      });
+      const info = document.createElement('span'); info.style.flex = '1';
+      const name = document.createElement('b'); name.textContent = group.name;
+      const meta = document.createElement('span'); meta.className = 'meta';
+      meta.textContent = group.enabled ? '卡密分组' : '已停用分组';
+      info.append(name, meta); row.append(check, info);
+      if (!group.enabled) {
+        const state = document.createElement('span'); state.className = 'state'; state.textContent = selected.has(group.id) ? '取消勾选可移除' : '不可分配';
+        row.appendChild(state);
+      }
+      row.dataset.groupId = group.id;
+      box.appendChild(row);
+    }
+    if (!box.children.length) box.textContent = '目前没有可配置的卡密分组。';
+    $('uCardGroupsSave').disabled = readOnly;
+    updateCardGroupSaveState();
+    const dialog = $('uCardGroupsDialog');
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else setStatus('uStatus', '当前浏览器不支持分组配置窗口，请更新浏览器。', 'bad');
+  } catch (e) {
+    setStatus('uStatus', e.message || '读取卡密分组失败，请检查网络后重试。', 'bad');
+  }
+}
+
+function updateCardGroupSaveState() {
+  const box = $('uCardGroupsOptions');
+  const disabledStillSelected = [...box.querySelectorAll('.u-card-group-option')].some(row => {
+    const input = row.querySelector('input');
+    return input.checked && row.querySelector('.state');
+  });
+  $('uCardGroupsSave').disabled = !activeCardGroupEditor || disabledStillSelected ||
+    !['normal','used'].includes(activeCardGroupEditor.state.card?.status) ||
+    activeCardGroupEditor.state.card?.manual_disabled === true ||
+    activeCardGroupEditor.state.card?.is_expired === true;
+  if (disabledStillSelected) $('uCardGroupsHint').textContent = '存在已停用且仍被分配的分组。请先取消勾选将其移除，再保存；未保存前不会更改现有配置。';
+}
+
+async function saveCardGroupEditor() {
+  if (!activeCardGroupEditor) return;
+  const box = $('uCardGroupsOptions');
+  const groupIds = [...box.querySelectorAll('.u-card-group-option')].filter(row => row.querySelector('input').checked).map(row => row.dataset.groupId).sort();
+  const signature = JSON.stringify(groupIds);
+  const prior = pendingCardGroupRequests.get(activeCardGroupEditor.id);
+  const pending = prior && prior.signature === signature
+    ? prior : { signature, key: newCardGroupIdempotencyKey() };
+  pendingCardGroupRequests.set(activeCardGroupEditor.id, pending);
+  const save = $('uCardGroupsSave'); save.disabled = true; save.textContent = '正在保存…';
+  try {
+    await api('/api/user/app-cards/' + encodeURIComponent(activeCardGroupEditor.id) + '/groups', {
+      method: 'PUT',
+      headers: { 'Idempotency-Key': pending.key },
+      body: JSON.stringify({ groupIds }),
+    });
+    pendingCardGroupRequests.delete(activeCardGroupEditor.id);
+    closeCardGroupEditor();
+    await loadUserCards();
+    setStatus('uStatus', '卡密分组配置已保存。', 'good');
+  } catch (e) {
+    setStatus('uStatus', (e.message || '保存失败') + '；如网络中断或结果不确定，保持相同选择再次保存会复用请求编号。', 'bad');
+  } finally {
+    save.textContent = '保存分组';
+    updateCardGroupSaveState();
+  }
+}
+
+$('uCardGroupsClose').addEventListener('click', closeCardGroupEditor);
+$('uCardGroupsCancel').addEventListener('click', closeCardGroupEditor);
+$('uCardGroupsSave').addEventListener('click', saveCardGroupEditor);
+
 async function loadUserCards() {
   const st = $('uCfStatus').value, from = $('uCfFrom').value, to = $('uCfTo').value;
   const q = new URLSearchParams();
@@ -2692,13 +2812,16 @@ async function loadUserCards() {
   if (to) q.set('to', to);
   const d = await api('/api/user/app-cards?' + q.toString());
   const body = $('uCardRows'); body.replaceChildren();
-  if (!d.data.length) return emptyRow(body, 5, '没有符合条件的卡密。');
+  if (!d.data.length) return emptyRow(body, 6, '没有符合条件的卡密。');
   for (const c of d.data) {
     const tr = document.createElement('tr');
     cell(tr, c.code); cell(tr, c.status); cell(tr, c.days);
     cell(tr, c.activated_at ? String(c.activated_at).slice(0, 10) : '—');
     cell(tr, String(c.created_at).slice(0, 10));
     const op = document.createElement('td');
+    const groups = document.createElement('button'); groups.className = 'secondary smallbtn'; groups.textContent = '配置分组';
+    groups.addEventListener('click', () => openCardGroupEditor(c));
+    op.appendChild(groups);
     if (!c.activated_at && !c.used_at) {
       const del = document.createElement('button'); del.className = 'danger smallbtn'; del.textContent = '删除';
       del.addEventListener('click', async () => {
