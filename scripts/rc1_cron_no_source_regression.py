@@ -136,6 +136,18 @@ def main() -> None:
     if "app_group.super_member_add" not in super_groups or "app_group.super_member_remove" not in super_groups:
         raise AssertionError("Super APP member mutations must have audit events")
 
+    super_links = source.split("async function superAppLinksRoute", 1)[1].split("/* 免费分组：管理员开启后", 1)[0]
+    if ".run()" in super_links:
+        raise AssertionError("Super APP link/permission/rebind mutations must not bypass atomic D1 batches")
+    if super_links.count("await db.batch([") < 3 or super_links.count("auditStmt(db, ctx") < 3:
+        raise AssertionError("Super APP link delete, permission update and entitlement rebind must be batched and audited")
+    if "free_group_enabled=CASE WHEN ? = 1 THEN excluded.free_group_enabled ELSE admin_app_perms.free_group_enabled END" not in super_links:
+        raise AssertionError("APP permission update must preserve free-group state when omitted without overwriting a concurrent change")
+    if "device_id = ? AND device_id = ?" not in super_links:
+        raise AssertionError("APP entitlement rebind must use an optimistic old-device predicate")
+    if "app_link.super_delete" not in super_links or "app_entitlement.rebind" not in super_links:
+        raise AssertionError("Super APP link and entitlement mutations must write audit records")
+
     app_cards = source.split("async function userAppCardsRoute", 1)[1].split("/* ────────────────────────────── 节点生命周期", 1)[0]
     if app_cards.count("assertStmt(db,") < 2 or "APP_CARD_CAPACITY_CHANGED" not in app_cards:
         raise AssertionError("APP card total/stock capacity must be asserted inside the redemption batch")
