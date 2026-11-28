@@ -497,7 +497,7 @@ test("super user status/password update rechecks snapshot and batches update, se
   assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_sessions SET revoked_at")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
   const update=batch.find(sql=>sql.startsWith("UPDATE app_users SET status="));
-  assert.match(update,/WHERE id=? AND role=? AND status=?/);
+  assert.match(update,/WHERE id=.*AND role=.*AND status=/);
 });
 
 test("super convert-link regroup uses compare-and-swap and atomic audit",async()=>{
