@@ -81,3 +81,12 @@
 - 未执行 Cloudflare 真实部署、D1 SQL、API 集成测试或真实 APK 联调。
 
 **当前状态：完整更新文件已生成，静态检查通过；生产部署前仍须完成 Secret 与 APK 兼容核对。**
+
+
+## 8. 上线前复核补充（2026-11-28）
+
+- 已修复 Cron 入口的一个流程缺陷：原先当没有已分配订阅来源时提前 return，会跳过 VIP 卡密、节点生命周期和 APP entitlement 维护；现在维护任务无论是否存在同步来源都会执行，只有来源同步本身在 sources 非空时运行。
+- 已增加 `.github/workflows/v25-batch1-release-smoke.yml` 与 `scripts/release_smoke_v25.py`，在 GitHub Actions 中检查 Worker 语法、HTML 内联 JavaScript 语法及关键发布断言。**以 Actions 实际成功记录为准，不能把工作流存在视为测试通过。**
+- `CONVERT_KEY` 仍有历史兼容回退 `starjump-convert`。这关系到历史转换密文可解密性，不能在本次部署时随意更换或删除；正式上线前必须另行完成历史密文版本与迁移方案。不得把本批描述成完成密钥轮换。
+- APP 6.00.47 已知源码审计未证明其会调用本 Worker 的 status/token 接口；本批仍不能声称 APP 客户端已联调。部署前须确认当前已安装 APK 对相关 API 的实际使用情况。
+- 本包是管理后台/Worker 第一阶段修复候选，不代表 APP entitlement、卡密多管理员组合、分组撤销 24 小时清理 ACK 等完整业务已上线。
