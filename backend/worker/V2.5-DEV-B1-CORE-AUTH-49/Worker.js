@@ -1838,6 +1838,29 @@ async function userNodesRoute(req, env, url, ctx) {
       }
       return json({ ok: true, data: { id } });
     }
+    if (seg.length === 6 && seg[5] === "enabled" && method === "PATCH") {
+      const body = await readJson(req);
+      const enabled = parseBool01(body.enabled);
+      if (enabled === null) return fail("enabled 只能是 true/false/1/0", 400);
+      try {
+        const changed = await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "manual"),
+          db.prepare("UPDATE user_manual_nodes SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+            .bind(enabled, id, ctx.effectiveId),
+          auditStmt(db, ctx, {
+            action: "manual_node.enabled", targetType: "manual_node", targetId: id,
+            before: { enabled: existing.enabled }, after: { enabled },
+          }),
+        ]);
+        if (!changed[1]?.meta?.changes) return fail("手动节点启停状态刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
+      return json({ ok: true, data: { id, enabled } });
+    }
     return fail("不支持的手动节点操作", 405);
   }
 
