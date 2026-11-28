@@ -5601,6 +5601,8 @@ export default {
       return withCors(fail("接口不存在", 404));
     } catch (e) {
       const message = String(e?.message || "");
+      if (e?.code === "GUEST_KEY_REQUIRED") return withCors(fail(message, 400, { code: e.code }));
+      if (e?.code === "SECRET_NOT_CONFIGURED") return withCors(fail("Worker 认证密钥未配置或长度不足", 503, { code: e.code }));
       if (/^请求体|^JSON|^请求必须/.test(message)) return withCors(fail(message, 400));
       if (/fence-lost|assert-failed|malformed JSON/i.test(message)) {
         // 断言失败（fence/scope/不变量）都会让整批回滚
