@@ -19,6 +19,7 @@ function fakeDb() {
     ],
     mappings:[],
     request:null,
+    scope:{id:"scope-1",admin_user_id:"a1",target_user_id:"super1",scope:"operate",revoked_at:null,expires_at:null},
   };
   let batchFailure=null;
   let mutateOnBatchFailure=null;
@@ -31,6 +32,7 @@ function fakeDb() {
         async first(){
           calls.push({kind:"first",sql,binds:this.binds});
           if(sql.includes("app_card_group_admin_requests"))return state.request;
+          if(sql.includes("FROM admin_user_scopes"))return state.scope;
           if(sql.includes("FROM app_cards"))return state.card;
           return null;
         },
@@ -189,6 +191,18 @@ test("card disabled during batch is reported as not writable",async()=>{
   const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
   const r=await adapter.replaceCardGroupsAtomically(base);
   assert.equal(r.code,"CARD_NOT_WRITABLE");
+});
+
+test("delegated idempotent replay is rejected after scope revocation",async()=>{
+  const db=fakeDb();
+  const hash=await digest("c1",["g1"]);
+  db.state.request={payload_sha256:hash,response_json:'{"groupIds":["g1"]}'};
+  db.state.scope.revoked_at="2026-11-28 10:00:00";
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically({...base,actorId:"super1",scope:"operate",scopeId:"scope-1"});
+  assert.equal(r.code,"SCOPE_INSUFFICIENT");
+  assert.equal(r.idempotent,undefined);
+  assert.equal(db.calls.some(x=>x.kind==="batch"),false);
 });
 
 test("delegated D1 batch carries final active scope guard",async()=>{
