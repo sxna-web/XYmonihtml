@@ -142,3 +142,10 @@
 - Actions run `46184869195` / job `141102408156` / head `84546b5042ae2fafd84b8574f662ba21e0f60c04` 正在构建。
 - 最近状态：源码校验、工具链准备、LibCore AAR build/verify、Gradle assets 初始化 success；ARM64 APK assemble in_progress；验证与上传 pending；无 Artifact。
 - 早期“ZIP 尚未上传”的旧描述仅为历史，不再是当前事实。下一步继续轮询该 run；成功后下载并核验 APK，不成功则按真实日志定位。
+
+
+## 2026-11-29｜最新会话记录索引更新
+
+- 最新会话记录：docs/handoffs/sessions/2026-11-29-650-build-wait-doc-status-correction.md
+- 会话记录 commit：7eef3e2538c68830d6ac8e779c02fb4717e75799
+- 本批仅完成 GitHub 文档状态纠正；6.00.50 ARM64 APK 构建仍待 Actions 最终结果，不能标记成功。
