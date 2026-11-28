@@ -39,7 +39,7 @@
 - PR checks [46136890869](https://github.com/sxna-web/XYmonihtml/actions/runs/46136890869)：SUCCESS
 - PR checks [46136890859](https://github.com/sxna-web/XYmonihtml/actions/runs/46136890859)：SUCCESS
 - Python 隔离迁移/SQLite 总套件：68 tests，OK。
-- 本批两张候选表专项：映射约束测试 13 项、卡组/幂等与回滚测试 13 项，均通过。
+- 本批两张候选表专项：映射约束测试 12 项、卡组/幂等与回滚测试 13 项，均通过。
 - Worker integration：75/75。
 - Protocol66 service：22/22；SQL plan：8/8；D1 adapter：16/16；dispatch contract：12/12。
 - APP v2 composition：19/19；APP read handler：23/23；composed group service：26/26。
