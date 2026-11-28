@@ -254,6 +254,14 @@ def main() -> None:
 
     if "localStorage.getItem('sj-api') || 'https://" in html:
         raise AssertionError("Release HTML still has a hard-coded API fallback bypassing the API input")
+    if 'value="https://starjump-api-staging' in html:
+        raise AssertionError("Release HTML must not default API requests to the Staging Worker")
+    if "if (savedApiBase && isKnownStagingApi(savedApiBase)) localStorage.removeItem('sj-api')" not in html:
+        raise AssertionError("Release HTML must clear a stale Staging API URL saved by an older version")
+    if "if (!base) throw new Error('请先填写并核实正式 Worker API 根地址')" not in html:
+        raise AssertionError("Release HTML must stop API requests until a verified Worker root is entered")
+    if "placeholder=\"https://你的正式 Worker 根地址\"" not in html:
+        raise AssertionError("Release HTML must clearly request an explicitly configured Worker root")
 
     dispatch = source.split('if (url.pathname === "/api/super/schema-status" || url.pathname === "/api/super/migrate")', 1)[1].split("if (url.pathname.startsWith", 1)[0]
     for guard in ("ctx.legacy", "ctx.actorId !== ctx.effectiveId"):
