@@ -1,5 +1,5 @@
 -- ISOLATED CANDIDATE FIXTURE ONLY. Not a production migration; never run against D1.
-PRAGMA foreign_keys = ON;
+PRAGMA foreign_keys = OFF; -- Candidate schema deliberately has no FK constraints.
 
 CREATE TABLE IF NOT EXISTS app_cards (
   id TEXT PRIMARY KEY,
@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS app_card_group_mappings (
   admin_user_id TEXT NOT NULL,
   group_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','removed')),
-  CHECK ((status = 'active' AND removed_at IS NULL) OR (status = 'removed' AND removed_at IS NOT NULL)),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   removed_at TEXT,
