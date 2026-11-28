@@ -103,7 +103,7 @@ export function buildCardGroupReplaceStatements(db, input) {
           AND s.revoked_at IS NULL
           AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
           AND s.scope IN ('operate','manage')))
-    THEN 1 ELSE json_extract('assert-failed', ' = JSON.stringify({ groupIds: desired });
+    THEN 1 ELSE json_extract('assert-failed', '$') END`;
   const batch = [
     statement(assertSql, [
       adminId, cardId, adminId, adminId, cardId,
