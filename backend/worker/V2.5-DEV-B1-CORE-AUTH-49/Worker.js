@@ -4176,6 +4176,37 @@ async function verifyEntToken(env, entitlementId, deviceId, token) {
   return timingSafeEqual(String(token), expect);
 }
 
+async function checkAppRedeemRateLimit(db, req, deviceId, env) {
+  // Cloudflare's CF-Connecting-IP is edge supplied; never trust arbitrary X-Forwarded-For here.
+  const ip = s(req.headers.get("CF-Connecting-IP") || "unknown", 60);
+  const pepper = requiredSecret(env, "SESSION_PEPPER", 32);
+  const ipHash = await sha256Hex(`app-redeem-ip|${ip}|${pepper}`);
+  const deviceHash = await sha256Hex(`app-redeem-device|${deviceId}|${pepper}`);
+  const limits = [
+    [`app:redeem:ip:${ipHash}`, 10],
+    [`app:redeem:device:${deviceHash}`, 5],
+  ];
+  try {
+    for (const [bucket, limit] of limits) {
+      await db.prepare(
+        `INSERT INTO rate_limits(bucket, count, updated_at) VALUES(?, 1, CURRENT_TIMESTAMP)
+         ON CONFLICT(bucket) DO UPDATE SET
+           count = CASE WHEN datetime(rate_limits.updated_at) <= datetime('now', '-15 minutes')
+                        THEN 1 ELSE rate_limits.count + 1 END,
+           updated_at = CURRENT_TIMESTAMP`,
+      ).bind(bucket).run();
+      const row = await db.prepare("SELECT count FROM rate_limits WHERE bucket = ?").bind(bucket).first();
+      if (!row || Number(row.count) > limit) {
+        return { ok: false, scope: bucket.includes(":device:") ? "device" : "ip" };
+      }
+    }
+    return { ok: true };
+  } catch {
+    // Authentication throttling must fail closed when its backing store is unavailable.
+    return { ok: false, unavailable: true };
+  }
+}
+
 async function appRedeemRoute(req, env, url, ctx) {
   const db = env.DB;
   if (url.pathname === "/api/app/redeem" && req.method === "POST") {
@@ -4184,6 +4215,15 @@ async function appRedeemRoute(req, env, url, ctx) {
     const deviceId = s(body.device_id, 80);
     if (!/^[A-Z0-9]{8,24}$/.test(code)) return fail("卡密格式不正确", 400);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
+
+    const throttle = await checkAppRedeemRateLimit(db, req, deviceId, env);
+    if (throttle.unavailable) return fail("激活服务暂不可用，请稍后重试", 503, { code: "REDEEM_THROTTLE_UNAVAILABLE" });
+    if (!throttle.ok) {
+      return new Response(JSON.stringify({ ok: false, message: "尝试次数过多，请 15 分钟后重试", code: "REDEEM_RATE_LIMITED" }), {
+        status: 429,
+        headers: { "content-type": "application/json; charset=utf-8", "retry-after": "900", "cache-control": "no-store" },
+      });
+    }
 
     const card = await db.prepare(
       "SELECT id, admin_user_id, days, status, manual_disabled, activated_at, used_at, expires_at FROM app_cards WHERE code = ?",
