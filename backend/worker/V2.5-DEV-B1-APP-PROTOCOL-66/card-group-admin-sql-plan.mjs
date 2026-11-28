@@ -104,7 +104,7 @@ export function buildCardGroupReplaceStatements(db, input) {
   const afterJson = JSON.stringify({ groupIds: desired });
   const batch = [
     db.prepare(assertSql).bind(
-      adminId, cardId, adminId, isSuperAdmin ? 1 : 0, adminId, adminId, cardId,
+      isSuperAdmin ? 1 : 0, adminId, cardId, adminId, adminId, cardId,
       ...expected.flatMap(id => [adminId, cardId, id]),
       ...desiredBinds,
       actorId, adminId, scopeId || "", actorId, adminId,
