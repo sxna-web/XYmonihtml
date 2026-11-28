@@ -38,6 +38,8 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("FROM download_links WHERE id = ?")) return {id:args[0],scope:"admin",admin_user_id:"u1",title:"Downloads",url:"https://example.test/file.apk"};
               if (sql.includes("FROM app_entitlements WHERE id = ?")) return {id:args[0],admin_user_id:"u1",device_id:"old-device-123456"};
               if (sql.includes("FROM app_links WHERE id = ?")) return {id:args[0],admin_user_id:"u1",title:"Support",url:"https://example.test"};
+              if (sql.includes("FROM releases WHERE id = ?")) return {id:args[0],platform:"android",version_code:10,version_name:"1.0.0"};
+              if (sql.includes("FROM announcements WHERE id = ?")) return {id:args[0],title:"Notice",scope:"app",active:1};
               if (sql.includes("FROM subscription_sources s JOIN source_ownership")) return {id:"src1"};
               return null;
             },
@@ -69,7 +71,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
   };
 }
 function businessWrites(db) {
-  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards|INSERT INTO download_links|DELETE FROM download_links)/i.test(x.sql.trim()));
+  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards|INSERT INTO download_links|DELETE FROM download_links|INSERT INTO releases|DELETE FROM releases|INSERT INTO announcements|UPDATE announcements|DELETE FROM announcements)/i.test(x.sql.trim()));
 }
 async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"},
   authorization="Bearer test-session",sessionPepper="test-pepper-test-pepper-test-pepper"}={}) {
@@ -338,4 +340,46 @@ test("super download deletion batches existence assertion, delete and audit",asy
   const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM download_links"));
   assert.ok(del);assert.deepEqual(del.args,["dl-1"]);
   assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super release creation batches insert and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/releases",method:"POST",body:{platform:"android",version_code:10,version_name:"1.0.0",url:"https://example.test/app.apk"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO releases")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super release deletion batches existence assertion, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/releases/rel-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM releases")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("SELECT CASE WHEN (EXISTS (SELECT 1 FROM releases"))));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super announcement creation batches insert and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/announcements",method:"POST",body:{title:"Notice",scope:"app",body:"Hello"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO announcements")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super announcement toggle batches existence assertion, update and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/announcements/ann-1",method:"PUT",body:{active:false}});
+  assert.equal(res.status,200);assert.equal(json.data.active,0);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE announcements")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super announcement deletion batches existence assertion, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/announcements/ann-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM announcements")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
