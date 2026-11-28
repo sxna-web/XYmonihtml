@@ -1,4 +1,7 @@
 import { authorizeAppManagementRequest } from "./worker-auth-adapter.mjs";
+import { createCardGroupAdminHandler } from "../V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-handler.mjs";
+import { createCardGroupAdminService } from "../V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-service.mjs";
+import { createCardGroupD1Adapter } from "../V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-d1-adapter.mjs";
 
 /* V2.5-DEV-B1-CORE-AUTH-49: owner-predicate hardened authorization revision; source base retained unchanged. */
 /**
@@ -3839,6 +3842,51 @@ async function runVipCardMaintenance(db, ctx) {
   return { deactivated, restored };
 }
 
+async function userAppCardGroupsRoute(req, env, url, ctx) {
+  // New Protocol66 path is isolated from legacy card endpoints. Fail closed until
+  // both reviewed mapping/idempotency tables exist; never attempt implicit DDL.
+  const requiredTables = ["app_card_group_mappings", "app_card_group_admin_requests"];
+  let present;
+  try {
+    const result = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?)",
+    ).bind(...requiredTables).all();
+    present = new Set((result?.results || []).map(row => row.name));
+  } catch {
+    return fail("卡密分组配置暂不可用，请稍后重试", 503, { code: "CARD_GROUP_SCHEMA_CHECK_UNAVAILABLE" });
+  }
+  if (requiredTables.some(name => !present.has(name))) {
+    return fail("卡密分组功能尚未启用，现有卡密和分组不受影响", 503, {
+      code: "CARD_GROUP_SCHEMA_NOT_READY",
+      missing: requiredTables.filter(name => !present.has(name)),
+    });
+  }
+
+  const storage = createCardGroupD1Adapter({
+    db: env.DB,
+    resolveAccess: async adminId => ({
+      canRead: adminId === ctx.effectiveId,
+      // The outer Worker authorization adapter has already checked the live
+      // VIP/trial state and delegated scope. The D1 batch repeats the final
+      // activation/scope guard atomically before any mapping write.
+      canWrite: adminId === ctx.effectiveId && ctx.appAuthorization?.allowed === true,
+    }),
+  });
+  const service = createCardGroupAdminService({ storage });
+  const handler = createCardGroupAdminHandler({
+    service,
+    resolveSession: async () => ({
+      ...ctx,
+      isSuperAdmin: ctx.isSuper === true && ctx.actorId === ctx.effectiveId,
+    }),
+  });
+  try {
+    return await handler(req);
+  } catch {
+    return fail("卡密分组配置暂时不可用，请稍后重试", 503, { code: "CARD_GROUP_SERVICE_UNAVAILABLE" });
+  }
+}
+
 async function userAppCardsRoute(req, env, url, ctx) {
   const db = env.DB;
   const seg = url.pathname.split("/").filter(Boolean);   // api,user,app-cards,...
@@ -6123,6 +6171,10 @@ export default {
         }
         if (url.pathname.startsWith("/api/user/app-links")) {
           return withCors(await userAppLinksRoute(req, env, url, ctxWithReq));
+        }
+        if (/^\/api\/user\/app-cards\/[A-Za-z0-9_-]{1,128}\/groups$/.test(url.pathname) &&
+            ["GET", "PUT"].includes(req.method)) {
+          return withCors(await userAppCardGroupsRoute(req, env, url, ctxWithReq));
         }
         if (url.pathname.startsWith("/api/user/app-cards")) {
           return withCors(await userAppCardsRoute(req, env, url, ctxWithReq));
