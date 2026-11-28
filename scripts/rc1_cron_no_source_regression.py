@@ -174,6 +174,9 @@ def main() -> None:
         raise AssertionError("Node override set/remove must recheck source ownership inside the batch")
     if "nodeOwnerAssertStmt(db, ctx, nodeId, found.kind)" not in metadata:
         raise AssertionError("Node metadata must recheck manual/subscription ownership inside the batch")
+    user_nodes = source.split("async function userNodesRoute", 1)[1].split("function pickNode", 1)[0]
+    if "nodeOwnerAssertStmt(db, ctx, id, \"subscription\")" not in user_nodes or "nodeOwnerAssertStmt(db, ctx, id, \"manual\")" not in user_nodes:
+        raise AssertionError("Node enabled toggles must recheck subscription/manual node ownership inside the batch")
     if "nodeOwnerAssertStmt(db, ctx, nodeId, kind)" not in groups or "GROUP_MEMBER_STATE_CHANGED" not in groups:
         raise AssertionError("Node-group member add must recheck both group and node ownership inside the batch")
 
