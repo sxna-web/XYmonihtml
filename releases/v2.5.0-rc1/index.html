@@ -1872,7 +1872,7 @@ async function api(path, options={}) {
     try {
       const res = await fetch(url, {
         ...options,
-        signal: options.signal || controller.signal,
+        signal: controller.signal,
         headers: { ...(options.body ? {'content-type':'application/json'} : {}), Authorization: 'Bearer ' + token, ...(options.headers||{}) },
         cache: 'no-store', redirect: 'error',
       });
@@ -1880,7 +1880,8 @@ async function api(path, options={}) {
       try { data = await res.json(); } catch { data = null; }
       if (res.status === 401) { token=''; showLogin('会话已失效，请重新登录'); throw new Error('登录状态已失效，请重新登录'); }
       if (res.status === 429) {
-        const seconds = Math.max(1, Number(res.headers.get('Retry-After') || 60));
+        const retryAfter = Number.parseInt(res.headers.get('Retry-After') || '60', 10);
+        const seconds = Number.isFinite(retryAfter) ? Math.max(1, retryAfter) : 60;
         throw new Error('操作过于频繁，请等待约 ' + seconds + ' 秒后再试');
       }
       if ([502, 503, 504].includes(res.status) && safeRead && attempt < maxAttempts) {
@@ -1889,6 +1890,9 @@ async function api(path, options={}) {
       }
       if (!res.ok || !data || data.ok !== true) {
         const message = (data && (data.error || data.message)) || ('服务器暂时无法完成请求（HTTP ' + res.status + '）');
+        if (!safeRead && (res.status >= 500 || !data)) {
+          throw new Error(message + '；服务器可能已收到本次操作，请先刷新并核对结果，不要立即重复提交。');
+        }
         throw new Error(message);
       }
       return data;
