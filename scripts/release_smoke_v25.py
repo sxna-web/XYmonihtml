@@ -39,7 +39,7 @@ def node_check(path, source):
 def main():
     worker = WORKER.read_text(encoding="utf-8")
     html = HTML.read_text(encoding="utf-8")
-    node_check("worker.js", worker)
+    node_check("worker.mjs", worker)
     parser = InlineScripts()
     parser.feed(html)
     if not parser.items:
