@@ -2,6 +2,11 @@ name: APK Source ZIP Audit (Manual)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release/v2.5.0-rc1-converge
+    paths:
+      - '.github/workflows/apk-source-audit.yml'
 
 permissions:
   contents: read
@@ -26,6 +31,13 @@ jobs:
           test -f "StarJump-6.00.48-source.zip"
           sha256sum "StarJump-6.00.47-source .zip" "StarJump-6.00.48-source.zip"
           python3 tools/apk_audit/scan_source_zip.py
+      - name: Stage APP 6.00.48 source archive for protocol verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: starjump-app-6.00.48-source-review
+          path: StarJump-6.00.48-source.zip
+          if-no-files-found: error
+          retention-days: 1
       - name: Upload sanitized audit report
         uses: actions/upload-artifact@v4
         with:
