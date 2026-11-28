@@ -197,6 +197,11 @@ def main() -> None:
         raise AssertionError("Source approval must compare-and-swap its pre-read status")
     if "FROM subscription_sources WHERE id = ?" not in source_assign or "status = 'active'" not in source_assign:
         raise AssertionError("Source assignment must recheck source existence and active target user in the write batch")
+    source_unassign = super_route.split('if (seg[2] === "sources" && seg.length === 5 && seg[4] === "assign" && method === "DELETE")', 1)[1].split('if (seg[2] === "impersonation"', 1)[0]
+    if "FROM subscription_sources WHERE id = ? AND enabled = ?" not in source_unassign or "DELETE FROM source_ownership WHERE source_id = ? AND user_id = ?" not in source_unassign:
+        raise AssertionError("Source unassignment must compare-and-swap source enabled state and exact owner")
+    if "OWNERSHIP_CHANGED" not in source_unassign or "AND enabled = ?" not in source_unassign:
+        raise AssertionError("Source unassignment must reject stale ownership/enable snapshots")
 
     super_releases = source.split("async function superReleasesRoute", 1)[1].split("/* ────────────────────────────── APP 下载链接", 1)[0]
     if ".run()" in super_releases:
