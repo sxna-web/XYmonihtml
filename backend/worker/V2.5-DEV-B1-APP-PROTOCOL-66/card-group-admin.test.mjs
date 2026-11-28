@@ -17,6 +17,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
   const events=[];
   let failAtomic=false;
   let commitWriteAllowed=canWrite;
+  const committedRequests=new Map();
   const storage={
     async accessForAdmin(adminId) {
       events.push(["access",adminId]);
@@ -33,6 +34,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
       if(state.card.status!=="normal" && state.card.status!=="used" ||
         state.card.manual_disabled || state.card.is_expired) return {ok:false,code:"CARD_NOT_WRITABLE"};
       if(failAtomic)return {ok:false,code:"DB_BATCH_ABORTED"};
+      if(committedRequests.has(input.requestId))return committedRequests.get(input.requestId);
       const selected=state.groups.filter(g=>input.groupIds.includes(g.id));
       if(selected.length!==input.groupIds.length ||
         selected.some(g=>g.admin_user_id!==input.adminId||g.mode!=="card"||!g.enabled)) {
@@ -49,7 +51,9 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
       state.mappings=next;
       try { events.push(["audit",audit]); }
       catch { state.mappings=before; return {ok:false,code:"AUDIT_FAILED"}; }
-      return {ok:true,mappings:next};
+      const committed={ok:true,mappings:next};
+      committedRequests.set(input.requestId,committed);
+      return committed;
     },
     setAtomicFailure(v){failAtomic=v;},
     setCommitWriteAllowed(v){commitWriteAllowed=v;},
@@ -104,6 +108,14 @@ test("activated used cards remain configurable while valid",async()=>{
   assert.equal(r.ok,true);
 });
 
+test("expired cards cannot be changed",async()=>{
+  const {service,storage}=fixture();
+  storage.state.card.is_expired=true;
+  const r=await service.replace({...scope,groupIds:["g1"]});
+  assert.equal(r.code,"CARD_NOT_WRITABLE");
+  assert.equal(storage.events.some(e=>e[0]==="atomic"),false);
+});
+
 test("inactive/manual-disabled cards cannot be changed",async()=>{
   for(const opts of [{cardStatus:"inactive"},{manualDisabled:1}]){
     const {service,storage}=fixture(opts);
@@ -142,6 +154,16 @@ test("adapter batch failure leaves mapping and audit unchanged",async()=>{
   assert.equal(r.code,"DB_BATCH_ABORTED");
   assert.equal(storage.state.mappings.length,0);
   assert.equal(storage.events.some(e=>e[0]==="audit"),false);
+});
+
+test("repeated request id is idempotent and emits one audit",async()=>{
+  const {service,storage}=fixture();
+  const first=await service.replace({...scope,groupIds:["g1"]});
+  const second=await service.replace({...scope,groupIds:["g1"]});
+  assert.equal(first.ok,true);
+  assert.equal(second.ok,true);
+  assert.equal(storage.events.filter(e=>e[0]==="audit").length,1);
+  assert.equal(storage.state.mappings.length,1);
 });
 
 test("empty replace explicitly clears all card mappings",async()=>{
