@@ -28,6 +28,15 @@
 - 数据库迁移安全复核：[查看报告](../../docs/release/V2.5.0_RC1数据库迁移安全复核与暂停记录_2026-11-28.md)。
 - 这些检查是 GitHub runner 上的离线/模拟测试，不等于 Cloudflare Workers runtime、真实 D1 或 APK 联调。
 
+## 数据库 40 张表名只读核验覆盖（本轮更新）
+
+- 发现旧 schema-status 只检查 18 张核心表，而静态 Worker 依赖清单为 18 张历史 DDL 表 + 22 张 SQL 引用表，共 40 张。
+- Worker 现分别返回 18 张核心表、22 张额外引用表的存在/缺失情况，并给出 40 张总状态。
+- 后台数据库检查 UI 分开显示两类表数量、缺失项和总状态。
+- 自动回归强制 Worker 两组表名与静态 JSON 清单逐项一致，且总数必须为 40。
+- Push CI [46097884870](https://github.com/sxna-web/XYmonihtml/actions/runs/46097884870) SUCCESS。
+- 仍然只核对表名；22 张 B 类表没有完整 DDL 证据，不生成猜测型 CREATE TABLE；迁移仍关闭。
+
 ## 本地数据库验证器回归（本轮更新）
 
 - schema snapshot 增强：列扩展元数据、索引有序列/唯一性/索引定义、外键和对象 SQL。
