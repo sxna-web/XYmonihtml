@@ -116,6 +116,7 @@ export function createCardGroupAdminService({ storage }) {
       // Adapter owns the final CAS/owner/state checks and same-batch audit.
       const result = await storage.replaceCardGroupsAtomically({
         adminId, actorId, requestId, cardId, groupIds: [...groupIds],
+        expectedGroupIds: state.mappings.map(mapping => mapping.group_id),
       });
       if (!result || result.ok !== true || !Array.isArray(result.mappings)) {
         const code = result?.code || "CARD_GROUP_WRITE_CONFLICT";
