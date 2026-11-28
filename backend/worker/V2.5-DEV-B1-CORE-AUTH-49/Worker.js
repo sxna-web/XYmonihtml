@@ -4297,15 +4297,25 @@ async function addAppLink(db, ctx, adminId, body) {
   const count = await db.prepare("SELECT COUNT(*) AS n FROM app_links WHERE admin_user_id = ?").bind(adminId).first();
   if (Number(count?.n || 0) >= perms.max_links) return fail(`最多 ${perms.max_links} 个入口`, 409, { code: "LINKS_LIMIT" });
   const id = newId();
-  await userBatch(db, ctx, [
-    db.prepare(
-      "INSERT INTO app_links(id, admin_user_id, title, url, sort) VALUES(?,?,?,?,?)",
-    ).bind(id, adminId, title, url, Number(body.sort) || APP_LINK_SORT_DEFAULT),
-    auditStmt(db, ctx, {
-      action: "app_link.create", targetType: "app_link", targetId: id,
-      after: { title, url, admin: adminId }, detail: "APP 入口链接",
-    }),
-  ]);
+  try {
+    await userBatch(db, ctx, [
+      assertStmt(db,
+        "EXISTS (SELECT 1 FROM app_users WHERE id = ?) AND COALESCE((SELECT links_enabled FROM admin_app_perms WHERE admin_user_id = ?),1) = 1 AND (SELECT COUNT(*) FROM app_links WHERE admin_user_id = ?) < COALESCE((SELECT max_links FROM admin_app_perms WHERE admin_user_id = ?),1)",
+        [adminId, adminId, adminId, adminId]),
+      db.prepare(
+        "INSERT INTO app_links(id, admin_user_id, title, url, sort) VALUES(?,?,?,?,?)",
+      ).bind(id, adminId, title, url, Number(body.sort) || APP_LINK_SORT_DEFAULT),
+      auditStmt(db, ctx, {
+        action: "app_link.create", targetType: "app_link", targetId: id,
+        after: { title, url, admin: adminId }, detail: "APP 入口链接",
+      }),
+    ]);
+  } catch (e) {
+    if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+      return fail("APP 入口权限或数量上限刚刚发生变化，请刷新后重试", 409, { code: "LINKS_LIMIT_CHANGED" });
+    }
+    throw e;
+  }
   return json({ ok: true, data: { id, title, url } }, 201);
 }
 
