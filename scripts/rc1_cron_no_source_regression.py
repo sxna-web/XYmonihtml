@@ -65,6 +65,18 @@ def main() -> None:
     known_tables = {item["name"] for item in inventory["source_ddl_tables"] + inventory["worker_referenced_base_tables"]}
     if len(inventory["source_ddl_tables"]) != 18 or len(inventory["worker_referenced_base_tables"]) != 22 or len(known_tables) != 40:
         raise AssertionError("Static DB inventory counts must be 18 source-DDL + 22 referenced-base = 40 distinct tables")
+    required_block = source.split("const REQUIRED_TABLES = [", 1)[1].split("];", 1)[0]
+    referenced_block = source.split("const WORKER_REFERENCED_TABLES = [", 1)[1].split("];", 1)[0]
+    required_tables = set(re.findall(r'"([a-z][a-z0-9_]+)"', required_block))
+    referenced_tables = set(re.findall(r'"([a-z][a-z0-9_]+)"', referenced_block))
+    inventory_core = {item["name"] for item in inventory["source_ddl_tables"]}
+    inventory_referenced = {item["name"] for item in inventory["worker_referenced_base_tables"]}
+    if required_tables != inventory_core:
+        raise AssertionError("Read-only core table check must match the 18 source-DDL inventory names")
+    if referenced_tables != inventory_referenced:
+        raise AssertionError("Read-only Worker-reference table check must match all 22 referenced inventory names")
+    if len(required_tables | referenced_tables) != 40:
+        raise AssertionError("Read-only schema-status endpoint must cover all 40 inventory tables")
     sql_refs = set(re.findall(r"\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM)\s+[\"'`]?([A-Za-z_][A-Za-z0-9_]*)", source, re.IGNORECASE))
     unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master"}
     if unclassified:
@@ -113,8 +125,12 @@ def main() -> None:
         raise AssertionError("Schema status must disclose its table-name-only verification scope")
     if "required_tables_present:" not in migrate or "ready:" in migrate:
         raise AssertionError("Table-name-only status must not expose a misleading generic ready flag")
+    if "worker_referenced_tables_present:" not in migrate or "all_worker_tables_present:" not in migrate:
+        raise AssertionError("Schema status must report the additional Worker SQL reference table set")
     if "st.data.required_tables_present" not in html:
         raise AssertionError("HTML must consume the explicit table-name-only status field")
+    if "worker_referenced_missing" not in html or "all_worker_tables_present" not in html:
+        raise AssertionError("HTML must display missing Worker-reference tables and total table-name status")
     if "api('/api/super/migrate'" in html or "RC1 暂不执行自动建表" not in html:
         raise AssertionError("HTML must remain read-only for database migration in RC1")
 
