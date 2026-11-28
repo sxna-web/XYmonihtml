@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -356,6 +356,24 @@ test("super APP link delete batches final existence check, delete and audit",asy
   assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
 });
 
+
+test("Protocol66 card-group route fails closed while mapping tables are absent",async()=>{
+  const db=mockDb({activations:activeTrial,missingCardGroupTables:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"GET"});
+  assert.equal(res.status,503);
+  assert.equal(json.code,"CARD_GROUP_SCHEMA_NOT_READY");
+  assert.deepEqual(json.missing,["app_card_group_mappings","app_card_group_admin_requests"]);
+  assert.equal(db.batches.length,0);
+  assert.equal(db.writes.length,0);
+});
+test("Protocol66 card-group writes remain behind the existing active VIP gate",async()=>{
+  const db=mockDb({activations:expiredFormal,missingCardGroupTables:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"PUT",headers:{"Idempotency-Key":"idem-key-12345678"},body:{groupIds:[]}});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"VIP_REQUIRED");
+  assert.equal(db.batches.length,0);
+  assert.equal(db.writes.length,0);
+});
 
 test("APP redemption rate limit counts failed guesses only and uses a fixed 15-minute window",async()=>{
   const db=mockDb({cardLookupMissing:true});
