@@ -4567,19 +4567,23 @@ async function userAppGroupsRoute(req, env, url, ctx) {
   if (seg.length === 4 && req.method === "DELETE") {
     if (!(await own(id))) return fail("分组不存在", 404);
     const cutoff = ctx.appAuthorization?.formalCutoff || null;
+    const ownershipGuard = cutoff
+      ? assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?))", [id, ctx.effectiveId, cutoff])
+      : assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)", [id, ctx.effectiveId]);
     const deleted = await userBatch(db, ctx, [
+      ownershipGuard,
+      db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)")
+        .bind(id, id, ctx.effectiveId),
+      db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)")
+        .bind(id, id, ctx.effectiveId),
       cutoff
         ? db.prepare("DELETE FROM app_groups WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?)")
             .bind(id, ctx.effectiveId, cutoff)
         : db.prepare("DELETE FROM app_groups WHERE id = ? AND admin_user_id = ?")
             .bind(id, ctx.effectiveId),
-      db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)")
-        .bind(id, id, ctx.effectiveId),
-      db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)")
-        .bind(id, id, ctx.effectiveId),
       auditStmt(db, ctx, { action: "app_group.delete", targetType: "app_group", targetId: id, before: { name: row.name, mode: row.mode } }),
     ]);
-    if (!deleted[0]?.meta?.changes) return fail("分组已变化或不符合历史删除范围", 409);
+    if (!deleted[3]?.meta?.changes) return fail("分组已变化或不符合历史删除范围", 409);
     return json({ ok: true, data: { deleted: true } });
   }
   if (seg.length === 5 && seg[4] === "sources" && req.method === "POST") {
