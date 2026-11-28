@@ -108,6 +108,15 @@ test("activated used cards remain configurable while valid",async()=>{
   assert.equal(r.ok,true);
 });
 
+test("D1 integer enabled and expiry projections are normalized safely",async()=>{
+  const {service,storage}=fixture();
+  storage.state.groups[0].enabled=1;
+  storage.state.card.is_expired=1;
+  const r=await service.replace({...scope,groupIds:["g1"]});
+  assert.equal(r.code,"CARD_NOT_WRITABLE");
+  assert.equal(storage.events.some(e=>e[0]==="atomic"),false);
+});
+
 test("expired cards cannot be changed",async()=>{
   const {service,storage}=fixture();
   storage.state.card.is_expired=true;
