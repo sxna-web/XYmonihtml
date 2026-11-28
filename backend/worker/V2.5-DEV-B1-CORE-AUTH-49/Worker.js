@@ -3843,7 +3843,7 @@ async function runVipCardMaintenance(db, ctx) {
 }
 
 async function userAppCardGroupsRoute(req, env, url, ctx) {
-  // Protocol66 card-group path is separate from existing card APIs. Fail closed until
+  // Protocol66 card-group endpoint is isolated. Fail closed until
   // both reviewed mapping/idempotency tables exist; never attempt implicit DDL.
   const requiredTables = ["app_card_group_mappings", "app_card_group_admin_requests"];
   let present;
