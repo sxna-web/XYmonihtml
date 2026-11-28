@@ -365,7 +365,7 @@ test("APP redemption rate limit counts failed guesses only and uses a fixed 15-m
   assert.equal(last.json.code,"REDEEM_RATE_LIMITED");
   const counterSql=db.writes.find(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)"))?.sql || "";
   assert.ok(counterSql.includes("updated_at = CASE") && counterSql.includes("THEN CURRENT_TIMESTAMP ELSE rate_limits.updated_at END"));
-  assert.match(counterSql,/app:redeem:failed:v2/);
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)") && String(x.args[0]).startsWith("app:redeem:failed:v2:")));
   assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });
 test("APP successful redemption does not consume the failed-attempt budget",async()=>{
