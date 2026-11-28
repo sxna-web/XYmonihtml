@@ -1524,3 +1524,15 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 新增 scoped alias 模型与测试、manifest schema/validator/tests、Batch 85 workflow。CI 通过状态须由 Actions 实际日志另行确认；不把 workflow 文件存在等同于测试通过。
 - 未连接 D1、未读取 Secrets、未执行 SQL/迁移、未修改 Worker/HTML/APK/Room/Cloudflare 配置、未部署。
 - **第八十六批唯一接手卡：**建立持久化 backfill checkpoint 离线状态机；复核 scoped alias 在 owner/tenant 迁移、软删除、重放及 dimension_type 版本演进下的唯一性；将 manifest metadata 与八方法 statement matrix、D1-001..034 对齐；继续验证 K1 重算证据；保持离线不部署。
+
+
+## 第七十批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-CARD-MAP-70`；报告：`docs/backend/StarJump_V2.5_APP卡密分组映射迁移前置设计与数据库只读诊断方案_第七十批_V2.5-DEV-B1-APP-CARD-MAP-70_2026-11-28.md`。
+- 当前 PR #2：Draft/Open/Unmerged；批次报告提交后 head：`b2c9c9cd45e0beecf62636fb24da1e9ed4c0314f`。
+- 本批只读复核 Batch 49 `schema-status`、HTML 数据库诊断、APP 分组模式和 Protocol 65 生产接入边界；明确当前 40 表检查仍只是 table-name inventory。
+- 新增卡密-分组映射候选逻辑模型和迁移前置证据清单；不视为批准 DDL，不创建表、不改现有 mode、不接入 Protocol 65。
+- 只读结构诊断建议先确认 D1 元数据 SQL 支持，再设计 schema manifest；任何 unsupported/error 均为 not_verified，不得显示 PASS。业务数据和凭证不得返回。
+- 当前阻塞：无目标 D1 schema snapshot；旧 `public/assigned/free` 与 Protocol 65 `card/free` 语义不兼容；无真实 D1 adapter/正式 route/APK 多 entitlement 兼容证据。
+- 本批无代码测试、无 D1、无 Secrets、无 Cloudflare 部署；PR 仍保持 Draft/Open。
+- **第七十一批唯一接手卡：**先核查 schema-status 超管鉴权和 Worker build/test wiring；从官方 D1 支持范围确认只读 schema introspection；定义固定 schema manifest 与安全输出；使用 isolated SQLite + Worker integration tests 验证后再实施只读诊断；卡密 mapping migration 继续等真实 D1 schema 证据及用户授权。
