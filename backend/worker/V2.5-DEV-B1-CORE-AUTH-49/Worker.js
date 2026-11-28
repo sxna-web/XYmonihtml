@@ -4193,7 +4193,9 @@ async function checkAppRedeemRateLimit(db, req, deviceId, env) {
          ON CONFLICT(bucket) DO UPDATE SET
            count = CASE WHEN datetime(rate_limits.updated_at) <= datetime('now', '-15 minutes')
                         THEN 1 ELSE rate_limits.count + 1 END,
-           updated_at = CURRENT_TIMESTAMP`,
+           updated_at = CASE
+             WHEN datetime(rate_limits.updated_at) <= datetime('now', '-15 minutes')
+             THEN CURRENT_TIMESTAMP ELSE rate_limits.updated_at END`,
       ).bind(bucket).run();
       const row = await db.prepare("SELECT count FROM rate_limits WHERE bucket = ?").bind(bucket).first();
       if (!row) return { ok: false, unavailable: true };
