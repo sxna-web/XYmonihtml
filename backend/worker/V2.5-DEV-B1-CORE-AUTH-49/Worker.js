@@ -2410,6 +2410,7 @@ async function superRoute(req, env, url, ctx) {
     const id = newId();
     try {
       await userBatch(db, ctx, [
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ?)", [targetId]),
       // 先把这个 (admin,target,scope) 下“已过期但未撤销”的记录置为 revoked，释放唯一索引
       db.prepare(
         `UPDATE admin_user_scopes SET revoked_at = CURRENT_TIMESTAMP
@@ -2427,6 +2428,9 @@ async function superRoute(req, env, url, ctx) {
       }),
       ]);
     } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("目标用户状态刚刚发生变化，请刷新后重试", 409, { code: "TARGET_USER_CHANGED" });
+      }
       if (/UNIQUE|constraint/i.test(String(e?.message || ""))) {
         return fail("并发授权冲突：已存在相同有效授权", 409, { code: "SCOPE_ALREADY_ACTIVE" });
       }
@@ -2439,14 +2443,22 @@ async function superRoute(req, env, url, ctx) {
     const scopeId = s(seg[3], 80);
     const row = await db.prepare("SELECT * FROM admin_user_scopes WHERE id = ?").bind(scopeId).first();
     if (!row) return fail("授权不存在", 404);
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE admin_user_scopes SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?").bind(scopeId),
-      db.prepare("UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE scope_id = ? AND revoked_at IS NULL").bind(scopeId),
-      auditStmt(db, ctx, {
-        action: "super.scope.revoke", targetType: "user", targetId: row.target_user_id,
-        before: { scope: row.scope },
-      }),
-    ]);
+    if (row.revoked_at) return json({ ok: true, data: { id: scopeId, revoked: true, already: true } });
+    try {
+      const revoked = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM admin_user_scopes WHERE id = ? AND revoked_at IS NULL)", [scopeId]),
+        db.prepare("UPDATE admin_user_scopes SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL").bind(scopeId),
+        db.prepare("UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE scope_id = ? AND revoked_at IS NULL").bind(scopeId),
+        auditStmt(db, ctx, {
+          action: "super.scope.revoke", targetType: "user", targetId: row.target_user_id,
+          before: { scope: row.scope },
+        }),
+      ]);
+      if (!revoked[1]?.meta?.changes) return fail("授权已变化", 409);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("授权已变化，请刷新后重试", 409);
+      throw e;
+    }
     return json({ ok: true, data: { id: scopeId, revoked: true } });
   }
 
@@ -2596,15 +2608,23 @@ async function superRoute(req, env, url, ctx) {
     const from = s(body.from, 60), to = s(body.to, 60);
     if (!from || !to) return fail("原分组名和新分组名都要填", 400);
     if (!/^[\u4e00-\u9fa5A-Za-z0-9 _-]{1,30}$/.test(to)) return fail("新分组名不合法", 400);
-    const res = await db.prepare("UPDATE convert_links SET group_name = ? WHERE group_name = ?").bind(to, from).run();
-    const changed = Number(res.meta?.changes || 0);
-    if (changed) {
-      await userBatch(db, ctx, [auditStmt(db, ctx, {
-        action: "convert.group.rename", targetType: "convert_group", targetId: from,
-        before: { from }, after: { to, links: changed },
-      })]);
+    const count = await db.prepare("SELECT COUNT(*) AS n FROM convert_links WHERE group_name = ?").bind(from).first();
+    if (!Number(count?.n || 0)) return json({ ok: true, data: { from, to, links: 0 } });
+    try {
+      const renamed = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM convert_links WHERE group_name = ?)", [from]),
+        db.prepare("UPDATE convert_links SET group_name = ? WHERE group_name = ?").bind(to, from),
+        auditStmt(db, ctx, {
+          action: "convert.group.rename", targetType: "convert_group", targetId: from,
+          before: { from }, after: { to, links: Number(count.n) },
+        }),
+      ]);
+      const changed = Number(renamed[1]?.meta?.changes || 0);
+      return json({ ok: true, data: { from, to, links: changed } });
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("转换分组刚刚发生变化，请刷新后重试", 409);
+      throw e;
     }
-    return json({ ok: true, data: { from, to, links: changed } });
   }
 
   // 超级管理员查看原始订阅源（含 token，默认脱敏，reveal=1 才给完整值；每次查看写审计）
