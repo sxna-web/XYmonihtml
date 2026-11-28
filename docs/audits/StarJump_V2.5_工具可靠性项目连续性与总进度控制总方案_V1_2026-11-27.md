@@ -1623,3 +1623,5 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 本批未连接 D1、未执行 SQL/DDL/DML、未读业务行、未触碰 Secrets/部署/合并。PR #2 保持 Draft/Open/Unmerged。
 - APP 卡密分组 mapping migration、真实 D1 adapter、正式 Worker route、管理 UI、APK 多 entitlement 联调仍是阻断项。
 - **第七十九批唯一接手卡：**核对 Batch78 CI head/run；静态审查 manifest 输入鲁棒性、重复对象、缺失索引详情、SQL/default hash 脱敏与稳定性。若无真实 schema snapshot，不生成业务数据异常 SQL 或生产 migration。
+
+- Batch78 CI 复核：PR Run 46124644301 / Job 140916448057 SUCCESS；日志明确显示 schema_manifest 13/13、database_migrations 全套 59/59 tests，最终 OK。该 CI 仅验证离线工具与本地 fixture，不证明真实 D1 schema 或生产兼容。
