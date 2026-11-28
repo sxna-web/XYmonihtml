@@ -51,7 +51,7 @@
 
 最终验证：
 - PR Convergence Run：46128266379 — **SUCCESS**
-  https://github.com/sxna-web/XYmonihtml/actions/runs/46128109819
+  https://github.com/sxna-web/XYmonihtml/actions/runs/46128266379
 - Job：140927616343 — SUCCESS
 - 同一 HEAD 的其他关联运行：46128109834、46128105285 — SUCCESS。
 - Batch49 authorization adapter：12/12。
