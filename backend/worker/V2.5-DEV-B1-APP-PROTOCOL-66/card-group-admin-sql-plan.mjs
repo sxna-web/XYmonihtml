@@ -56,12 +56,14 @@ export function buildCardGroupReadStatements(db, { adminId, cardId }) {
  */
 export function buildCardGroupReplaceStatements(db, input) {
   const {
-    adminId, actorId, requestId, cardId, groupIds,
+    adminId, actorId, scopeId = null, requestId, cardId, groupIds,
     expectedGroupIds, payloadSha256, beforeJson = "[]",
   } = input || {};
   if (!db || typeof db.prepare !== "function" ||
       !ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
-      !ID_RE.test(cardId || "") || typeof requestId !== "string" ||
+      !ID_RE.test(cardId || "") ||
+      (actorId !== adminId && !ID_RE.test(scopeId || "")) ||
+      typeof requestId !== "string" ||
       !requestId.trim() || requestId.length > 80 ||
       !HASH_RE.test(payloadSha256 || "") ||
       !Array.isArray(groupIds) || !Array.isArray(expectedGroupIds) ||
@@ -96,7 +98,70 @@ export function buildCardGroupReplaceStatements(db, input) {
         WHERE m.admin_user_id = ? AND m.card_id = ? AND m.status = 'active') = ${expected.length}
       ${expectedChecks}
       AND ${desiredCountSql}
-    THEN 1 ELSE json_extract('assert-failed', '$') END`;
+      AND (? = ? OR EXISTS (SELECT 1 FROM admin_user_scopes s
+        WHERE s.id = ? AND s.admin_user_id = ? AND s.target_user_id = ?
+          AND s.revoked_at IS NULL
+          AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
+          AND s.scope IN ('operate','manage')))
+    THEN 1 ELSE json_extract('assert-failed', '
+
+  const afterJson = JSON.stringify({ groupIds: desired });
+  const batch = [
+    statement(assertSql, [
+      adminId, cardId, adminId, adminId, cardId,
+      ...expected.flatMap(id => [adminId, cardId, id]),
+      ...desiredBinds,
+      actorId, adminId, scopeId || "", actorId, adminId,
+    ]),
+    // A duplicate request_id deliberately aborts this batch. The adapter must
+    // reread the request row and return the stored response only if the hash
+    // matches; a different hash is an idempotency conflict.
+    statement(`INSERT INTO app_card_group_admin_requests
+      (admin_user_id, request_id, payload_sha256, response_json, created_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(admin_user_id, request_id) DO NOTHING`,
+    [adminId, requestId, payloadSha256, afterJson]),
+    statement(`SELECT CASE WHEN changes() = 1 THEN 1
+      ELSE json_extract('duplicate-request', '$') END`),
+    statement(desired.length
+      ? `UPDATE app_card_group_mappings
+          SET status = 'removed', removed_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE admin_user_id = ? AND card_id = ? AND status = 'active'
+            AND group_id NOT IN (${marks(desired)})`
+      : `UPDATE app_card_group_mappings
+          SET status = 'removed', removed_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE admin_user_id = ? AND card_id = ? AND status = 'active'`,
+    [adminId, cardId, ...desired]),
+    ...desired.map(groupId => statement(`INSERT INTO app_card_group_mappings
+        (id, card_id, admin_user_id, group_id, status, created_at, updated_at, removed_at)
+      VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+      ON CONFLICT(card_id, group_id) DO UPDATE SET
+        admin_user_id = excluded.admin_user_id,
+        status = 'active', updated_at = CURRENT_TIMESTAMP, removed_at = NULL
+      WHERE app_card_group_mappings.admin_user_id = excluded.admin_user_id`,
+    [`cgm_${cardId}_${groupId}`, cardId, adminId, groupId])),
+    statement(`INSERT INTO admin_audit_events
+      (actor_user_id, effective_user_id, action, target_type, target_id,
+       request_id, before_json, after_json, result, reason, detail)
+      VALUES (?, ?, 'app_card_groups.replace', 'app_card', ?, ?, ?, ?, 'ok', '', '')`,
+    [actorId, adminId, cardId, requestId, beforeJson, afterJson]),
+    statement(CARD_GROUP_READ_SQL.mappings, [adminId, cardId]),
+  ];
+
+  return Object.freeze(batch.map(item => db.prepare(item.sql).bind(...item.binds)));
+}
+
+export function canonicalCardGroupPayload(cardId, groupIds) {
+  if (!ID_RE.test(cardId || "") || !Array.isArray(groupIds) ||
+      groupIds.some(id => !ID_RE.test(id || "")) ||
+      new Set(groupIds).size !== groupIds.length) {
+    throw new TypeError("INVALID_CARD_GROUP_PAYLOAD");
+  }
+  return JSON.stringify({ cardId, groupIds: [...groupIds].sort() });
+}
+) END`;
 
   const afterJson = JSON.stringify({ groupIds: desired });
   const batch = [
