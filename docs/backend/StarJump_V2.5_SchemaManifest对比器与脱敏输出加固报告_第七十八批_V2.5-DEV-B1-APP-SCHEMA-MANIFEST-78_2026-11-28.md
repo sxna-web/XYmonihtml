@@ -4,7 +4,7 @@
 - 日期：2026-11-28
 - 分支：release/v2.5.0-rc1-converge
 - 范围：本地纯函数工具、JSON 输入输出、隔离测试；不连接数据库。
-- 状态：实现已提交，等待 GitHub Actions 验证。
+- 状态：实现已提交；PR CI 已通过（Run 46124644301，Job 140916448057）。
 
 ## 1. 本批实现
 
@@ -44,7 +44,7 @@
 12. scope 不一致拒绝；
 13. 相同结构跨环境输出 MATCH。
 
-本地 fixture 测试通过之前不得提升该工具状态；GitHub Actions 将执行整个 database_migrations unittest discovery。测试成功也只代表工具逻辑通过，不代表真实 D1 已验证。
+GitHub Actions Run 46124644301 / Job 140916448057：SUCCESS；日志明确显示新增 test_schema_manifest 13/13，database_migrations 全套 59/59 tests，最终 OK。测试成功只代表离线工具逻辑通过，不代表真实 D1 已验证。
 
 ## 4. 操作示例
 
