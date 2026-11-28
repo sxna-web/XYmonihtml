@@ -164,6 +164,12 @@ def main() -> None:
     if ".run()" in user_downloads or "WHERE id = ? AND admin_user_id = ?" not in user_downloads or "download_link.delete" not in user_downloads:
         raise AssertionError("User download-link deletion must retain owner predicate and audit batch")
 
+    super_releases = source.split("async function superReleasesRoute", 1)[1].split("/* ────────────────────────────── APP 下载链接", 1)[0]
+    if ".run()" in super_releases:
+        raise AssertionError("Super release and announcement mutations must not bypass atomic batches")
+    if super_releases.count("await db.batch([") < 5 or super_releases.count("auditStmt(db, ctx") < 5:
+        raise AssertionError("Super release/announcement create, toggle and delete paths must be batched and audited")
+
     node_check(source)
     node_check(bundle)
 
