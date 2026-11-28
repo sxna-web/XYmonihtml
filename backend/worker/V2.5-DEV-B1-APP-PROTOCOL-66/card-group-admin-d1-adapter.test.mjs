@@ -32,7 +32,11 @@ function fakeDb() {
         async first(){
           calls.push({kind:"first",sql,binds:this.binds});
           if(sql.includes("app_card_group_admin_requests"))return state.request;
-          if(sql.includes("FROM admin_user_scopes"))return state.scope;
+          if(sql.includes("FROM admin_user_scopes")) {
+            return state.scope && state.scope.revoked_at === null &&
+              (!state.scope.expires_at || new Date(state.scope.expires_at) > new Date("2026-11-28T12:00:00Z"))
+              ? state.scope : null;
+          }
           if(sql.includes("FROM app_cards"))return state.card;
           return null;
         },
@@ -202,6 +206,17 @@ test("delegated idempotent replay is rejected after scope revocation",async()=>{
   const r=await adapter.replaceCardGroupsAtomically({...base,actorId:"super1",scope:"operate",scopeId:"scope-1"});
   assert.equal(r.code,"SCOPE_INSUFFICIENT");
   assert.equal(r.idempotent,undefined);
+  assert.equal(db.calls.some(x=>x.kind==="batch"),false);
+});
+
+test("delegated idempotent replay is rejected after scope expiry",async()=>{
+  const db=fakeDb();
+  const hash=await digest("c1",["g1"]);
+  db.state.request={payload_sha256:hash,response_json:'{"groupIds":["g1"]}'};
+  db.state.scope.expires_at="2000-01-01 00:00:00";
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically({...base,actorId:"super1",scope:"operate",scopeId:"scope-1"});
+  assert.equal(r.code,"SCOPE_INSUFFICIENT");
   assert.equal(db.calls.some(x=>x.kind==="batch"),false);
 });
 
