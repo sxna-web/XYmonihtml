@@ -47,9 +47,14 @@ class State(str, Enum):
 def _cursor(value):
     if not isinstance(value, (tuple, list)) or not value:
         raise ValueError("cursor must be a non-empty composite tuple")
-    if any(not isinstance(x, str) or not x for x in value):
-        raise ValueError("cursor components must be non-empty strings")
-    return tuple(value)
+    normalized = tuple(value)
+    if any(not isinstance(x, str) for x in normalized):
+        raise ValueError("cursor components must be strings")
+    # The all-empty tuple is the sole beginning-of-scan sentinel. Partial
+    # empty tuples remain invalid so composite ordering is deterministic.
+    if any(not x for x in normalized) and not all(not x for x in normalized):
+        raise ValueError("only the all-empty initial cursor sentinel may be empty")
+    return normalized
 
 
 def _canonical(value):
@@ -165,7 +170,7 @@ class BackfillLedger:
         cp = self.checkpoint
         if (not isinstance(lease, Lease) or cp.lease_owner != lease.owner or
             cp.lease_epoch != lease.lease_epoch or cp.fencing_token != lease.fencing_token or
-            cp.lease_expires_at <= now):
+            cp.lease_expires_at != lease.expires_at or cp.lease_expires_at <= now):
             raise StaleFence("lease owner/epoch/fencing token is stale or expired")
 
     def _assert_writer_contract(self, writer_epoch, active_key_set_epoch, key_versions):
