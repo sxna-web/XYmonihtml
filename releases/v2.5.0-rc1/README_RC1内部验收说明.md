@@ -24,7 +24,7 @@
 
 - RC1 workflow：`V2.5 RC1 Convergence Checks`
 - 最新已知成功 Run：见本分支 GitHub Actions 最新绿色记录；检查包含 Worker bundle、Cron no-source 回归、HTML 内联 JS 语法、Batch49 adapter tests、Worker handler integration tests。
-- 最新代码回归：Run `46096760203`，SUCCESS（2026-11-28）；[查看 Actions](https://github.com/sxna-web/XYmonihtml/actions/runs/46096760203)。
+- 最新代码回归：Run `46096896216`，SUCCESS（2026-11-28）；[查看 Actions](https://github.com/sxna-web/XYmonihtml/actions/runs/46096896216)。
 - 数据库迁移安全复核：[查看报告](../../docs/release/V2.5.0_RC1数据库迁移安全复核与暂停记录_2026-11-28.md)。
 - 这些检查是 GitHub runner 上的离线/模拟测试，不等于 Cloudflare Workers runtime、真实 D1 或 APK 联调。
 
