@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, cardGroupMappingTable=false, cardGroupMappings=[], appEntitlements=[], appGroups=[], appGroupNodes=[], appFreeGrants=[], failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, cardGroupMappingTable=false, cardGroupMappings=[], appEntitlements=[], appCards=[], appGroups=[], appGroupNodes=[], appFreeGrants=[], failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -74,6 +74,14 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
                 return {results:activations};
               }
               if (sql.includes("FROM app_card_group_mappings WHERE admin_user_id = ? AND group_id = ?")) return {results:cardGroupMappings};
+              if (sql.includes("FROM app_entitlements e") && sql.includes("JOIN app_cards c")) {
+                const rows = !appCards.length ? appEntitlements : appEntitlements.filter(ent => {
+                  const card = appCards.find(c => c.id === ent.card_id && c.admin_user_id === ent.admin_user_id);
+                  return card && card.status === "used" && !card.manual_disabled &&
+                    (!card.expires_at || new Date(card.expires_at).getTime() > Date.now());
+                });
+                return {results:rows};
+              }
               if (sql.includes("FROM app_entitlements") && sql.includes("device_id = ?") && sql.includes("status = 'active'")) return {results:appEntitlements};
               if (sql.includes("FROM app_groups g")) return {results:appGroups.filter(g=>args.slice(0,-1).includes(g.admin_user_id))};
               if (sql.includes("FROM app_card_group_mappings m")) return {results:cardGroupMappings};
@@ -510,6 +518,18 @@ test("APP groups retain legacy response when Protocol66 mapping table is not ins
   assert.equal(json.data.card_groups_error,undefined);
   assert.ok(json.data.groups.some(g=>g.id==="public-a"));
 });
+test("APP groups do not expose card groups for a manually disabled or expired card",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const token=await appEntitlementToken(secret,"ent-disabled",deviceId);
+  const db=mockDb({
+    appEntitlements:[{id:"ent-disabled",admin_user_id:"admin-a",card_id:"card-disabled",expires_at:"2099-01-01 00:00:00",status:"active"}],
+    appCards:[{id:"card-disabled",admin_user_id:"admin-a",status:"used",manual_disabled:1,expires_at:"2099-01-01 00:00:00"}],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"ENTITLEMENT_EXPIRED");
+});
+
 test("APP groups reject a token that does not match any active entitlement",async()=>{
   const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
   const db=mockDb({appEntitlements:[{id:"ent-1",admin_user_id:"admin-a",card_id:"card-1",expires_at:"2099-01-01 00:00:00",status:"active"}]});
