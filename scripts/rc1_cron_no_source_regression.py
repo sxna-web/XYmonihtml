@@ -92,11 +92,18 @@ def main() -> None:
     if "localStorage.getItem('sj-api') || 'https://" in html:
         raise AssertionError("Release HTML still has a hard-coded API fallback bypassing the API input")
 
+    redeem = source.split("async function appRedeemRoute", 1)[1].split("async function runEntitlementMaintenance", 1)[0]
+    token_pos = redeem.find("const token = await entToken(env, id, deviceId)")
+    write_pos = redeem.find("await userBatch(db, ctx")
+    if token_pos < 0 or write_pos < 0 or token_pos > write_pos:
+        raise AssertionError("APP HMAC token must be validated before consuming the card")
+
     print("PASS: source Worker syntax")
     print("PASS: self-contained bundled Worker syntax")
     print("PASS: Cron maintenance runs without sync sources")
     print(f"PASS: {len(parser.items)} inline HTML scripts")
     print("PASS: all HTML API calls use the configured API base")
+    print("PASS: APP token secret validated before card redemption writes")
 
 
 if __name__ == "__main__":
