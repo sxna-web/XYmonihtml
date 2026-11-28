@@ -4908,15 +4908,27 @@ async function superReleasesRoute(req, env, url, ctx) {
       if (!versionName) return fail("版本名不能为空", 400);
       if (!/^https:\/\/.+/.test(url0)) return fail("下载地址必须是 https", 400);
       const id = newId();
-      await db.prepare(
-        `INSERT INTO releases(id, platform, version_code, version_name, min_version_code, url, notes, force)
-         VALUES(?,?,?,?,?,?,?,?)`,
-      ).bind(id, s(body.platform, 20) || "android", versionCode, versionName,
-        num(body.min_version_code, 0), url0, s(body.notes, 2000), body.force ? 1 : 0).run();
+      const platform = s(body.platform, 20) || "android";
+      await db.batch([
+        db.prepare(
+          `INSERT INTO releases(id, platform, version_code, version_name, min_version_code, url, notes, force)
+           VALUES(?,?,?,?,?,?,?,?)`,
+        ).bind(id, platform, versionCode, versionName,
+          num(body.min_version_code, 0), url0, s(body.notes, 2000), body.force ? 1 : 0),
+        auditStmt(db, ctx, { action: "release.create", targetType: "release", targetId: id, after: { platform, version_code: versionCode, version_name: versionName, min_version_code: num(body.min_version_code, 0), force: body.force ? 1 : 0 } }),
+      ]);
       return json({ ok: true, data: { id, version_code: versionCode } }, 201);
     }
     if (seg.length === 4 && req.method === "DELETE") {
-      await db.prepare("DELETE FROM releases WHERE id = ?").bind(s(seg[3], 80)).run();
+      const id = s(seg[3], 80);
+      const row = await db.prepare("SELECT * FROM releases WHERE id = ?").bind(id).first();
+      if (!row) return fail("版本记录不存在", 404);
+      const deleted = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM releases WHERE id = ?)", [id]),
+        db.prepare("DELETE FROM releases WHERE id = ?").bind(id),
+        auditStmt(db, ctx, { action: "release.delete", targetType: "release", targetId: id, before: { platform: row.platform, version_code: row.version_code, version_name: row.version_name } }),
+      ]);
+      if (!deleted[1]?.meta?.changes) return fail("版本记录已变化", 409);
       return json({ ok: true, data: { deleted: true } });
     }
   }
@@ -4933,22 +4945,43 @@ async function superReleasesRoute(req, env, url, ctx) {
       if (!title) return fail("标题不能为空", 400);
       if (!["web", "app", "both"].includes(scope)) return fail("scope 不合法", 400);
       const id = newId();
-      await db.prepare(
-        `INSERT INTO announcements(id, scope, title, body, level, starts_at, ends_at) VALUES(?,?,?,?,?,?,?)`,
-      ).bind(id, scope, title, s(body.body, 4000), s(body.level, 10) || "info",
-        s(body.starts_at, 30) || null, s(body.ends_at, 30) || null).run();
+      const announcement = {
+        scope, title, body: s(body.body, 4000), level: s(body.level, 10) || "info",
+        starts_at: s(body.starts_at, 30) || null, ends_at: s(body.ends_at, 30) || null,
+      };
+      await db.batch([
+        db.prepare(
+          `INSERT INTO announcements(id, scope, title, body, level, starts_at, ends_at) VALUES(?,?,?,?,?,?,?)`,
+        ).bind(id, announcement.scope, announcement.title, announcement.body, announcement.level,
+          announcement.starts_at, announcement.ends_at),
+        auditStmt(db, ctx, { action: "announcement.create", targetType: "announcement", targetId: id, after: announcement }),
+      ]);
       return json({ ok: true, data: { id } }, 201);
     }
     if (seg.length === 4 && req.method === "PUT") {
       const body = await readJson(req);
       const id = s(seg[3], 80);
-      const row = await db.prepare("SELECT id FROM announcements WHERE id = ?").bind(id).first();
+      const row = await db.prepare("SELECT id, active, title, scope FROM announcements WHERE id = ?").bind(id).first();
       if (!row) return fail("公告不存在", 404);
-      await db.prepare("UPDATE announcements SET active = ? WHERE id = ?").bind(body.active ? 1 : 0, id).run();
-      return json({ ok: true, data: { id, active: body.active ? 1 : 0 } });
+      const active = body.active ? 1 : 0;
+      const updated = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM announcements WHERE id = ?)", [id]),
+        db.prepare("UPDATE announcements SET active = ? WHERE id = ?").bind(active, id),
+        auditStmt(db, ctx, { action: "announcement.toggle", targetType: "announcement", targetId: id, before: { active: row.active, title: row.title, scope: row.scope }, after: { active } }),
+      ]);
+      if (!updated[1]?.meta?.changes) return fail("公告已变化", 409);
+      return json({ ok: true, data: { id, active } });
     }
     if (seg.length === 4 && req.method === "DELETE") {
-      await db.prepare("DELETE FROM announcements WHERE id = ?").bind(s(seg[3], 80)).run();
+      const id = s(seg[3], 80);
+      const row = await db.prepare("SELECT id, title, scope, active FROM announcements WHERE id = ?").bind(id).first();
+      if (!row) return fail("公告不存在", 404);
+      const deleted = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM announcements WHERE id = ?)", [id]),
+        db.prepare("DELETE FROM announcements WHERE id = ?").bind(id),
+        auditStmt(db, ctx, { action: "announcement.delete", targetType: "announcement", targetId: id, before: { title: row.title, scope: row.scope, active: row.active } }),
+      ]);
+      if (!deleted[1]?.meta?.changes) return fail("公告已变化", 409);
       return json({ ok: true, data: { deleted: true } });
     }
   }
