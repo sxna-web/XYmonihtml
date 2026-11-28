@@ -262,6 +262,14 @@ def main() -> None:
         raise AssertionError("Release HTML must stop API requests until a verified Worker root is entered")
     if "placeholder=\"https://你的正式 Worker 根地址\"" not in html:
         raise AssertionError("Release HTML must clearly request an explicitly configured Worker root")
+    if "const STAGING_HOST = 'starjump-api-staging.synahcooo.workers.dev'" not in html:
+        raise AssertionError("Bootstrap diagnostics must pin the exact approved Staging hostname")
+    if "function isStagingTarget()" not in html or "u.hostname.toLowerCase() === STAGING_HOST" not in html:
+        raise AssertionError("Bootstrap diagnostics must use a strict Staging hostname allowlist")
+    if "if (!isStagingTarget())" not in html:
+        raise AssertionError("Bootstrap diagnostics must fail closed for every non-Staging API target")
+    if "fetch(apiUrl('/api/auth/bootstrap')" not in html or "fetch(api + '/api/auth/bootstrap'" in html:
+        raise AssertionError("Bootstrap diagnostics must use the validated HTTPS Worker root URL")
 
     dispatch = source.split('if (url.pathname === "/api/super/schema-status" || url.pathname === "/api/super/migrate")', 1)[1].split("if (url.pathname.startsWith", 1)[0]
     for guard in ("ctx.legacy", "ctx.actorId !== ctx.effectiveId"):
