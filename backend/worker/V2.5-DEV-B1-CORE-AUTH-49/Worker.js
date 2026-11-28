@@ -193,8 +193,14 @@ function newSessionToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return b64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+function sessionError(code, message) { const error = new Error(message); error.code = code; return error; }
+function requiredSecret(env, name, minLength = 32) {
+  const value = String(env?.[name] || "");
+  if (value.length < minLength) throw sessionError("SECRET_NOT_CONFIGURED", `Worker Secret 未配置或长度不足：${name}`);
+  return value;
+}
 async function sessionTokenHash(token, env) {
-  return sha256Hex(`${String(env.SESSION_PEPPER || "")}|${token}`);
+  return sha256Hex(`${requiredSecret(env, "SESSION_PEPPER", 32)}|${token}`);
 }
 
 /* ────────────────────────────── 身份与鉴权 ────────────────────────────── */
@@ -215,9 +221,10 @@ function scopeSatisfies(granted, needed) {
  */
 async function resolveSession(req, env) {
   const header = req.headers.get("Authorization") || "";
-  if (!header.startsWith("Bearer ")) return null;
-  const token = header.slice(7).trim();
-  if (!token) return null;
+  if (!header) return null;
+  if (!/^Bearer\\s+/i.test(header)) throw sessionError("INVALID_SESSION", "Authorization 格式无效");
+  const token = header.replace(/^Bearer\\s+/i, "").trim();
+  if (!token) throw sessionError("INVALID_SESSION", "Bearer Token 为空");
 
   // 旧后台凭据：ADMIN_TOKEN 直通（只用于 /api/admin/* 与 bootstrap，不产生用户态数据访问）
   const adminToken = String(env.ADMIN_TOKEN || "");
@@ -234,29 +241,29 @@ async function resolveSession(req, env) {
       WHERE s.token_hash = ?`,
   ).bind(tokenHash).first();
 
-  if (!row) return null;
-  if (row.revoked_at) return null;
-  if (!row.u_id) return null;
-  if (row.status !== "active") return null;
+  if (!row) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
+  if (row.revoked_at) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
+  if (!row.u_id) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
+  if (row.status !== "active") throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
 
   // 过期判断交给 SQLite，避免 Worker 与本机时钟漂移
   const alive = await env.DB.prepare("SELECT 1 AS ok WHERE datetime(?) > datetime('now')")
     .bind(row.expires_at).first();
-  if (!alive) return null;
+  if (!alive) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
 
   const isSuper = row.role === "super_admin";
   let effectiveId = row.user_id;
   let scope = null;   // 协助会话的授权等级：read < operate < manage
   if (row.acting_as_user_id) {
-    if (!isSuper) return null;                              // 只有超管可协助
-    if (!row.scope_id) return null;
+    if (!isSuper) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期"); // 只有超管可协助
+    if (!row.scope_id) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
     const grant = await env.DB.prepare(
       `SELECT scope FROM admin_user_scopes
         WHERE id = ? AND admin_user_id = ? AND target_user_id = ?
           AND revoked_at IS NULL
           AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
     ).bind(row.scope_id, row.user_id, row.acting_as_user_id).first();
-    if (!grant) return null;
+    if (!grant) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
     effectiveId = row.acting_as_user_id;
     scope = grant.scope;
   }
@@ -3106,11 +3113,13 @@ async function checkGlobalLimit(db, env) {
 
 async function resolveOwnerKey(env, ownerId, guestKey) {
   if (ownerId) return `u:${ownerId}`;
-  if (/^[A-Za-z0-9_-]{8,64}$/.test(String(guestKey || ""))) {
-    const hash = await sha256Hex(`${guestKey}|${env.SESSION_PEPPER || ""}`);
-    return `g:${hash.slice(0, 24)}`;
+  const key = String(guestKey || "");
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(key)) {
+    throw sessionError("GUEST_KEY_REQUIRED", "匿名用户缺少有效 guest_key，请刷新页面后重试");
   }
-  return "g:anonymous";
+  const pepper = requiredSecret(env, "SESSION_PEPPER", 32);
+  const hash = await sha256Hex(`${key}|${pepper}`);
+  return `g:${hash.slice(0, 24)}`;
 }
 
 function clientIp(req) {
@@ -5398,7 +5407,9 @@ export default {
     let ctx = null;
     try {
       ctx = await resolveSession(req, env);
-    } catch {
+    } catch (e) {
+      if (e?.code === "INVALID_SESSION") return withCors(fail("未登录或会话已失效", 401, { code: "INVALID_SESSION" }));
+      if (e?.code === "SECRET_NOT_CONFIGURED") return withCors(fail("认证密钥未配置或长度不足", 503, { code: "SECRET_NOT_CONFIGURED" }));
       return withCors(fail("会话解析失败", 500));
     }
     const ctxWithReq = { ...(ctx || { actorId: null, effectiveId: null, isSuper: false, legacy: false }), requestId: requestId(req) };
