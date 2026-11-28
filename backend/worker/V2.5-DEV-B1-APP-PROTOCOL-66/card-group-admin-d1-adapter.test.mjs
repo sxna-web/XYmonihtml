@@ -78,6 +78,9 @@ test("replace executes prepared D1 batch and returns only safe mapping rows",asy
   const batch=db.calls.find(x=>x.kind==="batch");
   assert.ok(batch);
   assert.ok(batch.stmts.every(x=>typeof x.sql==="string"&&Array.isArray(x.binds)));
+  const mappingInsert=batch.stmts.find(x=>x.sql.startsWith("INSERT INTO app_card_group_mappings"));
+  assert.match(mappingInsert.binds[0], /^cgm_[a-f0-9]{32}$/);
+  assert.equal(mappingInsert.binds[0].length, 36);
 });
 
 test("same idempotency key and same digest returns prior response without a second batch",async()=>{
