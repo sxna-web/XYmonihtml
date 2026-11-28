@@ -560,3 +560,27 @@ test("super source unassignment compare-and-swaps ownership and enabled state at
   assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET enabled = 0") && sql.includes("AND enabled = ?")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
+
+
+test("manual node update rechecks ownership and checks final UPDATE changes",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual/manual123",method:"PUT",body:{name:"Manual Updated"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET name=")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET name=") && sql.includes("WHERE id=? AND user_id=?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("manual node delete rechecks ownership before deleting node metadata and group members",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual/manual123",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM user_manual_nodes WHERE id = ? AND user_id = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("DELETE FROM node_user_metadata")));
+  assert.ok(batch.some(sql=>sql.startsWith("DELETE FROM node_group_members")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
