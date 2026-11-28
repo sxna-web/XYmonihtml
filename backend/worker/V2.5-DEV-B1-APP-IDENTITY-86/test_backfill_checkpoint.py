@@ -111,17 +111,17 @@ class CheckpointTests(unittest.TestCase):
         b.set_catch_up_watermark(lease,101,("0012","b"))
         b.begin_catch_up(lease,101)
         with self.assertRaises(CursorConflict):
-            b.advance_catch_up(lease,101,expected_cursor=("",""),next_cursor=("0013","a"),
+            b.advance_catch_up(lease,101,expected_cursor=("0009","z"),next_cursor=("0013","a"),
                 writer_epoch=7,active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2"))
-        b.advance_catch_up(lease,101,expected_cursor=("",""),next_cursor=("0012","b"),
+        b.advance_catch_up(lease,101,expected_cursor=("0009","z"),next_cursor=("0012","b"),
             writer_epoch=7,active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2"))
         self.assertEqual(b.complete(lease,101),"COMPLETE")
 
     def test_watermark_cannot_move_backwards(self):
         b=ledger(); lease=b.claim("worker-a",100,10)
-        b.set_catch_up_watermark(lease,101,("0005","a"))
+        b.set_catch_up_watermark(lease,101,("0010","a"))
         with self.assertRaises(CursorConflict):
-            b.set_catch_up_watermark(lease,101,("0004","z"))
+            b.set_catch_up_watermark(lease,101,("0009","z"))
 
     def test_completed_checkpoint_cannot_be_reclaimed(self):
         b=ledger(); lease=b.claim("worker-a",100,10)
