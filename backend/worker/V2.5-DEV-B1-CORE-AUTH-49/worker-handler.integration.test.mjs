@@ -36,9 +36,11 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("FROM node_groups WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"group",sort_order:0,remark:""};
               if (sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"Manual",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1,remark:""};
               if (sql.includes("FROM node_records WHERE id = ?")) return {id:args[0],source_id:"src1",name:"Node",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1};
+              if (sql.includes("SELECT user_id FROM source_ownership WHERE source_id = ?")) return {user_id:"u1"};
               if (sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")) return {ok:1};
               if (sql.includes("SELECT id, role, status, display_name FROM app_users WHERE id = ?")) return {id:args[0],role:"user",status:"active",display_name:"Tester"};
               if (sql.includes("SELECT id, status FROM app_users WHERE id = ?")) return {id:args[0],status:"active"};
+              if (sql.includes("SELECT id, name, enabled FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source",enabled:1};
               if (sql.includes("SELECT id, name FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source"};
               if (sql.includes("SELECT status FROM source_approvals WHERE source_id = ?")) return {status:"pending"};
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
@@ -543,5 +545,18 @@ test("super source assignment rechecks source and active target in the ownership
   assert.ok(batch);
   assert.ok(batch.some(sql=>sql.includes("FROM subscription_sources WHERE id = ?")));
   assert.ok(batch.some(sql=>sql.includes("FROM app_users WHERE id = ? AND status = 'active'")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super source unassignment compare-and-swaps ownership and enabled state atomically",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/sources/src123/assign",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.owner,null);assert.equal(json.data.enabled,0);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM source_ownership WHERE source_id = ? AND user_id = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM subscription_sources WHERE id = ? AND enabled = ?")));
+  assert.ok(batch.some(sql=>sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET enabled = 0") && sql.includes("AND enabled = ?")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
