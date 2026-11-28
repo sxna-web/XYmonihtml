@@ -584,3 +584,26 @@ test("manual node delete rechecks ownership before deleting node metadata and gr
   assert.ok(batch.some(sql=>sql.startsWith("DELETE FROM node_group_members")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
+
+
+test("subscription node enabled toggle checks ownership and final upsert result",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/sub123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by)")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("JOIN source_ownership so ON so.source_id = n.source_id")));
+  assert.ok(batch.some(sql=>sql.startsWith("INSERT INTO node_overrides")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("manual node enabled toggle checks ownership and final UPDATE result",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual/manual123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET enabled = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET enabled = ?") && sql.includes("WHERE id = ? AND user_id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
