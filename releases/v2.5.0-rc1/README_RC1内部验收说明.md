@@ -54,6 +54,13 @@
 - 本候选没有连接、读取或修改任何线上 D1/Secrets。
 - 需要在部署前由用户在 Cloudflare 确认当前 `DB` binding、现有 schema、备份和回滚版本。不能把仓库 DDL 当作生产 schema 证明。
 
+### 1.1 HTML API 地址默认值（重要）
+
+- 当前候选 HTML 登录框源码默认值仍为 `https://starjump-api-staging.synahcooo.workers.dev`。
+- 页面会优先使用浏览器 `localStorage` 中已有的 `sj-api` 覆盖源码默认值，因此实际目标还可能是此前保存的地址。
+- 生产 Worker 主机名标识在源码中为 `blackstarjump-api-dawn-1242`，但仓库材料不足以安全确认完整生产 HTTPS 根 URL。
+- 因此该 HTML **不能直接作为正式生产页面交付**；正式候选必须先核实用户实际生产 Worker 根 URL，并在交付前清除 staging 默认/陈旧地址风险。不得猜测或自行拼接生产 URL。
+
 ### 2. Secrets 兼容
 
 - `SESSION_PEPPER`：至少 32 字符。必须保留现有原值；本候选没有安排轮换。若现有值少于 32 字符，**不要部署**，先设计兼容迁移。
