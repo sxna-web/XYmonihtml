@@ -187,3 +187,17 @@ test("card disabled during batch is reported as not writable",async()=>{
   const r=await adapter.replaceCardGroupsAtomically(base);
   assert.equal(r.code,"CARD_NOT_WRITABLE");
 });
+
+test("delegated D1 batch carries final active scope guard",async()=>{
+  const db=fakeDb();
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically({
+    ...base,actorId:"super1",scope:"operate",scopeId:"scope-1",
+  });
+  assert.equal(r.ok,true);
+  const batch=db.calls.find(x=>x.kind==="batch");
+  const guard=batch.stmts[0];
+  assert.match(guard.sql,/admin_user_scopes/);
+  assert.ok(guard.binds.includes("scope-1"));
+  assert.ok(guard.binds.includes("super1"));
+});
