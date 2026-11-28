@@ -1468,7 +1468,7 @@ pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:10px;font-size:1
       <button class="tab" data-tab="applinks">APP 入口</button>
       <button class="tab" data-tab="release">发布公告</button>
       <button class="tab" data-tab="groups">APP 分组</button>
-      <button class="tab" id="dbUpgrade" title="检查并补齐数据表">数据库</button>
+      <button class="tab" id="dbUpgrade" title="只读检查数据表；迁移暂未开放">数据库</button>
       <button class="tab" data-tab="audit">审计记录</button>
       <button class="tab" data-tab="assist">协助会话</button>
     </div>
@@ -2135,16 +2135,18 @@ async function loadSources() {
   fu.value = cur;
 }
 
-/* ── 一键建表 ── */
+/* ── 数据库只读检查（RC1 安全模式）── */
+$('dbUpgrade').title = '只读检查数据表；迁移暂未开放';
+$('dbUpgrade').textContent = '检查数据库';
 $('dbUpgrade').addEventListener('click', async () => {
   try {
     const st = await api('/api/super/schema-status');
-    if (st.data.ready) { alert('数据表已齐全，无需操作。'); return; }
-    if (!confirm('缺少 ' + st.data.missing.length + ' 张表：\n' + st.data.missing.join('\n') + '\n\n现在自动创建？（只新增，不改动已有数据）')) return;
-    const r = await api('/api/super/migrate', { method:'POST', body: JSON.stringify({ confirm: 'yes' }) });
-    if (r.data.ready) alert('完成：新建 ' + r.data.done.length + ' 项，跳过 ' + r.data.skipped.length + ' 项。');
-    else alert('仍有缺失：' + (r.data.missing.join(', ') || '未知') + '\n错误：' + JSON.stringify(r.data.errors));
-  } catch (e) { alert('失败：' + e.message); }
+    const missing = st.data.missing || [];
+    const summary = st.data.ready
+      ? '候选业务表均存在，但当前仅核对表名，尚未验证字段、索引和约束。'
+      : '仍缺少 ' + missing.length + ' 张候选业务表：\\n' + missing.join('\\n');
+    alert(summary + '\\n\\nRC1 暂不执行自动建表。请先完成数据库结构核对和迁移计划验收，避免对已有数据造成影响。');
+  } catch (e) { alert('只读检查失败：' + e.message); }
 });
 
 /* ── APP 分组 ── */
