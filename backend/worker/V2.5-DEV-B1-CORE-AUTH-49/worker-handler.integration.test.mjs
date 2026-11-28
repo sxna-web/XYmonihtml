@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, cardGroupMappingTable=false, cardGroupMappings=[], failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, cardGroupMappingTable=false, cardGroupMappings=[], appEntitlements=[], appGroups=[], appGroupNodes=[], appFreeGrants=[], failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -74,6 +74,12 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
                 return {results:activations};
               }
               if (sql.includes("FROM app_card_group_mappings WHERE admin_user_id = ? AND group_id = ?")) return {results:cardGroupMappings};
+              if (sql.includes("FROM app_entitlements") && sql.includes("device_id = ?") && sql.includes("status = 'active'")) return {results:appEntitlements};
+              if (sql.includes("FROM app_groups g")) return {results:appGroups};
+              if (sql.includes("FROM app_card_group_mappings m")) return {results:cardGroupMappings};
+              if (sql.includes("FROM app_free_grants WHERE device_id = ?")) return {results:appFreeGrants};
+              if (sql.includes("FROM app_groups") && sql.includes("mode = 'free'")) return {results:appGroups.filter(g=>g.mode==="free" && args.includes(g.admin_user_id))};
+              if (sql.includes("FROM app_group_sources gs")) return {results:appGroupNodes.filter(n=>!n.group_id || n.group_id===args[0])};
               if (sql.includes("sqlite_master") && /type\s*=\s*'table'/.test(sql)) {
                 const missing = missingCardGroupTables ? new Set(["app_card_group_mappings","app_card_group_admin_requests"]) : new Set();
                 return {results:args.filter(name=>!missing.has(name)).map(name=>({name}))};
@@ -409,6 +415,91 @@ test("Protocol66 card-group writes remain behind the existing active VIP gate",a
   assert.equal(json.code,"VIP_REQUIRED");
   assert.ok(db.batches.every(batch => !batch.some(stmt => stmt.sql.includes("app_card_group_mappings") || stmt.sql.includes("app_card_group_admin_requests"))));
   assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
+});
+
+async function appEntitlementToken(secret,entitlementId,deviceId) {
+  const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const signature=await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(`${entitlementId}|${deviceId}`));
+  return Buffer.from(signature).toString("base64url");
+}
+
+test("APP groups merge all active card entitlements and deduplicate free grants per admin",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const token=await appEntitlementToken(secret,"ent-2",deviceId);
+  const qs=new URLSearchParams({device_id:deviceId,token});
+  const db=mockDb({
+    cardGroupMappingTable:true,
+    appEntitlements:[
+      {id:"ent-3",admin_user_id:"admin-b",card_id:"card-3",expires_at:"2099-03-01 00:00:00",purge_at:"2099-03-02 00:00:00",status:"active"},
+      {id:"ent-2",admin_user_id:"admin-a",card_id:"card-2",expires_at:"2099-02-01 00:00:00",purge_at:"2099-02-02 00:00:00",status:"active"},
+      {id:"ent-1",admin_user_id:"admin-a",card_id:"card-1",expires_at:"2099-01-01 00:00:00",purge_at:"2099-01-02 00:00:00",status:"active"},
+    ],
+    appGroups:[
+      {id:"public-a",admin_user_id:"admin-a",name:"Public A",mode:"public",enabled:1},
+      {id:"free-a",admin_user_id:"admin-a",name:"Free A",mode:"free",enabled:1},
+      {id:"public-b",admin_user_id:"admin-b",name:"Public B",mode:"public",enabled:1},
+      {id:"free-b",admin_user_id:"admin-b",name:"Free B",mode:"free",enabled:1},
+      {id:"free-old",admin_user_id:"admin-old",name:"Free old",mode:"free",enabled:1},
+    ],
+    appFreeGrants:[
+      {admin_user_id:"admin-a"},{admin_user_id:"admin-a"},
+      {admin_user_id:"admin-b"},{admin_user_id:"admin-old"},
+    ],
+    cardGroupMappings:[
+      {id:"cg-a",admin_user_id:"admin-a",card_id:"card-1",group_id:"card-a",status:"active",name:"Card A",mode:"card",enabled:1},
+      {id:"cg-a2",admin_user_id:"admin-a",card_id:"card-2",group_id:"card-a",status:"active",name:"Card A",mode:"card",enabled:1},
+      {id:"cg-b",admin_user_id:"admin-b",card_id:"card-3",group_id:"card-b",status:"active",name:"Card B",mode:"card",enabled:1},
+    ],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+qs.toString(),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,200);
+  assert.equal(json.data.entitled,true);
+  assert.equal(json.data.entitlements.length,3);
+  assert.deepEqual(json.data.admin_user_ids,["admin-b","admin-a"]);
+  assert.equal(json.data.card_groups_ready,true);
+  const groups=json.data.groups;
+  assert.ok(groups.some(g=>g.id==="public-a"&&g.admin_user_id==="admin-a"));
+  assert.ok(groups.some(g=>g.id==="public-b"&&g.admin_user_id==="admin-b"));
+  assert.ok(groups.some(g=>g.id==="free-old"&&g.admin_user_id==="admin-old"));
+  const cardA=groups.find(g=>g.id==="card-a");
+  assert.deepEqual(cardA.card_ids,["card-1","card-2"]);
+  assert.equal(groups.filter(g=>g.id==="free-a"&&g.admin_user_id==="admin-a").length,1);
+});
+test("APP groups retain legacy response when Protocol66 mapping table is not installed",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const token=await appEntitlementToken(secret,"ent-1",deviceId);
+  const db=mockDb({
+    appEntitlements:[{id:"ent-1",admin_user_id:"admin-a",card_id:"card-1",expires_at:"2099-01-01 00:00:00",status:"active"}],
+    appGroups:[{id:"public-a",admin_user_id:"admin-a",name:"Public A",mode:"public",enabled:1}],
+    appFreeGrants:[{admin_user_id:"admin-a"}],
+    cardGroupMappingTable:false,
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,200);
+  assert.equal(json.data.card_groups_ready,false);
+  assert.equal(json.data.card_groups_error,undefined);
+  assert.ok(json.data.groups.some(g=>g.id==="public-a"));
+});
+test("APP groups reject a token that does not match any active entitlement",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const db=mockDb({appEntitlements:[{id:"ent-1",admin_user_id:"admin-a",card_id:"card-1",expires_at:"2099-01-01 00:00:00",status:"active"}]});
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token:"invalid-token"}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"BAD_TOKEN");
+});
+test("APP groups preserve each admin free grant when no active card entitlement remains",async()=>{
+  const db=mockDb({
+    appFreeGrants:[{admin_user_id:"admin-a"},{admin_user_id:"admin-b"}],
+    appGroups:[
+      {id:"free-a",admin_user_id:"admin-a",name:"Free A",mode:"free",enabled:1},
+      {id:"free-b",admin_user_id:"admin-b",name:"Free B",mode:"free",enabled:1},
+    ],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:"device-12345678"}),method:"GET"});
+  assert.equal(res.status,200);
+  assert.equal(json.data.entitled,false);
+  assert.deepEqual(json.data.admin_user_ids,["admin-a","admin-b"]);
+  assert.deepEqual(json.data.groups.map(g=>g.id).sort(),["free-a","free-b"]);
 });
 
 test("APP redemption rate limit counts failed guesses only and uses a fixed 15-minute window",async()=>{
