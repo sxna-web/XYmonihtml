@@ -65,7 +65,7 @@ def main() -> None:
     known_tables = {item["name"] for item in inventory["source_ddl_tables"] + inventory["worker_referenced_base_tables"]}
     if len(inventory["source_ddl_tables"]) != 18 or len(inventory["worker_referenced_base_tables"]) != 22 or len(known_tables) != 40:
         raise AssertionError("Static DB inventory counts must be 18 source-DDL + 22 referenced-base = 40 distinct tables")
-    sql_refs = set(re.findall(r"\\b(?:FROM|JOIN|UPDATE|INTO|DELETE\\s+FROM)\\s+[\"'`]?([A-Za-z_][A-Za-z0-9_]*)", source, re.IGNORECASE))
+    sql_refs = set(re.findall(r"\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM)\s+[\"'`]?([A-Za-z_][A-Za-z0-9_]*)", source, re.IGNORECASE))
     unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master"}
     if unclassified:
         raise AssertionError("Worker SQL table references missing from schema inventory: " + ", ".join(sorted(unclassified)))
