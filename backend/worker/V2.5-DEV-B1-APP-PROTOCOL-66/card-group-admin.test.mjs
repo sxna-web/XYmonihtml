@@ -5,7 +5,7 @@ import { createCardGroupAdminHandler } from "./card-group-admin-handler.mjs";
 
 function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=0}={}) {
   const state = {
-    card:{id:"card1",admin_user_id:"admin1",status:cardStatus,manual_disabled:manualDisabled,code:"SECRET-REDEEM"},
+    card:{id:"card1",admin_user_id:"admin1",status:cardStatus,manual_disabled:manualDisabled,is_expired:false,code:"SECRET-REDEEM"},
     groups:[
       {id:"g1",admin_user_id:"admin1",name:"Tokyo",mode:"card",enabled:true},
       {id:"g2",admin_user_id:"admin1",name:"Osaka",mode:"card",enabled:true},
@@ -16,6 +16,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
   };
   const events=[];
   let failAtomic=false;
+  let commitWriteAllowed=canWrite;
   const storage={
     async accessForAdmin(adminId) {
       events.push(["access",adminId]);
@@ -28,6 +29,9 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
     },
     async replaceCardGroupsAtomically(input) {
       events.push(["atomic",input]);
+      if(!commitWriteAllowed)return {ok:false,code:"VIP_READ_ONLY"};
+      if(state.card.status!=="normal" && state.card.status!=="used" ||
+        state.card.manual_disabled || state.card.is_expired) return {ok:false,code:"CARD_NOT_WRITABLE"};
       if(failAtomic)return {ok:false,code:"DB_BATCH_ABORTED"};
       const selected=state.groups.filter(g=>input.groupIds.includes(g.id));
       if(selected.length!==input.groupIds.length ||
@@ -48,6 +52,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
       return {ok:true,mappings:next};
     },
     setAtomicFailure(v){failAtomic=v;},
+    setCommitWriteAllowed(v){commitWriteAllowed=v;},
     state,events,
   };
   return {storage,service:createCardGroupAdminService({storage})};
@@ -93,6 +98,12 @@ test("replace rejects free or other-admin groups",async()=>{
   }
 });
 
+test("activated used cards remain configurable while valid",async()=>{
+  const {service}=fixture({cardStatus:"used"});
+  const r=await service.replace({...scope,groupIds:["g1"]});
+  assert.equal(r.ok,true);
+});
+
 test("inactive/manual-disabled cards cannot be changed",async()=>{
   for(const opts of [{cardStatus:"inactive"},{manualDisabled:1}]){
     const {service,storage}=fixture(opts);
@@ -112,6 +123,16 @@ test("successful replace delegates atomic mapping plus audit to adapter",async()
   assert.ok(atomic);
   assert.equal(audit[1].action,"app_card_groups.replace");
   assert.equal(audit[1].actor,scope.actorId);
+});
+
+test("VIP expiry between preflight and atomic commit is rejected",async()=>{
+  const {service,storage}=fixture();
+  storage.setCommitWriteAllowed(false);
+  const r=await service.replace({...scope,groupIds:["g1"]});
+  assert.equal(r.code,"VIP_READ_ONLY");
+  assert.equal(r.status,403);
+  assert.equal(storage.state.mappings.length,0);
+  assert.equal(storage.events.some(e=>e[0]==="audit"),false);
 });
 
 test("adapter batch failure leaves mapping and audit unchanged",async()=>{
