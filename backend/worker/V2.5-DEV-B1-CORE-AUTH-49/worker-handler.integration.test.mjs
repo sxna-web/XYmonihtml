@@ -84,7 +84,22 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               }
               if (sql.includes("FROM app_entitlements") && sql.includes("device_id = ?") && sql.includes("status = 'active'")) return {results:appEntitlements};
               if (sql.includes("FROM app_groups g")) return {results:appGroups.filter(g=>args.slice(0,-1).includes(g.admin_user_id))};
-              if (sql.includes("FROM app_card_group_mappings m")) return {results:cardGroupMappings};
+              if (sql.includes("FROM app_card_group_mappings m")) {
+                const deviceId = args[0];
+                const rows = [];
+                for (const mapping of cardGroupMappings) {
+                  const entitlement = appEntitlements.find(e =>
+                    e.card_id === mapping.card_id &&
+                    e.admin_user_id === mapping.admin_user_id &&
+                    (!e.device_id || e.device_id === deviceId) &&
+                    e.status === "active" &&
+                    (!e.expires_at || new Date(e.expires_at.replace(" ", "T") + (e.expires_at.includes("Z") ? "" : "Z")).getTime() > Date.now())
+                  );
+                  if (!entitlement) continue;
+                  rows.push({...mapping, entitlement_id:entitlement.id});
+                }
+                return {results:rows};
+              }
               if (sql.includes("FROM app_free_grants WHERE device_id = ?")) return {results:appFreeGrants};
               if (sql.includes("FROM app_groups") && sql.includes("mode = 'free'")) return {results:appGroups.filter(g=>g.mode==="free" && args.includes(g.admin_user_id))};
               if (sql.includes("FROM app_group_sources gs")) return {results:appGroupNodes.filter(n=>!n.group_id || n.group_id===args[0])};
