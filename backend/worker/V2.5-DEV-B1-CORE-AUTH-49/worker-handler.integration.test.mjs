@@ -38,6 +38,9 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("FROM node_records WHERE id = ?")) return {id:args[0],source_id:"src1",name:"Node",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1};
               if (sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")) return {ok:1};
               if (sql.includes("SELECT id, role, status, display_name FROM app_users WHERE id = ?")) return {id:args[0],role:"user",status:"active",display_name:"Tester"};
+              if (sql.includes("SELECT id, status FROM app_users WHERE id = ?")) return {id:args[0],status:"active"};
+              if (sql.includes("SELECT id, name FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source"};
+              if (sql.includes("SELECT status FROM source_approvals WHERE source_id = ?")) return {status:"pending"};
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
               if (sql.includes("FROM app_cards WHERE code = ?")) return {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"};
               if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
@@ -517,5 +520,28 @@ test("super convert-link revoke rechecks active state in the same batch",async()
   const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET revoked_at")));
   assert.ok(batch);
   assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE id = ? AND revoked_at IS NULL")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super source approval rechecks prior status and batches decision with audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/sources/src123/approve",method:"POST",body:{reason:"checked"}});
+  assert.equal(res.status,200);assert.equal(json.data.approval_status,"approved");
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE source_approvals SET status")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM source_approvals WHERE source_id = ? AND status = ?")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE source_approvals SET status") && sql.includes("AND status = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super source assignment rechecks source and active target in the ownership batch",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/sources/src123/assign",method:"POST",body:{user_id:"u1"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO source_ownership")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM subscription_sources WHERE id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("FROM app_users WHERE id = ? AND status = 'active'")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
