@@ -57,7 +57,7 @@ function fakeDb() {
   return db;
 }
 
-const base={adminId:"a1",actorId:"a1",requestId:"req1",cardId:"c1",groupIds:["g1"],expectedGroupIds:[]};
+const base={adminId:"a1",actorId:"a1",idempotencyKey:"idem-key-12345678",requestId:"trace-req-1",cardId:"c1",groupIds:["g1"],expectedGroupIds:[]};
 
 test("scoped loader reads card, card-mode groups and active mappings without code",async()=>{
   const db=fakeDb();
@@ -80,7 +80,7 @@ test("replace executes prepared D1 batch and returns only safe mapping rows",asy
   assert.ok(batch.stmts.every(x=>typeof x.sql==="string"&&Array.isArray(x.binds)));
 });
 
-test("same request id and same digest returns prior response without a second batch",async()=>{
+test("same idempotency key and same digest returns prior response without a second batch",async()=>{
   const db=fakeDb();
   const hash=await digest("c1",["g1"]);
   db.state.request={payload_sha256:hash,response_json:'{"groupIds":["g1"]}'};
@@ -92,7 +92,7 @@ test("same request id and same digest returns prior response without a second ba
   assert.equal(db.calls.some(x=>x.kind==="batch"),false);
 });
 
-test("same request id with different payload returns conflict",async()=>{
+test("same idempotency key with different payload returns conflict",async()=>{
   const db=fakeDb();
   db.state.request={payload_sha256:"f".repeat(64),response_json:'{"groupIds":["g1"]}'};
   const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
@@ -146,7 +146,7 @@ test("batch failure with no committed idempotency row maps to database abort",as
   assert.equal(r.code,"DB_BATCH_ABORTED");
 });
 
-test("concurrent same request id and same digest is recovered as idempotent",async()=>{
+test("concurrent same idempotency key and same digest is recovered as idempotent",async()=>{
   const db=fakeDb();
   const hash=await digest("c1",["g1"]);
   db.setBatchFailure(new Error("unique request collision"),state=>{
@@ -158,7 +158,7 @@ test("concurrent same request id and same digest is recovered as idempotent",asy
   assert.equal(r.idempotent,true);
 });
 
-test("concurrent same request id with different digest is rejected",async()=>{
+test("concurrent same idempotency key with different digest is rejected",async()=>{
   const db=fakeDb();
   db.setBatchFailure(new Error("unique request collision"),state=>{
     state.request={payload_sha256:"e".repeat(64),response_json:'{"groupIds":["g2"]}'};
