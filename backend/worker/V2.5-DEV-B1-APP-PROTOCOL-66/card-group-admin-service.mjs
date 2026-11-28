@@ -89,11 +89,11 @@ export function createCardGroupAdminService({ storage }) {
       return loadState(adminId, cardId);
     },
 
-    async replace({ adminId, actorId, scope = null, scopeId = null, idempotencyKey, requestId, cardId, groupIds }) {
+    async replace({ adminId, actorId, scope = null, scopeId = null, isSuperAdmin = false, idempotencyKey, requestId, cardId, groupIds }) {
       if (!ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
           !ID_RE.test(cardId || "") ||
           typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey) ||
-          typeof requestId !== "string" || !requestId.trim() || requestId.length > 80) {
+          typeof requestId !== "string" || !requestId.trim() || requestId.length > 80 || typeof isSuperAdmin !== "boolean") {
         return fail("INVALID_CARD_SCOPE", 400);
       }
       if (actorId !== adminId && (!["operate", "manage"].includes(scope) ||
@@ -120,7 +120,7 @@ export function createCardGroupAdminService({ storage }) {
 
       // Adapter owns the final CAS/owner/state checks and same-batch audit.
       const result = await storage.replaceCardGroupsAtomically({
-        adminId, actorId, scope, scopeId, idempotencyKey, requestId, cardId, groupIds: [...groupIds],
+        adminId, actorId, scope, scopeId, isSuperAdmin, idempotencyKey, requestId, cardId, groupIds: [...groupIds],
         expectedGroupIds: state.mappings.map(group => group.id),
       });
       if (!result || result.ok !== true || !Array.isArray(result.mappings)) {
