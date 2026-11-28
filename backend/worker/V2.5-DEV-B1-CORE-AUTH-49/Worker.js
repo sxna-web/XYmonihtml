@@ -2,14 +2,15 @@ import { authorizeAppManagementRequest } from "./worker-auth-adapter.mjs";
 
 /* V2.5-DEV-B1-CORE-AUTH-49: owner-predicate hardened authorization revision; source base retained unchanged. */
 /**
- * StarJump V1.0 Production Worker
- * 星跃管理平台 —— 正式版后端（多用户隔离 / 字段覆盖 / 分组 / 审计 / 同步 staging+fencing）
+ * StarJump V2.5.0 RC1 Candidate Worker
+ * 星跃管理平台 —— 上线候选后端（多用户隔离 / 字段覆盖 / 分组 / 审计 / 同步 staging+fencing）
  *
  * 基线：V0.4.0-compat-test2（保留其解析器行为、SSRF 纵深防御、旧接口形状）
  * 部署绑定：
- *   D1 binding : DB  -> starjump-db
+ *   D1 binding : DB  -> 用户当前已配置的正式 D1；部署时保持现有绑定，不要改绑 starjump-db 或 staging
  *   Secret     : ADMIN_TOKEN      (>=32 字符；仅作为旧后台 /api/admin/* 与 bootstrap 的超级凭据)
- *   Secret     : SESSION_PEPPER   (任意 >=16 字符；参与 session token 哈希)
+ *   Secret     : SESSION_PEPPER   (本候选要求 >=32 字符；必须保留现有原值，不能直接轮换)
+ *   Secret     : APP_HMAC_SECRET  (可选；若已配置，首次兼容部署前须确认与当前 SESSION_PEPPER 一致)
  *   Variable   : ADMIN_ORIGIN     (后台页面 Origin，可用逗号分隔多个)
  *   Variable   : ALLOW_REGISTRATION ("1" 才允许自助注册，默认关闭)
  *   Variable   : SESSION_TTL_HOURS  (默认 720 = 30 天)
@@ -25,7 +26,7 @@ import { authorizeAppManagementRequest } from "./worker-auth-adapter.mjs";
  * 未在真实 D1 上验证的事项集中列在 Compatibility_Report 的「未验证」章节。
  */
 
-const VERSION = "1.0.0";
+const VERSION = "2.5.0-rc1";
 const CANON_VERSION = "v1.0-1";
 
 const MAX_BODY = 32 * 1024;
@@ -5390,7 +5391,7 @@ export default {
     if (url.pathname === "/health" && req.method === "GET") {
       return withCors(json({
         ok: true, service: "starjump-api", version: VERSION,
-        build: "2026-11-23-diag",
+        build: "2026-11-28-v2.5.0-rc1",
         auth_mode: "multi_user_session",
         legacy_admin_token: "restricted",
         features: ["multi_user", "overrides", "groups", "audit_events", "sync_staging", "password_change"],
