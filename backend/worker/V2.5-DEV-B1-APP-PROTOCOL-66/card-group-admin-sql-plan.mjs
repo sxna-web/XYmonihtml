@@ -142,7 +142,7 @@ export function buildCardGroupReplaceStatements(db, input) {
     statement(CARD_GROUP_READ_SQL.mappings, [adminId, cardId]),
   ];
 
-  return Object.freeze(batch);
+  return Object.freeze(batch.map(item => db.prepare(item.sql).bind(...item.binds)));
 }
 
 export function canonicalCardGroupPayload(cardId, groupIds) {
