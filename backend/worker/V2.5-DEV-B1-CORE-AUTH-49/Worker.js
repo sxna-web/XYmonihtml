@@ -4196,7 +4196,8 @@ async function checkAppRedeemRateLimit(db, req, deviceId, env) {
            updated_at = CURRENT_TIMESTAMP`,
       ).bind(bucket).run();
       const row = await db.prepare("SELECT count FROM rate_limits WHERE bucket = ?").bind(bucket).first();
-      if (!row || Number(row.count) > limit) {
+      if (!row) return { ok: false, unavailable: true };
+      if (Number(row.count) > limit) {
         return { ok: false, scope: bucket.includes(":device:") ? "device" : "ip" };
       }
     }
