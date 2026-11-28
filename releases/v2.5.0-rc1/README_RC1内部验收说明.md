@@ -40,7 +40,7 @@
 
 - RC1 数据库页现为只读检查；`POST /api/super/migrate` 暂时返回 `503 MIGRATION_REVIEW_REQUIRED`。
 - 已移除旧版不具备完整结构验证的逐条 DDL 迁移实现。
-- 数据库状态接口只检查候选业务表名，并明确返回 `verification=TABLE_NAMES_ONLY`；不能据此认定所有 Worker 业务表、字段和索引均就绪。
+- 数据库状态接口只检查候选业务表名，并明确返回 `verification=TABLE_NAMES_ONLY` 与 `required_tables_present`，不再返回泛化的 `ready` 字段；不能据此认定所有 Worker 业务表、字段和索引均就绪。
 - 已拒绝 legacy `ADMIN_TOKEN` 与协助会话进入数据库检查/迁移路由。
 - 详细原因见 `docs/release/V2.5.0_RC1数据库迁移安全复核与暂停记录_2026-11-28.md`。
 - 这是上线阻断项；不能通过跳过数据库迁移或误报 ready 来绕过。
