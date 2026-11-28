@@ -80,8 +80,8 @@ export function buildCardGroupReplaceStatements(db, input) {
   ).join("\n");
   const desiredCountSql = desired.length
     ? `(SELECT COUNT(*) FROM app_groups g WHERE g.admin_user_id = ? AND g.mode = 'card' AND g.enabled = 1 AND g.id IN (${marks(desired)})) = ${desired.length}`
-    : "NOT EXISTS (SELECT 1 FROM app_groups g WHERE g.admin_user_id = ? AND g.mode = 'card' AND g.enabled = 1 AND 1 = 0)";
-  const desiredBinds = desired.length ? [adminId, ...desired] : [adminId];
+    : "1 = 1";
+  const desiredBinds = desired.length ? [adminId, ...desired] : [];
 
   const assertSql = `SELECT CASE WHEN
       EXISTS (SELECT 1 FROM admin_vip_activations v
