@@ -3,7 +3,7 @@
 - 批次：`V2.5-DEV-B1-APP-CARD-GROUP-91`
 - 日期：2026-11-28
 - 基线分支：`release/v2.5.0-rc1-converge`
-- 代码/测试最终验证 HEAD：`db46684d5df68f70f16c4bd97793c993b6b1025b`
+- 代码/测试最终验证 HEAD：`a7a533342fed93cb9a03685fa449639bb6626e4b`
 - PR：#2，Draft / Open / Unmerged
 - 状态：**已修改候选代码与测试 / CI 通过 / 未部署 / 未连接 D1**
 
@@ -33,6 +33,8 @@
 
 ### 1.3 候选 DDL 单一来源
 
+- 第九十一批后续收敛补充：SQLite mapping test 现在先安装唯一 canonical fixture，再插入 seed rows；不再先建临时 parent tables 造成 fixture 的 app_cards/app_groups 定义被测试库静默遮蔽。
+
 权威候选 fixture 统一为：
 
 `backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/fixtures/card-group-admin-candidate-schema.sql`
@@ -48,9 +50,9 @@
 ## 2. CI 验证
 
 最终验证：
-- PR Convergence Run：46128109819 — **SUCCESS**
+- PR Convergence Run：46128266379 — **SUCCESS**
   https://github.com/sxna-web/XYmonihtml/actions/runs/46128109819
-- Job：140927113393 — SUCCESS
+- Job：140927616343 — SUCCESS
 - 同一 HEAD 的其他关联运行：46128109834、46128105285 — SUCCESS。
 - Batch49 authorization adapter：12/12。
 - Batch49 Worker handler integration：62/62。
@@ -58,7 +60,7 @@
 - APP v2 composition/read/service：Protocol60 19/19、Protocol64 23/23、Protocol65 26/26。
 - Protocol66 handler/service：21/21；SQL plan：8/8；fake-D1 adapter：14/14。
 - Worker bundle、Cron/static regression、candidate artifact upload 均通过。
-- Artifact：`StarJump-V2.5.0-RC1-candidate`，ID `15256596749`，134,218 bytes，SHA-256 `98d159cc9ae8da7f430064434c8559398a4b5dfd92e4d4280de631e737bbf433`，expires `2026-12-12T08:56:26Z`。
+- Artifact：`StarJump-V2.5.0-RC1-candidate`，ID `15256174306`，134,218 bytes，SHA-256 `749803b6b820790fafc0d6979544cd476d153edcab229d223af497f1caf24879`，expires `2026-12-12T08:58:40Z`。
 
 ### 测试过程中的真实失败与修正
 
