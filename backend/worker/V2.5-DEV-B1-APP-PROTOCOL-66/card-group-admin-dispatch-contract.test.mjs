@@ -129,3 +129,44 @@ test("real Protocol66 handler failures propagate through dispatcher for Worker o
   assert.equal(h.calls.cors,0);
   assert.equal(h.calls.fail,0);
 });
+
+
+test("request identity mismatch is rejected before the handler can use a different request",async()=>{
+  const h=harness();
+  h.handler=async(_request,resolveSession)=>{
+    h.calls.handler++;
+    return resolveSession(new Request("https://worker.test/api/user/app-cards/other-card/groups",{method:"GET"}));
+  };
+  await assert.rejects(
+    dispatchCardGroupAdminContract({...h,appAuthorization:{allowed:true}}),
+    /REQUEST_CONTEXT_MISMATCH/,
+  );
+  assert.equal(h.calls.handler,1);
+  assert.equal(h.calls.resolver,0);
+  assert.equal(h.calls.cors,0);
+  assert.equal(h.calls.fail,0);
+});
+
+test("APP authorization denial with the real Protocol66 handler never reaches its service",async()=>{
+  const h=harness();
+  let serviceCalls=0;
+  const service={get:async()=>{serviceCalls++;return {ok:true};},replace:async()=>{serviceCalls++;return {ok:true};}};
+  const handler=(request,resolveSession)=>createCardGroupAdminHandler({service,resolveSession})(request);
+  const response=await dispatchCardGroupAdminContract({...h,handler,appAuthorization:{allowed:false,code:"VIP_EXPIRED"}});
+  assert.equal(response.status,403);
+  assert.equal(serviceCalls,0);
+  assert.equal(h.calls.cors,1);
+});
+
+test("real Worker scope denial returns before APP authorization and before APP-card route dispatch",()=>{
+  const userGate=workerSource.indexOf("if (isUserApi(url.pathname)) {");
+  const scopeCheck=workerSource.indexOf("const scopeDenied = requireScope(ctxWithReq, needScope);",userGate);
+  const scopeReturn=workerSource.indexOf("if (scopeDenied) {",scopeCheck);
+  const appGate=workerSource.indexOf("const appAuthorization = await authorizeAppManagementRequest({",scopeReturn);
+  const appRoute=workerSource.indexOf('if (url.pathname.startsWith("/api/user/app-cards"))',appGate);
+  assert.ok(userGate>=0 && scopeCheck>userGate && scopeReturn>scopeCheck && appGate>scopeReturn && appRoute>appGate);
+  const deniedBlock=workerSource.slice(scopeReturn,appGate);
+  assert.match(deniedBlock,/return withCors\(scopeDenied\)/);
+  assert.match(deniedBlock,/auditDenied\(env\.DB, ctxWithReq, "scope\.denied"/);
+  assert.doesNotMatch(deniedBlock,/authorizeAppManagementRequest|userAppCardsRoute/);
+});
