@@ -4933,7 +4933,7 @@ async function appFreeGroupRoute(req, env, url) {
 async function appLinksForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const token = s(url.searchParams.get("token"), 200);
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))].slice(0, 50);
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
   const ent = await db.prepare(
     `SELECT id, admin_user_id FROM app_entitlements
@@ -5265,19 +5265,21 @@ async function appGroupsForDevice(req, env, url) {
     return json({ ok: true, data: { entitled: false, admin_user_ids: [...new Set((grants.results || []).map(x => x.admin_user_id))], card_groups_ready: false, groups: out } });
   }
 
-  // A token from any still-active entitlement on this device authorizes the
-  // device's complete active entitlement set. This preserves older clients
-  // that store only one token while allowing the new client to retain all tokens.
-  let tokenValid = false;
+  // Each token authorizes only its matching card entitlement. New clients
+  // send one token per active card; legacy clients that store one token keep
+  // access to that card only, never to another admin/card by token coincidence.
+  const authorizedEntitlements = [];
   for (const entitlement of entitlements) {
-    if (await verifyEntToken(env, entitlement.id, deviceId, token)) {
-      tokenValid = true;
-      break;
+    for (const token of tokens) {
+      if (await verifyEntToken(env, entitlement.id, deviceId, token)) {
+        authorizedEntitlements.push(entitlement);
+        break;
+      }
     }
   }
-  if (!tokenValid) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
+  if (!authorizedEntitlements.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
 
-  const adminIds = [...new Set(entitlements.map(x => x.admin_user_id).filter(Boolean))];
+  const adminIds = [...new Set(authorizedEntitlements.map(x => x.admin_user_id).filter(Boolean))];
   if (!adminIds.length) return fail("授权数据无效", 403, { code: "ENTITLEMENT_INVALID" });
   const adminPlaceholders = adminIds.map(() => "?").join(",");
   const legacyGroups = await db.prepare(
@@ -5337,6 +5339,8 @@ async function appGroupsForDevice(req, env, url) {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
     ).bind("app_card_group_mappings").first();
     if (table) {
+      const entitlementIds = authorizedEntitlements.map(x => x.id);
+      const entitlementPlaceholders = entitlementIds.map(() => "?").join(",");
       const mapped = await db.prepare(
         `SELECT g.*, m.card_id
            FROM app_card_group_mappings m
@@ -5352,8 +5356,9 @@ async function appGroupsForDevice(req, env, url) {
             AND g.mode = 'card'
             AND g.enabled = 1
           WHERE m.status = 'active'
+            AND e.id IN (${entitlementPlaceholders})
           ORDER BY g.admin_user_id, g.sort ASC, g.created_at ASC, m.card_id`,
-      ).bind(deviceId).all();
+      ).bind(deviceId, ...entitlementIds).all();
       for (const group of mapped.results || []) await addGroup(group, group.card_id);
       cardGroupsReady = true;
     }
@@ -5373,7 +5378,7 @@ async function appGroupsForDevice(req, env, url) {
       admin_user_id: entitlements[0].admin_user_id,
       admin_user_ids: adminIds,
       free_admin_user_ids: freeAdminIds,
-      entitlements: entitlements.map(x => ({
+      entitlements: authorizedEntitlements.map(x => ({
         id: x.id, admin_user_id: x.admin_user_id, card_id: x.card_id,
         expires_at: x.expires_at, purge_at: x.purge_at, status: x.status,
       })),
