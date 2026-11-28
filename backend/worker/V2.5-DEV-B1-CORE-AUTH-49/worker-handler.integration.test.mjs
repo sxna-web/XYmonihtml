@@ -26,6 +26,10 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
               if (sql.includes("FROM app_groups WHERE id = ? AND admin_user_id = ?")) return resource;
+              if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
+              if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {free_group_enabled:1};
+              if (sql.includes("FROM app_entitlements WHERE id = ?")) return {id:args[0],admin_user_id:"u1",device_id:"old-device-123456"};
+              if (sql.includes("FROM app_links WHERE id = ?")) return {id:args[0],admin_user_id:"u1",title:"Support",url:"https://example.test"};
               if (sql.includes("FROM subscription_sources s JOIN source_ownership")) return {id:"src1"};
               return null;
             },
@@ -212,4 +216,36 @@ test("APP card generation fails closed when the in-batch capacity assertion dete
   assert.equal(res.status,409);
   assert.equal(json.code,"APP_CARD_CAPACITY_CHANGED");
   assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_cards")).length,0);
+});
+
+
+test("super APP permission update batches admin existence, upsert and audit while preserving omitted free-group setting",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/app-perms/u1",method:"PUT",body:{links_enabled:0,max_links:4}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const upsert=db.writes.find(x=>x.sql.includes("INSERT INTO admin_app_perms"));
+  assert.ok(upsert);assert.match(upsert.sql,/free_group_enabled=CASE WHEN \? = 1 THEN excluded\.free_group_enabled ELSE admin_app_perms\.free_group_enabled END/);
+  assert.equal(upsert.args[4],0);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM app_users WHERE id = ?")));
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super APP entitlement rebind uses compare-and-swap and atomic audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/app-entitlements/ent-1/rebind",method:"POST",body:{device_id:"new-device-123456"}});
+  assert.equal(res.status,200);assert.equal(json.data.device_id,"new-device-123456");
+  const update=db.writes.find(x=>x.sql.startsWith("UPDATE app_entitlements SET device_id"));
+  assert.ok(update);assert.match(update.sql,/WHERE id = \? AND device_id = \?/);
+  assert.deepEqual(update.args,["new-device-123456","ent-1","old-device-123456"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM app_entitlements WHERE id = ? AND device_id = ?")));
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super APP link delete batches final existence check, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/app-links/link-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.deleted,true);
+  const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM app_links"));
+  assert.ok(del);assert.deepEqual(del.args,["link-1"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
 });
