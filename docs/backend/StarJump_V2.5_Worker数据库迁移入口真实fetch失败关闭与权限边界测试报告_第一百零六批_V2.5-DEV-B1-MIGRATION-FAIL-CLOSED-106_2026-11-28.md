@@ -14,11 +14,11 @@ Worker 已在 migrateRoute 中将自动迁移固定为 503 MIGRATION_REVIEW_REQU
 
 文件：backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-handler.integration.test.mjs
 
-1. 本人登录的超级管理员 session 调用 POST /api/super/migrate：必须返回 503 + MIGRATION_REVIEW_REQUIRED；DB writes、batch 均为 0；不得出现 CREATE/ALTER/DROP TABLE。
-2. 使用 ADMIN_TOKEN legacy 凭据调用同一路由：必须在进入迁移 handler 前返回 403；无写入。
-3. 使用协助/impersonation session 调用同一路由：必须返回 403；无写入。
+1. 本人登录的超级管理员 session 调用 POST /api/super/migrate：必须返回 503 + MIGRATION_REVIEW_REQUIRED；不得出现业务数据写入或 CREATE/ALTER/DROP TABLE；允许认证会话的 last-seen 维护及拒绝访问审计记录。
+2. 使用 ADMIN_TOKEN legacy 凭据调用同一路由：必须在进入迁移 handler 前返回 403；不得进入迁移 handler 或产生业务数据写入；允许拒绝访问审计记录。
+3. 使用协助/impersonation session 调用同一路由：必须返回 403；不得进入迁移 handler 或产生业务数据写入；允许拒绝访问审计记录。
 
-这三项均直接调用导出的 module Worker.fetch，经过 CORS、D1 binding、session resolution、super-admin actor/effective identity gate 与最终路由，不是单测 migrateRoute 的替代路径。
+这三项均直接调用导出的 module Worker.fetch，经过 CORS、D1 binding、session resolution、super-admin actor/effective identity gate 与最终路由，不是单测 migrateRoute 的替代路径。测试区分正常的 session last-seen/拒绝访问审计写入与迁移/业务数据副作用。
 
 ## 安全与验证边界
 
