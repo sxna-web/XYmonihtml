@@ -1,4 +1,4 @@
-name: V2.5 RC1 Convergence Checks # rerun after stabilizing active-trial fixture
+name: V2.5 RC1 Convergence Checks
 on:
   push:
     branches:
@@ -26,9 +26,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Cron no-source regression and Worker syntax
+      - name: Bundle Batch 49 Worker into single deployment file
+        run: |
+          mkdir -p releases/v2.5.0-rc1
+          npx --yes esbuild@0.25.5 backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js --bundle --format=esm --platform=browser --target=es2022 --outfile=releases/v2.5.0-rc1/Worker.js
+      - name: Cron no-source regression and release syntax checks
         run: python scripts/rc1_cron_no_source_regression.py
       - name: Batch 49 authorization adapter tests
         run: node --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-auth-adapter.test.mjs
       - name: Batch 49 Worker handler integration tests
         run: node --experimental-default-type=module --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-handler.integration.test.mjs
+
+      - name: Upload RC1 candidate files
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarJump-V2.5.0-RC1-candidate
+          path: |
+            releases/v2.5.0-rc1/Worker.js
+            releases/v2.5.0-rc1/index.html
+          if-no-files-found: error
+          retention-days: 14
