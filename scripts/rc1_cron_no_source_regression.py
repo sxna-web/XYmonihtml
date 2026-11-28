@@ -254,7 +254,7 @@ def main() -> None:
 
     # Unstable-network policy: retry only idempotent reads; never automatically
     # replay business writes whose outcome may be ambiguous after a timeout.
-    api_block = html.split("async function api(path, options={})", 1)[1].split("\\nfunction fmtBytes", 1)[0]
+    api_block = html.split("async function api(path, options={})", 1)[1].split("\nfunction fmtBytes", 1)[0]
     for required in ("safeRead = method === 'GET' || method === 'HEAD'", "maxAttempts = safeRead ? 2 : 1",
                      "setTimeout(() => controller.abort(), 20000)", "signal: controller.signal",
                      "navigator.onLine === false", "不要连续重复提交", "Retry-After"):
