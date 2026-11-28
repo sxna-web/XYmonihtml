@@ -1536,3 +1536,5 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 当前阻塞：无目标 D1 schema snapshot；旧 `public/assigned/free` 与 Protocol 65 `card/free` 语义不兼容；无真实 D1 adapter/正式 route/APK 多 entitlement 兼容证据。
 - 本批无代码测试、无 D1、无 Secrets、无 Cloudflare 部署；PR 仍保持 Draft/Open。
 - **第七十一批唯一接手卡：**先核查 schema-status 超管鉴权和 Worker build/test wiring；从官方 D1 支持范围确认只读 schema introspection；定义固定 schema manifest 与安全输出；使用 isolated SQLite + Worker integration tests 验证后再实施只读诊断；卡密 mapping migration 继续等真实 D1 schema 证据及用户授权。
+
+- 第七十批 PR CI Run `46113454480` completed/success，head `91a223d656a42e11082823e6baa6d3bf5f4b9cc8`；Worker bundle、Cron/static、SQLite verifier、auth adapter、Worker integration、APP v2 contracts 和 artifact upload 均成功。该 CI 不验证本批设计文档中的 schema introspection 或生产 D1。
