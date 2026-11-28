@@ -2329,7 +2329,8 @@ async function superRoute(req, env, url, ctx) {
     }
     try {
       const updated = await userBatch(db, ctx, stmts);
-      if (!updated[1]?.meta?.changes) return fail("用户状态刚刚发生变化，请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
+      const updateIndex = losingSuper ? 1 : 0;
+      if (!updated[updateIndex]?.meta?.changes) return fail("用户状态刚刚发生变化，请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
     } catch (e) {
       if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
         if (losingSuper) {
