@@ -143,7 +143,7 @@ def main() -> None:
         raise AssertionError("Super APP link delete, permission update and entitlement rebind must be batched and audited")
     if "free_group_enabled=CASE WHEN ? = 1 THEN excluded.free_group_enabled ELSE admin_app_perms.free_group_enabled END" not in super_links:
         raise AssertionError("APP permission update must preserve free-group state when omitted without overwriting a concurrent change")
-    if "device_id = ? AND device_id = ?" not in super_links:
+    if "WHERE id = ? AND device_id = ?" not in super_links or "EXISTS (SELECT 1 FROM app_entitlements WHERE id = ? AND device_id = ?)" not in super_links:
         raise AssertionError("APP entitlement rebind must use an optimistic old-device predicate")
     if "app_link.super_delete" not in super_links or "app_entitlement.rebind" not in super_links:
         raise AssertionError("Super APP link and entitlement mutations must write audit records")
