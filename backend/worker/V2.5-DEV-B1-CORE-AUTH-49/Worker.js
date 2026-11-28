@@ -4342,7 +4342,7 @@ function quoteSchemaIdentifier(value) {
 
 async function schemaAll(db, sql, args = []) {
   const statement = db.prepare(sql);
-  const result = args.length ? await statement.bind(...args).all() : await statement.all();
+  const result = await statement.bind(...args).all();
   return Array.isArray(result?.results) ? result.results : [];
 }
 
