@@ -4334,6 +4334,8 @@ const WORKER_REFERENCED_TABLES = [
 const APP_SCHEMA_DIAGNOSTIC_TABLES = Object.freeze([
   "app_cards", "app_entitlements", "app_groups", "app_group_sources",
   "app_group_members", "app_free_grants", "app_card_events",
+  // Protocol66 candidate-only tables: observe if present; never create them here.
+  "app_card_group_mappings", "app_card_group_admin_requests",
 ]);
 
 function quoteSchemaIdentifier(value) {
@@ -4452,7 +4454,7 @@ async function inspectAppSchema(db, existingTableNames) {
 async function migrateRoute(req, env, url, ctx) {
   const db = env.DB;
   if (url.pathname === "/api/super/schema-status" && req.method === "GET") {
-    const allTables = [...new Set([...REQUIRED_TABLES, ...WORKER_REFERENCED_TABLES])];
+    const allTables = [...new Set([...REQUIRED_TABLES, ...WORKER_REFERENCED_TABLES, ...APP_SCHEMA_DIAGNOSTIC_TABLES])];
     const rows = await db.prepare(
       `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${allTables.map(() => "?").join(",")})`,
     ).bind(...allTables).all();
