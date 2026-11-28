@@ -35,6 +35,8 @@
 - 后台数据库检查 UI 分开显示两类表数量、缺失项和总状态。
 - 自动回归强制 Worker 两组表名与静态 JSON 清单逐项一致，且总数必须为 40。
 - Push CI [46097884870](https://github.com/sxna-web/XYmonihtml/actions/runs/46097884870) SUCCESS。
+- 最新文档整合后 Push CI [46097936683](https://github.com/sxna-web/XYmonihtml/actions/runs/46097936683) 与 PR CI [46097960031](https://github.com/sxna-web/XYmonihtml/actions/runs/46097960031) 均 SUCCESS。
+
 - 仍然只核对表名；22 张 B 类表没有完整 DDL 证据，不生成猜测型 CREATE TABLE；迁移仍关闭。
 
 ## 本地数据库验证器回归（本轮更新）
