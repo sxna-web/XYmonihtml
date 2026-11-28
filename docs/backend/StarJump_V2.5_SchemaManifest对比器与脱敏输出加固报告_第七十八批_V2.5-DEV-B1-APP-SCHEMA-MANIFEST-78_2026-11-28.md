@@ -42,9 +42,9 @@
 10. 非法环境拒绝；
 11. 不完整列元数据拒绝；
 12. scope 不一致拒绝；
-13. 相同结构跨环境输出 MATCH。
+13. 相同结构跨环境输出 MATCH；\n14. 缺失 index_details 集合时拒绝生成部分 manifest；\n15. 重复 schema object identity 时拒绝覆盖；\n16. 缺失 objects 集合时拒绝生成 manifest。
 
-GitHub Actions Run 46124644301 / Job 140916448057：SUCCESS；日志明确显示新增 test_schema_manifest 13/13，database_migrations 全套 59/59 tests，最终 OK。测试成功只代表离线工具逻辑通过，不代表真实 D1 已验证。
+GitHub Actions Run 46124797390 / Job 140916926570：SUCCESS；日志明确显示新增 test_schema_manifest 16/16，database_migrations 全套 62/62 tests，最终 OK。测试成功只代表离线工具逻辑通过，不代表真实 D1 已验证。
 
 ## 4. 操作示例
 
