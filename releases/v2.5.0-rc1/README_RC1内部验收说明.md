@@ -26,6 +26,15 @@
 - 最新已知成功 Run：见本分支 GitHub Actions 最新绿色记录；检查包含 Worker bundle、Cron no-source 回归、HTML 内联 JS 语法、Batch49 adapter tests、Worker handler integration tests。
 - 这些检查是 GitHub runner 上的离线/模拟测试，不等于 Cloudflare Workers runtime、真实 D1 或 APK 联调。
 
+## 数据库迁移状态（本轮更新）
+
+- RC1 数据库页现为只读检查；`POST /api/super/migrate` 暂时返回 `503 MIGRATION_REVIEW_REQUIRED`。
+- 已移除旧版不具备完整结构验证的逐条 DDL 迁移实现。
+- 数据库状态接口只检查候选业务表名，并明确返回 `verification=TABLE_NAMES_ONLY`；不能据此认定所有 Worker 业务表、字段和索引均就绪。
+- 已拒绝 legacy `ADMIN_TOKEN` 与协助会话进入数据库检查/迁移路由。
+- 详细原因见 `docs/release/V2.5.0_RC1数据库迁移安全复核与暂停记录_2026-11-28.md`。
+- 这是上线阻断项；不能通过跳过数据库迁移或误报 ready 来绕过。
+
 ## 生产部署阻断项（必须解决）
 
 ### 1. Cloudflare 现有环境核对
