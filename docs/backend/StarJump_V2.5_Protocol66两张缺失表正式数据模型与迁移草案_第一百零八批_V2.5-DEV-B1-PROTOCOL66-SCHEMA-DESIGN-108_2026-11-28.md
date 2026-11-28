@@ -54,12 +54,12 @@ CREATE INDEX ix_card_group_mappings_group_status
 
 CREATE TABLE app_card_group_admin_requests (
   admin_user_id TEXT NOT NULL,
-  request_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
   payload_sha256 TEXT NOT NULL
     CHECK (length(payload_sha256) = 64),
   response_json TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (admin_user_id, request_id)
+  PRIMARY KEY (admin_user_id, idempotency_key)
 );
 
 CREATE INDEX ix_card_group_admin_requests_created
@@ -68,7 +68,7 @@ CREATE INDEX ix_card_group_admin_requests_created
 
 ### 有意暂不添加外键的原因
 
-当前真实 schema 快照没有展示 `app_cards(id, admin_user_id)` 或 `app_groups(id, admin_user_id)` 复合唯一键，也没有外键约束清单；D1 运行时外键设置及历史数据孤儿情况尚未验证。现阶段由每条读写 SQL 对 card owner、group owner、group mode 做强制谓词，避免引入未经验证的外键迁移副作用。后续若要加外键，必须先检查数据完整性并单独设计兼容迁移。
+当前真实 schema 快照没有展示 `app_cards(id, admin_user_id)` 或 `app_groups(id, admin_user_id)` 复合唯一键，也没有外键约束清单；D1 运行时外键设置及历史数据孤儿情况尚未验证。现阶段由每条读写 SQL 对 card owner、group owner、group mode 做强制谓词；隔离 SQLite fixture 也不添加外键，而用 owner/mode 触发器和历史保护触发器验证边界，避免引入未经验证的外键迁移副作用。后续若要加外键，必须先检查数据完整性并单独设计兼容迁移。
 
 ## 3. 必须先修正/验证的候选实现问题
 
