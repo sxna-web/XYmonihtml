@@ -205,7 +205,18 @@ def main() -> None:
     if "api('/api/super/migrate'" in html or "RC1 暂不执行自动建表" not in html:
         raise AssertionError("HTML must remain read-only for database migration in RC1")
 
+    app_cards_route = source.split("async function userAppCardsRoute", 1)[1].split("/* ────────────────────────────── 节点生命周期", 1)[0]
+    if ".run()" in app_cards_route:
+        raise AssertionError("User APP card writes must use scope-guarded batches")
+    if "CARD_STATE_CHANGED" not in app_cards_route or "activated_at IS NULL AND used_at IS NULL AND status <> 'used'" not in app_cards_route:
+        raise AssertionError("APP card soft-delete must recheck unused state in the same batch")
     redeem = source.split("async function appRedeemRoute", 1)[1].split("async function runEntitlementMaintenance", 1)[0]
+    redeem_batch = redeem.split("await userBatch(db, ctx, [", 1)[1].split("]);", 1)[0]
+    for statement in ("UPDATE app_cards SET status='used'", "INSERT INTO app_entitlements", "INSERT OR IGNORE INTO app_free_grants", "INSERT INTO app_card_events"):
+        if statement not in redeem_batch:
+            raise AssertionError("APP redemption must atomically commit card, entitlement, free grant and activation event: " + statement)
+    if "datetime(expires_at) > datetime('now')" not in redeem_batch or "manual_disabled=0" not in redeem_batch:
+        raise AssertionError("APP redemption batch must recheck card expiry and manual-disable state")
     token_pos = redeem.find("const token = await entToken(env, id, deviceId)")
     write_pos = redeem.find("await userBatch(db, ctx")
     if token_pos < 0 or write_pos < 0 or token_pos > write_pos:
