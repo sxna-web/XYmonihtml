@@ -1569,3 +1569,13 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 最终测试 head `02153a1c6304124f466691a75514fcff970c240c`：Push `46114516960` 和 PR `46114520394` SUCCESS；Protocol 66 15/15，Protocol 65 26/26，其他 Worker/SQLite/static/build checks passed。
 - 本批未访问生产 D1、未修改 Secrets、未部署或合并。PR #2 保持 Draft/Open/Unmerged。
 - **第七十四批唯一接手卡：**实现 D1 adapter SQL statement plan 与 isolated SQLite fixture，验证 owner/card/VIP 最终条件、mapping soft remove/restore、audit 原子性、requestId + payload digest 幂等及敏感字段不读取；真实 schema 未确认前不接入正式 Worker、不创建生产 migration。
+
+
+## 第七十四批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-D1-PLAN-74`；报告：`docs/backend/StarJump_V2.5_APP卡密分组管理候选D1_SQL计划与隔离原子性验证报告_第七十四批_V2.5-DEV-B1-APP-D1-PLAN-74_2026-11-28.md`。
+- Protocol 66 新增候选 D1 statement plan、7 项 Node plan tests、隔离 SQLite schema fixture 与 10 项 Python 测试；Service adapter input 新增 `expectedGroupIds` CAS 快照。
+- 写计划：最终 VIP/card/group/active mapping CAS 断言 → requestId 幂等记录 → mapping soft-remove/upsert restore → audit 同批写入 → 最后 SELECT。读路径按 owner scope，不查询卡密 redeem code。
+- CI 最终 head `a3694adb0c83df7db57d51a655376cbd6d3ec79a`：Push `46115274952` / PR `46115278626` SUCCESS；Python SQLite 46 tests、Protocol 66 service 16/16、SQL plan 7/7，其他 regression/integration tests 通过。
+- 仍然只是候选 plan/fixture：没有真实 D1 adapter、生产 schema/migration、正式 Worker route、HTML UI 或 APK 多凭据闭环；无生产 D1/Secrets/部署/合并。
+- **第七十五批唯一接手卡：**实现隔离 D1 adapter harness：scoped reads、canonical payload SHA-256、batch 执行、duplicate requestId reread/hash compare、不同 payload 冲突、错误映射和安全投影；不注册正式 route、不创建生产 migration、不连接真实 D1。
