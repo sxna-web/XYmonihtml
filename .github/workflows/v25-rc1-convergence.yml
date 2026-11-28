@@ -7,6 +7,7 @@ on:
       - "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/**"
       - "releases/v2.5.0-rc1/**"
       - "scripts/rc1_cron_no_source_regression.py"
+      - "tools/database_migrations/**"
       - ".github/workflows/v25-rc1-convergence.yml"
   pull_request:
     paths:
@@ -14,6 +15,7 @@ on:
       - "releases/v2.5.0-rc1/**"
       - "docs/release/**"
       - "scripts/rc1_cron_no_source_regression.py"
+      - "tools/database_migrations/**"
       - ".github/workflows/v25-rc1-convergence.yml"
 permissions:
   contents: read
@@ -35,6 +37,8 @@ jobs:
           npx --yes esbuild@0.25.5 backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js --bundle --format=esm --platform=browser --target=es2022 --outfile=releases/v2.5.0-rc1/Worker.js
       - name: Cron no-source regression and release syntax checks
         run: python scripts/rc1_cron_no_source_regression.py
+      - name: Isolated local SQLite migration verifier tests (never D1)
+        run: python -m unittest discover -s tools/database_migrations/tests -v
       - name: Batch 49 authorization adapter tests
         run: node --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-auth-adapter.test.mjs
       - name: Batch 49 Worker handler integration tests
