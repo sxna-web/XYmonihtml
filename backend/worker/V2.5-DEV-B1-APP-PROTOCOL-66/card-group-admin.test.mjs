@@ -133,8 +133,17 @@ test("successful replace delegates atomic mapping plus audit to adapter",async()
   const atomic=storage.events.find(e=>e[0]==="atomic");
   const audit=storage.events.find(e=>e[0]==="audit");
   assert.ok(atomic);
+  assert.deepEqual(atomic[1].expectedGroupIds,[]);
   assert.equal(audit[1].action,"app_card_groups.replace");
   assert.equal(audit[1].actor,scope.actorId);
+});
+
+test("adapter receives the active mapping snapshot for compare-and-swap",async()=>{
+  const {service,storage}=fixture();
+  storage.state.mappings=[{id:"map-g1",card_id:"card1",admin_user_id:"admin1",group_id:"g1",status:"active"}];
+  await service.replace({...scope,requestId:"req-cas",groupIds:["g2"]});
+  const atomic=storage.events.find(e=>e[0]==="atomic");
+  assert.deepEqual(atomic[1].expectedGroupIds,["g1"]);
 });
 
 test("VIP expiry between preflight and atomic commit is rejected",async()=>{
