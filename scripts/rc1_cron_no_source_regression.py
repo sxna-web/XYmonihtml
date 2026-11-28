@@ -115,7 +115,10 @@ def main() -> None:
     print("PASS: Cron maintenance runs without sync sources")
     print(f"PASS: {len(parser.items)} inline HTML scripts")
     print("PASS: all HTML API calls use the configured API base")
-    print("PASS: APP token secret validated before card redemption writes")\n    print("PASS: DB migration rejects legacy/assist sessions")\n    print("PASS: unsafe legacy DDL disabled; schema status is explicitly read-only")\n    print("PASS: HTML DB controls cannot trigger DDL")
+    print("PASS: APP token secret validated before card redemption writes")
+    print("PASS: DB migration rejects legacy/assist sessions")
+    print("PASS: unsafe legacy DDL disabled; schema status is explicitly read-only")
+    print("PASS: HTML DB controls cannot trigger DDL")
 
 
 if __name__ == "__main__":
