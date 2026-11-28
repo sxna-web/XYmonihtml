@@ -1513,7 +1513,11 @@ async function userSourcesRoute(req, env, url, ctx) {
       auditStmt(db, ctx, { action: "source.enabled", targetType: "source", targetId: id, before: { enabled: source.enabled }, after: { enabled } }),
     );
     try {
-      await userBatch(db, ctx, stmts);
+      const changed = await userBatch(db, ctx, stmts);
+      const updateIndex = Number(!!ownerFence.guard) + Number(!!approvalGuard);
+      if (!changed[updateIndex]?.meta?.changes) {
+        return fail("来源状态或归属刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
     } catch (e) {
       if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
         return fail("来源归属或审核状态已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
@@ -1582,7 +1586,11 @@ async function userSourcesRoute(req, env, url, ctx) {
       reason: requiresReview ? "url_changed" : "",
     }));
     try {
-      await userBatch(db, ctx, stmts);
+      const changed = await userBatch(db, ctx, stmts);
+      const updateIndex = Number(!!ownerFence.guard);
+      if (!changed[updateIndex]?.meta?.changes) {
+        return fail("来源状态或归属刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
     } catch (e) {
       if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
         return fail("来源归属或协助授权已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
