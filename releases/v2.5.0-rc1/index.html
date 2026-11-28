@@ -2790,8 +2790,12 @@ async function saveCardGroupEditor() {
     });
     pendingCardGroupRequests.delete(activeCardGroupEditor.id);
     closeCardGroupEditor();
-    await loadUserCards();
-    setStatus('uStatus', '卡密分组配置已保存。', 'good');
+    try {
+      await loadUserCards();
+      setStatus('uStatus', '卡密分组配置已保存。', 'good');
+    } catch {
+      setStatus('uStatus', '卡密分组配置已保存，但列表刷新失败；稍后手动刷新即可。', 'bad');
+    }
   } catch (e) {
     setStatus('uStatus', (e.message || '保存失败') + '；如网络中断或结果不确定，保持相同选择再次保存会复用请求编号。', 'bad');
   } finally {
