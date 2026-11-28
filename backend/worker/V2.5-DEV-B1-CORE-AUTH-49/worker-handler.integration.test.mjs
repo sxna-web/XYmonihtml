@@ -59,6 +59,18 @@ async function call(db,{path="/api/user/app-groups",method="POST",role="user",bo
   return {res,json:await res.json()};
 }
 
+test("anonymous conversion requires a per-user guest key",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/convert/groups",method:"GET",authorization:""});
+  assert.equal(res.status,400);assert.equal(json.code,"GUEST_KEY_REQUIRED");
+});
+
+test("anonymous conversion accepts a valid guest key",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/convert/groups?guest_key=guest-key-123456789",method:"GET",authorization:""});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+});
+
 test("malformed Authorization cannot downgrade to anonymous",async()=>{
   const db=mockDb();
   const {res,json}=await call(db,{authorization:"Basic invalid"});
