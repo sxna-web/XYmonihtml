@@ -97,6 +97,18 @@ class MigrationRunnerTests(unittest.TestCase):
         a=sqlite3.connect(":memory:"); a.execute("create table t(a,b)"); a.execute("create index idx_t on t(a)"); before=schema_snapshot(a)
         a.execute("drop index idx_t"); a.execute("create index idx_t on t(b)"); after=schema_snapshot(a)
         diff=compare_snapshots(before,after); self.assertIn(["index","idx_t"], [[x["type"],x["name"]] for x in diff["changed_objects"]]); a.close()
+    def test_25_schema_snapshot_captures_index_column_order_and_extended_columns(self):
+        conn=sqlite3.connect(":memory:")
+        conn.execute("create table t(a text, b text generated always as (a || '!') virtual)")
+        conn.execute("create unique index idx_t_ab on t(a, b)")
+        snap=schema_snapshot(conn)["tables"]["t"]
+        self.assertEqual(len(snap["extended_columns"]), 2)
+        idx=next(x for x in snap["index_details"] if x["name"] == "idx_t_ab")
+        self.assertEqual([x[2] for x in idx["columns"]], ["a", "b"])
+        self.assertEqual(idx["list_row"][2], 1)
+        self.assertIn("CREATE UNIQUE INDEX", idx["sql"].upper())
+        conn.close()
+
     def test_23_schema_diff_detects_same_name_view_change(self):
         a=sqlite3.connect(":memory:"); a.execute("create table t(a,b)"); a.execute("create view v as select a from t"); before=schema_snapshot(a)
         a.execute("drop view v"); a.execute("create view v as select b from t"); after=schema_snapshot(a)

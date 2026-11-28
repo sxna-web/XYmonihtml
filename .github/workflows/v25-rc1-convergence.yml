@@ -1,0 +1,75 @@
+name: V2.5 RC1 Convergence Checks
+on:
+  push:
+    branches:
+      - release/v2.5.0-rc1-converge
+    paths:
+      - "docs/backend/**"
+      - "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/**"
+      - "releases/v2.5.0-rc1/**"
+      - "scripts/rc1_cron_no_source_regression.py"
+      - "tools/database_migrations/**"
+      - ".github/workflows/v25-rc1-convergence.yml"
+  pull_request:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/**"
+      - "releases/v2.5.0-rc1/**"
+      - "docs/release/**"
+      - "docs/backend/**"
+      - "scripts/rc1_cron_no_source_regression.py"
+      - "tools/database_migrations/**"
+      - ".github/workflows/v25-rc1-convergence.yml"
+permissions:
+  contents: read
+jobs:
+  worker-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Bundle Batch 49 Worker into single deployment file
+        run: |
+          mkdir -p releases/v2.5.0-rc1
+          npx --yes esbuild@0.25.5 backend/worker/V2.5-DEV-B1-CORE-AUTH-49/Worker.js --bundle --format=esm --platform=browser --target=es2022 --outfile=releases/v2.5.0-rc1/Worker.js
+      - name: Cron no-source regression and release syntax checks
+        run: python scripts/rc1_cron_no_source_regression.py
+      - name: Isolated local SQLite migration verifier tests (never D1)
+        run: python -m unittest discover -s tools/database_migrations/tests -v
+      - name: Batch 49 authorization adapter tests
+        run: node --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-auth-adapter.test.mjs
+      - name: Batch 49 Worker handler integration tests
+        run: node --experimental-default-type=module --test backend/worker/V2.5-DEV-B1-CORE-AUTH-49/worker-handler.integration.test.mjs
+      - name: APP v2 entitlement and multi-card composition contract tests
+        run: |
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/group-composition.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/app-v2-read-handler.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/composed-group-service.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-sql-plan.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-d1-adapter.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-dispatch-contract.test.mjs
+
+      - name: Upload RC1 candidate files
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarJump-V2.5.0-RC1-candidate
+          path: |
+            releases/v2.5.0-rc1/Worker.js
+            releases/v2.5.0-rc1/index.html
+            releases/v2.5.0-rc1/README_RC1内部验收说明.md
+          if-no-files-found: error
+          retention-days: 14

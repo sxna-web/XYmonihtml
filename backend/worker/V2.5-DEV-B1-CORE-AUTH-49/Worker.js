@@ -1,15 +1,19 @@
 import { authorizeAppManagementRequest } from "./worker-auth-adapter.mjs";
+import { createCardGroupAdminHandler } from "../V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-handler.mjs";
+import { createCardGroupAdminService } from "../V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-service.mjs";
+import { createCardGroupD1Adapter } from "../V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-d1-adapter.mjs";
 
 /* V2.5-DEV-B1-CORE-AUTH-49: owner-predicate hardened authorization revision; source base retained unchanged. */
 /**
- * StarJump V1.0 Production Worker
- * 星跃管理平台 —— 正式版后端（多用户隔离 / 字段覆盖 / 分组 / 审计 / 同步 staging+fencing）
+ * StarJump V2.5.0 RC1 Candidate Worker
+ * 星跃管理平台 —— 上线候选后端（多用户隔离 / 字段覆盖 / 分组 / 审计 / 同步 staging+fencing）
  *
  * 基线：V0.4.0-compat-test2（保留其解析器行为、SSRF 纵深防御、旧接口形状）
  * 部署绑定：
- *   D1 binding : DB  -> starjump-db
+ *   D1 binding : DB  -> 用户当前已配置的正式 D1；部署时保持现有绑定，不要改绑 starjump-db 或 staging
  *   Secret     : ADMIN_TOKEN      (>=32 字符；仅作为旧后台 /api/admin/* 与 bootstrap 的超级凭据)
- *   Secret     : SESSION_PEPPER   (任意 >=16 字符；参与 session token 哈希)
+ *   Secret     : SESSION_PEPPER   (本候选要求 >=32 字符；必须保留现有原值，不能直接轮换)
+ *   Secret     : APP_HMAC_SECRET  (可选；若已配置，首次兼容部署前须确认与当前 SESSION_PEPPER 一致)
  *   Variable   : ADMIN_ORIGIN     (后台页面 Origin，可用逗号分隔多个)
  *   Variable   : ALLOW_REGISTRATION ("1" 才允许自助注册，默认关闭)
  *   Variable   : SESSION_TTL_HOURS  (默认 720 = 30 天)
@@ -25,7 +29,7 @@ import { authorizeAppManagementRequest } from "./worker-auth-adapter.mjs";
  * 未在真实 D1 上验证的事项集中列在 Compatibility_Report 的「未验证」章节。
  */
 
-const VERSION = "1.0.0";
+const VERSION = "2.5.0-rc1";
 const CANON_VERSION = "v1.0-1";
 
 const MAX_BODY = 32 * 1024;
@@ -193,8 +197,14 @@ function newSessionToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return b64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+function sessionError(code, message) { const error = new Error(message); error.code = code; return error; }
+function requiredSecret(env, name, minLength = 32) {
+  const value = String(env?.[name] || "");
+  if (value.length < minLength) throw sessionError("SECRET_NOT_CONFIGURED", `Worker Secret 未配置或长度不足：${name}`);
+  return value;
+}
 async function sessionTokenHash(token, env) {
-  return sha256Hex(`${String(env.SESSION_PEPPER || "")}|${token}`);
+  return sha256Hex(`${requiredSecret(env, "SESSION_PEPPER", 32)}|${token}`);
 }
 
 /* ────────────────────────────── 身份与鉴权 ────────────────────────────── */
@@ -215,9 +225,10 @@ function scopeSatisfies(granted, needed) {
  */
 async function resolveSession(req, env) {
   const header = req.headers.get("Authorization") || "";
-  if (!header.startsWith("Bearer ")) return null;
-  const token = header.slice(7).trim();
-  if (!token) return null;
+  if (!header) return null;
+  if (!/^Bearer\s+/i.test(header)) throw sessionError("INVALID_SESSION", "Authorization 格式无效");
+  const token = header.replace(/^Bearer\s+/i, "").trim();
+  if (!token) throw sessionError("INVALID_SESSION", "Bearer Token 为空");
 
   // 旧后台凭据：ADMIN_TOKEN 直通（只用于 /api/admin/* 与 bootstrap，不产生用户态数据访问）
   const adminToken = String(env.ADMIN_TOKEN || "");
@@ -234,29 +245,29 @@ async function resolveSession(req, env) {
       WHERE s.token_hash = ?`,
   ).bind(tokenHash).first();
 
-  if (!row) return null;
-  if (row.revoked_at) return null;
-  if (!row.u_id) return null;
-  if (row.status !== "active") return null;
+  if (!row) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
+  if (row.revoked_at) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
+  if (!row.u_id) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
+  if (row.status !== "active") throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
 
   // 过期判断交给 SQLite，避免 Worker 与本机时钟漂移
   const alive = await env.DB.prepare("SELECT 1 AS ok WHERE datetime(?) > datetime('now')")
     .bind(row.expires_at).first();
-  if (!alive) return null;
+  if (!alive) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
 
   const isSuper = row.role === "super_admin";
   let effectiveId = row.user_id;
   let scope = null;   // 协助会话的授权等级：read < operate < manage
   if (row.acting_as_user_id) {
-    if (!isSuper) return null;                              // 只有超管可协助
-    if (!row.scope_id) return null;
+    if (!isSuper) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期"); // 只有超管可协助
+    if (!row.scope_id) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
     const grant = await env.DB.prepare(
       `SELECT scope FROM admin_user_scopes
         WHERE id = ? AND admin_user_id = ? AND target_user_id = ?
           AND revoked_at IS NULL
           AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))`,
     ).bind(row.scope_id, row.user_id, row.acting_as_user_id).first();
-    if (!grant) return null;
+    if (!grant) throw sessionError("INVALID_SESSION", "会话无效、已撤销或已过期");
     effectiveId = row.acting_as_user_id;
     scope = grant.scope;
   }
@@ -897,10 +908,15 @@ function maskSubscriptionUrl(raw) {
 
 const FENCE_SQL = `EXISTS (SELECT 1 FROM subscription_sync_state st
   WHERE st.source_id = ? AND st.generation = ? AND st.lease_owner = ?
-    AND st.lease_token_hash = ? AND st.lease_expires_at > ?)`;
+    AND st.lease_token_hash = ? AND st.lease_expires_at > ?
+    AND (? IS NULL OR EXISTS (
+      SELECT 1 FROM source_ownership so
+       WHERE so.source_id = st.source_id AND so.user_id = ?
+    )))`;
 
 function fenceBinds(lease) {
-  return [lease.sourceId, lease.generation, lease.owner, lease.tokenHash, Date.now()];
+  const ownerUserId = lease.ownerUserId || null;
+  return [lease.sourceId, lease.generation, lease.owner, lease.tokenHash, Date.now(), ownerUserId, ownerUserId];
 }
 /** 断言语句：fence 失效时 json_extract 报错 → 整个 D1 batch 回滚。 */
 function fenceAssert(db, lease) {
@@ -913,7 +929,7 @@ function assertStmt(db, conditionSql, binds) {
     .bind(...binds);
 }
 
-async function acquireLease(db, sourceId, actorUserId, triggerKind) {
+async function acquireLease(db, sourceId, actorUserId, triggerKind, ownerUserId = null) {
   const owner = newId();
   const token = newSessionToken();
   const tokenHash = await sha256Hex(token);
@@ -938,6 +954,19 @@ async function acquireLease(db, sourceId, actorUserId, triggerKind) {
   ).bind(sourceId).first();
   if (!state || state.lease_owner !== owner || state.lease_token_hash !== tokenHash) return null;
   if (Number(state.lease_expires_at) <= Date.now()) return null;
+  // Manual/Cron sync must still own the source before creating a task. The
+  // ownership condition is also repeated inside every stage/commit fence below.
+  if (ownerUserId) {
+    const currentOwner = await db.prepare(
+      "SELECT 1 AS ok FROM source_ownership WHERE source_id = ? AND user_id = ?",
+    ).bind(sourceId, ownerUserId).first();
+    if (!currentOwner) {
+      await db.prepare(
+        "UPDATE subscription_sync_state SET lease_expires_at = 0, updated_at = CURRENT_TIMESTAMP WHERE source_id = ? AND generation = ? AND lease_owner = ?",
+      ).bind(sourceId, state.generation, owner).run();
+      return null;
+    }
+  }
 
   const taskId = newId();
   await db.batch([
@@ -956,7 +985,7 @@ async function acquireLease(db, sourceId, actorUserId, triggerKind) {
     ).bind(sourceId, taskId),
   ]);
 
-  return { taskId, sourceId, generation: state.generation, owner, tokenHash, expires };
+  return { taskId, sourceId, generation: state.generation, owner, tokenHash, expires, ownerUserId };
 }
 
 async function stageNodes(db, lease, records) {
@@ -1186,7 +1215,7 @@ async function recordQuotaFailure(db, sourceId, message) {
 async function syncSource(db, source, opts = {}) {
   const { actorUserId, triggerKind, ctx, env } = opts;
   const startedAt = Date.now();
-  const lease = await acquireLease(db, source.id, actorUserId, triggerKind);
+  const lease = await acquireLease(db, source.id, actorUserId, triggerKind, source.owner_user_id ?? opts.ownerUserId ?? null);
   if (!lease) {
     return { source_id: source.id, source_name: source.name, status: "busy", error: "该订阅源已有同步任务在执行" };
   }
@@ -1303,6 +1332,23 @@ async function loadSourceForCtx(db, ctx, sourceId) {
   return own ? row : null;
 }
 
+/**
+ * Source ownership fence for user-facing mutations.
+ * The precondition is executed inside the same D1 batch, while the SQL
+ * predicate is repeated on the final UPDATE to close the read/write race.
+ * Direct super-admin sessions retain their existing global-management scope.
+ */
+function sourceOwnerFence(db, ctx, sourceId) {
+  if (ctx.isSuper && ctx.actorId === ctx.effectiveId) return { guard: null, sql: "", binds: [] };
+  return {
+    guard: assertStmt(db,
+      "EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)",
+      [sourceId, ctx.effectiveId]),
+    sql: " AND EXISTS (SELECT 1 FROM source_ownership so WHERE so.source_id = subscription_sources.id AND so.user_id = ?)",
+    binds: [ctx.effectiveId],
+  };
+}
+
 /** 订阅节点的归属：必须通过 source_ownership 走到当前用户。 */
 async function loadSubscriptionNode(db, ctx, nodeId) {
   const row = await db.prepare("SELECT * FROM node_records WHERE id = ?").bind(nodeId).first();
@@ -1325,6 +1371,21 @@ async function loadAnyNode(db, ctx, nodeId) {
   const sub = await loadSubscriptionNode(db, ctx, nodeId);
   if (sub) return { kind: "subscription", row: sub };
   return null;
+}
+
+/** Same-batch final ownership assertion for node-scoped user metadata and group membership writes. */
+function nodeOwnerAssertStmt(db, ctx, nodeId, kind = "subscription") {
+  if (kind === "manual") {
+    return assertStmt(db,
+      "EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)",
+      [nodeId, ctx.effectiveId]);
+  }
+  if (ctx.isSuper && ctx.actorId === ctx.effectiveId) {
+    return assertStmt(db, "EXISTS (SELECT 1 FROM node_records WHERE id = ?)", [nodeId]);
+  }
+  return assertStmt(db,
+    "EXISTS (SELECT 1 FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id WHERE n.id = ? AND so.user_id = ?)",
+    [nodeId, ctx.effectiveId]);
 }
 
 function overrideMap(rows) {
@@ -1433,10 +1494,39 @@ async function userSourcesRoute(req, env, url, ctx) {
         return fail("该订阅源尚未通过审核，不能启用", 409, { code: "SOURCE_NOT_APPROVED", approval_status: ap.status });
       }
     }
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE subscription_sources SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(enabled, id),
+    const ownerFence = sourceOwnerFence(db, ctx, id);
+    const approvalGuard = enabled === 1
+      ? assertStmt(db,
+        "NOT EXISTS (SELECT 1 FROM source_approvals WHERE source_id = ? AND (status IS NULL OR status <> 'approved'))",
+        [id])
+      : null;
+    const stmts = [];
+    if (ownerFence.guard) stmts.push(ownerFence.guard);
+    if (approvalGuard) stmts.push(approvalGuard);
+    stmts.push(
+      db.prepare(
+        `UPDATE subscription_sources SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?${ownerFence.sql}
+            AND (? <> 1 OR NOT EXISTS (
+              SELECT 1 FROM source_approvals ap
+               WHERE ap.source_id = subscription_sources.id
+                 AND (ap.status IS NULL OR ap.status <> 'approved')
+            ))`,
+      ).bind(enabled, id, ...ownerFence.binds, enabled),
       auditStmt(db, ctx, { action: "source.enabled", targetType: "source", targetId: id, before: { enabled: source.enabled }, after: { enabled } }),
-    ]);
+    );
+    try {
+      const changed = await userBatch(db, ctx, stmts);
+      const updateIndex = Number(!!ownerFence.guard) + Number(!!approvalGuard);
+      if (!changed[updateIndex]?.meta?.changes) {
+        return fail("来源状态或归属刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("来源归属或审核状态已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { id, enabled } });
   }
 
@@ -1456,15 +1546,15 @@ async function userSourcesRoute(req, env, url, ctx) {
     const adminDirect = ctx.isSuper && ctx.actorId === ctx.effectiveId;
     // 安全字段（订阅地址）变更：必须重新审核，并在同一批次里停用
     const requiresReview = urlChanged && !adminDirect;
-    const stmts = [
-      db.prepare(
-        urlChanged
-          ? "UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?"
-          : "UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-      ),
-    ];
+    const ownerFence = sourceOwnerFence(db, ctx, id);
+    const updateSql = urlChanged
+      ? `UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, enabled=?, updated_at=CURRENT_TIMESTAMP WHERE id=?${ownerFence.sql}`
+      : `UPDATE subscription_sources SET name=?, url=?, tier=?, priority=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=?${ownerFence.sql}`;
+    const stmts = [];
+    if (ownerFence.guard) stmts.push(ownerFence.guard);
+    stmts.push(db.prepare(updateSql));
     if (urlChanged) {
-      stmts[0] = stmts[0].bind(name, rawUrl, tier, priority, s(body.remark, 500), requiresReview ? 0 : source.enabled, id);
+      stmts[stmts.length - 1] = stmts[stmts.length - 1].bind(name, rawUrl, tier, priority, s(body.remark, 500), requiresReview ? 0 : source.enabled, id, ...ownerFence.binds);
       if (requiresReview) {
         stmts.push(
           db.prepare(
@@ -1488,7 +1578,7 @@ async function userSourcesRoute(req, env, url, ctx) {
         );
       }
     } else {
-      stmts[0] = stmts[0].bind(name, rawUrl, tier, priority, s(body.remark, 500), id);
+      stmts[stmts.length - 1] = stmts[stmts.length - 1].bind(name, rawUrl, tier, priority, s(body.remark, 500), id, ...ownerFence.binds);
     }
     stmts.push(auditStmt(db, ctx, {
       action: requiresReview ? "source.update.re_review" : "source.update",
@@ -1498,7 +1588,18 @@ async function userSourcesRoute(req, env, url, ctx) {
       detail: requiresReview ? "订阅地址变更：已停用并重新进入待审核" : (urlChanged ? "管理员直接修改地址，保持已批准" : "仅修改非安全字段"),
       reason: requiresReview ? "url_changed" : "",
     }));
-    await userBatch(db, ctx, stmts);
+    try {
+      const changed = await userBatch(db, ctx, stmts);
+      const updateIndex = Number(!!ownerFence.guard);
+      if (!changed[updateIndex]?.meta?.changes) {
+        return fail("来源状态或归属刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("来源归属或协助授权已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({
       ok: true,
       data: {
@@ -1520,7 +1621,9 @@ async function userSourcesRoute(req, env, url, ctx) {
       await auditDenied(db, ctx, "source.sync", "未分配来源不可同步", "source", id);
       return fail("该来源尚未分配归属，不能同步", 409, { code: "SOURCE_UNASSIGNED" });
     }
-    if (ctx.actorId === ctx.effectiveId && !ctx.isSuper && own.user_id !== ctx.effectiveId) {
+    const directSuper = ctx.isSuper && ctx.actorId === ctx.effectiveId;
+    if (!directSuper && own.user_id !== ctx.effectiveId) {
+      await auditDenied(db, ctx, "source.sync", "来源归属已变化", "source", id);
       return fail("订阅源不存在", 404);
     }
     const ap = await db.prepare("SELECT status FROM source_approvals WHERE source_id = ?").bind(id).first();
@@ -1531,7 +1634,7 @@ async function userSourcesRoute(req, env, url, ctx) {
       return fail("该来源已停用，不能同步", 409, { code: "SOURCE_DISABLED" });
     }
     const result = await syncSource(db, {
-      id: source.id, name: source.name, url: source.url, tier: source.tier,
+      id: source.id, name: source.name, url: source.url, tier: source.tier, owner_user_id: own.user_id,
     }, { actorUserId: ctx.actorId, triggerKind: "manual", ctx, env });
     return json({ ok: result.status === "success", data: result });
   }
@@ -1542,8 +1645,12 @@ async function userSourcesRoute(req, env, url, ctx) {
     const tasks = await db.prepare(
       "SELECT COUNT(*) AS n FROM sync_tasks WHERE source_id = ? AND status IN ('staging','staged')",
     ).bind(id).first();
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id),
+    const ownerFence = sourceOwnerFence(db, ctx, id);
+    const stmts = [];
+    if (ownerFence.guard) stmts.push(ownerFence.guard);
+    stmts.push(
+      db.prepare(`UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?${ownerFence.sql}`)
+        .bind(id, ...ownerFence.binds),
       // 解除归属：用户列表里消失，但来源与节点保留在库里（备份给超管），不会物理删除
       db.prepare("DELETE FROM source_ownership WHERE source_id = ? AND user_id = ?").bind(id, ctx.effectiveId),
       auditStmt(db, ctx, {
@@ -1551,7 +1658,15 @@ async function userSourcesRoute(req, env, url, ctx) {
         reason: "用户删除：解除归属并停用，数据保留为超管备份",
         detail: `history_nodes=${Number(nodes?.n || 0)}; pending_tasks=${Number(tasks?.n || 0)}`,
       }),
-    ]);
+    );
+    try {
+      await userBatch(db, ctx, stmts);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("来源归属或协助授权已变化，请刷新后重试", 409, { code: "SOURCE_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({
       ok: true,
       data: { id, archived: true, node_count: Number(nodes?.n || 0) },
@@ -1694,27 +1809,68 @@ async function userNodesRoute(req, env, url, ctx) {
       const body = await readJson(req);
       const built = buildManualNode({ ...existing, ...body }, existing);
       if (built.error) return fail(built.error, 400);
-      await userBatch(db, ctx, [
-        db.prepare(
-          `UPDATE user_manual_nodes SET name=?, protocol=?, server=?, port=?, uri=?, tier=?, enabled=?, remark=?,
-                  updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?`,
-        ).bind(built.node.name, built.node.protocol, built.node.server, built.node.port, built.node.uri,
-          built.node.tier, built.node.enabled, built.node.remark, id, ctx.effectiveId),
-        auditStmt(db, ctx, {
-          action: "manual_node.update", targetType: "manual_node", targetId: id,
-          before: pickNode(existing), after: built.node,
-        }),
-      ]);
+      try {
+        const updated = await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "manual"),
+          db.prepare(
+            `UPDATE user_manual_nodes SET name=?, protocol=?, server=?, port=?, uri=?, tier=?, enabled=?, remark=?,
+                    updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?`,
+          ).bind(built.node.name, built.node.protocol, built.node.server, built.node.port, built.node.uri,
+            built.node.tier, built.node.enabled, built.node.remark, id, ctx.effectiveId),
+          auditStmt(db, ctx, {
+            action: "manual_node.update", targetType: "manual_node", targetId: id,
+            before: pickNode(existing), after: built.node,
+          }),
+        ]);
+        if (!updated[1]?.meta?.changes) return fail("手动节点刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { id } });
     }
     if (seg.length === 5 && method === "DELETE") {
-      await userBatch(db, ctx, [
-        db.prepare("DELETE FROM user_manual_nodes WHERE id = ? AND user_id = ?").bind(id, ctx.effectiveId),
-        db.prepare("DELETE FROM node_user_metadata WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
-        db.prepare("DELETE FROM node_group_members WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
-        auditStmt(db, ctx, { action: "manual_node.delete", targetType: "manual_node", targetId: id, before: pickNode(existing) }),
-      ]);
+      try {
+        const deleted = await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "manual"),
+          db.prepare("DELETE FROM user_manual_nodes WHERE id = ? AND user_id = ?").bind(id, ctx.effectiveId),
+          db.prepare("DELETE FROM node_user_metadata WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
+          db.prepare("DELETE FROM node_group_members WHERE user_id = ? AND node_kind = 'manual' AND node_id = ?").bind(ctx.effectiveId, id),
+          auditStmt(db, ctx, { action: "manual_node.delete", targetType: "manual_node", targetId: id, before: pickNode(existing) }),
+        ]);
+        if (!deleted[1]?.meta?.changes) return fail("手动节点刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { id } });
+    }
+    if (seg.length === 6 && seg[5] === "enabled" && method === "PATCH") {
+      const body = await readJson(req);
+      const enabled = parseBool01(body.enabled);
+      if (enabled === null) return fail("enabled 只能是 true/false/1/0", 400);
+      try {
+        const changed = await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "manual"),
+          db.prepare("UPDATE user_manual_nodes SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+            .bind(enabled, id, ctx.effectiveId),
+          auditStmt(db, ctx, {
+            action: "manual_node.enabled", targetType: "manual_node", targetId: id,
+            before: { enabled: existing.enabled }, after: { enabled },
+          }),
+        ]);
+        if (!changed[1]?.meta?.changes) return fail("手动节点启停状态刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
+      return json({ ok: true, data: { id, enabled } });
     }
     return fail("不支持的手动节点操作", 405);
   }
@@ -1753,27 +1909,45 @@ async function userNodesRoute(req, env, url, ctx) {
     if (enabled === null) return fail("enabled 只能是 true/false/1/0", 400);
     const node = await loadSubscriptionNode(db, ctx, id);
     if (node) {
-      await userBatch(db, ctx, [
-        db.prepare(
-          `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by)
-           VALUES(?,?, 'enabled', ?, ?)
-           ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
-             override_value=excluded.override_value, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`,
-        ).bind(ctx.effectiveId, id, String(enabled), ctx.actorId),
-        auditStmt(db, ctx, {
-          action: "node.override.enabled", targetType: "node", targetId: id,
-          before: { enabled: node.enabled }, after: { enabled },
-        }),
-      ]);
+      try {
+        const changed = await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, id, "subscription"),
+          db.prepare(
+            `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by)
+             VALUES(?,?, 'enabled', ?, ?)
+             ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
+               override_value=excluded.override_value, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP`,
+          ).bind(ctx.effectiveId, id, String(enabled), ctx.actorId),
+          auditStmt(db, ctx, {
+            action: "node.override.enabled", targetType: "node", targetId: id,
+            before: { enabled: node.enabled }, after: { enabled },
+          }),
+        ]);
+        if (!changed[1]?.meta?.changes) return fail("节点启停状态刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { id, enabled } });
     }
     const manual = await loadManualNode(db, ctx, id);
     if (!manual) return fail("节点不存在", 404);
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE user_manual_nodes SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
-        .bind(enabled, id, ctx.effectiveId),
-      auditStmt(db, ctx, { action: "manual_node.enabled", targetType: "manual_node", targetId: id, before: { enabled: manual.enabled }, after: { enabled } }),
-    ]);
+    try {
+      const changed = await userBatch(db, ctx, [
+        nodeOwnerAssertStmt(db, ctx, id, "manual"),
+        db.prepare("UPDATE user_manual_nodes SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?")
+          .bind(enabled, id, ctx.effectiveId),
+        auditStmt(db, ctx, { action: "manual_node.enabled", targetType: "manual_node", targetId: id, before: { enabled: manual.enabled }, after: { enabled } }),
+      ]);
+      if (!changed[1]?.meta?.changes) return fail("手动节点启停状态刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("手动节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { id, enabled } });
   }
 
@@ -1847,19 +2021,27 @@ async function userOverridesRoute(req, env, url, ctx) {
           .bind(ctx.effectiveId, nodeId).all()).results,
       ), "subscription");
 
-      await userBatch(db, ctx, [
-        db.prepare(
-          `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by, reason)
-           VALUES(?,?,?,?,?,?)
-           ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
-             override_value=excluded.override_value, updated_by=excluded.updated_by,
-             updated_at=CURRENT_TIMESTAMP, reason=excluded.reason`,
-        ).bind(ctx.effectiveId, nodeId, field, checked.value, ctx.actorId, s(body.reason, 200)),
-        auditStmt(db, ctx, {
-          action: "node.override.set", targetType: "node", targetId: nodeId,
-          before: { [field]: before[field] }, after: { [field]: checked.value }, reason: s(body.reason, 200),
-        }),
-      ]);
+      try {
+        await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
+          db.prepare(
+            `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by, reason)
+             VALUES(?,?,?,?,?,?)
+             ON CONFLICT(user_id, node_id, field_name) DO UPDATE SET
+               override_value=excluded.override_value, updated_by=excluded.updated_by,
+               updated_at=CURRENT_TIMESTAMP, reason=excluded.reason`,
+          ).bind(ctx.effectiveId, nodeId, field, checked.value, ctx.actorId, s(body.reason, 200)),
+          auditStmt(db, ctx, {
+            action: "node.override.set", targetType: "node", targetId: nodeId,
+            before: { [field]: before[field] }, after: { [field]: checked.value }, reason: s(body.reason, 200),
+          }),
+        ]);
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { node_id: nodeId, field, value: checked.value } });
     }
 
@@ -1868,14 +2050,22 @@ async function userOverridesRoute(req, env, url, ctx) {
         "SELECT override_value FROM node_overrides WHERE user_id = ? AND node_id = ? AND field_name = ?",
       ).bind(ctx.effectiveId, nodeId, field).first();
       if (!existing) return fail("该字段没有覆盖记录", 404);
-      await userBatch(db, ctx, [
-        db.prepare("DELETE FROM node_overrides WHERE user_id = ? AND node_id = ? AND field_name = ?")
-          .bind(ctx.effectiveId, nodeId, field),
-        auditStmt(db, ctx, {
-          action: "node.override.remove", targetType: "node", targetId: nodeId,
-          before: { [field]: existing.override_value }, after: { [field]: node[field] },
-        }),
-      ]);
+      try {
+        await userBatch(db, ctx, [
+          nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
+          db.prepare("DELETE FROM node_overrides WHERE user_id = ? AND node_id = ? AND field_name = ?")
+            .bind(ctx.effectiveId, nodeId, field),
+          auditStmt(db, ctx, {
+            action: "node.override.remove", targetType: "node", targetId: nodeId,
+            before: { [field]: existing.override_value }, after: { [field]: node[field] },
+          }),
+        ]);
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { node_id: nodeId, field, restored: node[field] } });
     }
   }
@@ -1964,23 +2154,39 @@ async function userGroupsRoute(req, env, url, ctx) {
     const sortOrder = body.sort_order === undefined ? group.sort_order : num(body.sort_order, group.sort_order);
     if (!Number.isInteger(sortOrder)) return fail("sort_order 不合法", 400);
     const remark = body.remark === undefined ? group.remark : s(body.remark, 200);
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE node_groups SET name=?, sort_order=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?")
-        .bind(name, sortOrder, remark, groupId, ctx.effectiveId),
-      auditStmt(db, ctx, {
-        action: "group.update", targetType: "group", targetId: groupId,
-        before: { name: group.name, sort_order: group.sort_order }, after: { name, sort_order: sortOrder },
-      }),
-    ]);
+    let updated;
+    try {
+      updated = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
+        db.prepare("UPDATE node_groups SET name=?, sort_order=?, remark=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?")
+          .bind(name, sortOrder, remark, groupId, ctx.effectiveId),
+        auditStmt(db, ctx, {
+          action: "group.update", targetType: "group", targetId: groupId,
+          before: { name: group.name, sort_order: group.sort_order }, after: { name, sort_order: sortOrder },
+        }),
+      ]);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("分组已变化", 409);
+      throw e;
+    }
+    if (!updated[1]?.meta?.changes) return fail("分组已变化", 409);
     return json({ ok: true, data: { id: groupId } });
   }
 
   if (seg.length === 4 && method === "DELETE") {
-    await userBatch(db, ctx, [
-      db.prepare("DELETE FROM node_groups WHERE id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
-      db.prepare("DELETE FROM node_group_members WHERE group_id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
-      auditStmt(db, ctx, { action: "group.delete", targetType: "group", targetId: groupId, before: { name: group.name } }),
-    ]);
+    let deleted;
+    try {
+      deleted = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
+        db.prepare("DELETE FROM node_group_members WHERE group_id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
+        db.prepare("DELETE FROM node_groups WHERE id = ? AND user_id = ?").bind(groupId, ctx.effectiveId),
+        auditStmt(db, ctx, { action: "group.delete", targetType: "group", targetId: groupId, before: { name: group.name } }),
+      ]);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("分组已变化", 409);
+      throw e;
+    }
+    if (!deleted[2]?.meta?.changes) return fail("分组已变化", 409);
     return json({ ok: true, data: { id: groupId } });
   }
 
@@ -1999,22 +2205,33 @@ async function userGroupsRoute(req, env, url, ctx) {
         await auditDenied(db, ctx, "group.member.add", "节点不存在或不属于当前用户", "node", nodeId);
         return fail("节点不存在", 404);
       }
-      await userBatch(db, ctx, [
-        db.prepare("INSERT OR IGNORE INTO node_group_members(user_id, group_id, node_kind, node_id) VALUES(?,?,?,?)")
-          .bind(ctx.effectiveId, groupId, kind, nodeId),
-        auditStmt(db, ctx, { action: "group.member.add", targetType: "group", targetId: groupId, after: { node_kind: kind, node_id: nodeId } }),
-      ]);
+      try {
+        await userBatch(db, ctx, [
+          assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
+          nodeOwnerAssertStmt(db, ctx, nodeId, kind),
+          db.prepare("INSERT OR IGNORE INTO node_group_members(user_id, group_id, node_kind, node_id) VALUES(?,?,?,?)")
+            .bind(ctx.effectiveId, groupId, kind, nodeId),
+          auditStmt(db, ctx, { action: "group.member.add", targetType: "group", targetId: groupId, after: { node_kind: kind, node_id: nodeId } }),
+        ]);
+      } catch (e) {
+        if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+          return fail("分组或节点归属刚刚发生变化，请刷新后重试", 409, { code: "GROUP_MEMBER_STATE_CHANGED" });
+        }
+        throw e;
+      }
       return json({ ok: true, data: { group_id: groupId, node_kind: kind, node_id: nodeId } }, 201);
     }
     if (method === "DELETE") {
       const kind = s(url.searchParams.get("node_kind"), 20);
       const nodeId = s(url.searchParams.get("node_id"), 80);
       if (!["subscription", "manual"].includes(kind) || !validId(nodeId)) return fail("参数无效", 400);
-      await userBatch(db, ctx, [
+      const removed = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM node_groups WHERE id = ? AND user_id = ?)", [groupId, ctx.effectiveId]),
         db.prepare("DELETE FROM node_group_members WHERE user_id = ? AND group_id = ? AND node_kind = ? AND node_id = ?")
           .bind(ctx.effectiveId, groupId, kind, nodeId),
         auditStmt(db, ctx, { action: "group.member.remove", targetType: "group", targetId: groupId, before: { node_kind: kind, node_id: nodeId } }),
       ]);
+      if (!removed[1]?.meta?.changes) return fail("分组成员已变化", 409);
       return json({ ok: true, data: { group_id: groupId, node_kind: kind, node_id: nodeId } });
     }
   }
@@ -2049,18 +2266,26 @@ async function userMetadataRoute(req, env, url, ctx) {
   const sortOrder = body.sort_order === undefined ? (prev?.sort_order ?? 0) : num(body.sort_order, NaN);
   if (!Number.isInteger(sortOrder) || Math.abs(sortOrder) > 1_000_000) return fail("sort_order 不合法", 400);
 
-  await userBatch(db, ctx, [
-    db.prepare(
-      `INSERT INTO node_user_metadata(user_id, node_kind, node_id, remark, favorite, sort_order)
-       VALUES(?,?,?,?,?,?)
-       ON CONFLICT(user_id, node_kind, node_id) DO UPDATE SET
-         remark=excluded.remark, favorite=excluded.favorite, sort_order=excluded.sort_order, updated_at=CURRENT_TIMESTAMP`,
-    ).bind(ctx.effectiveId, found.kind, nodeId, remark, favorite, sortOrder),
-    auditStmt(db, ctx, {
-      action: "node.metadata", targetType: "node", targetId: nodeId,
-      after: { node_kind: found.kind, remark, favorite, sort_order: sortOrder },
-    }),
-  ]);
+  try {
+    await userBatch(db, ctx, [
+      nodeOwnerAssertStmt(db, ctx, nodeId, found.kind),
+      db.prepare(
+        `INSERT INTO node_user_metadata(user_id, node_kind, node_id, remark, favorite, sort_order)
+         VALUES(?,?,?,?,?,?)
+         ON CONFLICT(user_id, node_kind, node_id) DO UPDATE SET
+           remark=excluded.remark, favorite=excluded.favorite, sort_order=excluded.sort_order, updated_at=CURRENT_TIMESTAMP`,
+      ).bind(ctx.effectiveId, found.kind, nodeId, remark, favorite, sortOrder),
+      auditStmt(db, ctx, {
+        action: "node.metadata", targetType: "node", targetId: nodeId,
+        after: { node_kind: found.kind, remark, favorite, sort_order: sortOrder },
+      }),
+    ]);
+  } catch (e) {
+    if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+      return fail("节点归属刚刚发生变化，请刷新后重试", 409, { code: "NODE_OWNERSHIP_CHANGED" });
+    }
+    throw e;
+  }
   return json({ ok: true, data: { node_id: nodeId, node_kind: found.kind, remark, favorite, sort_order: sortOrder } });
 }
 
@@ -2132,8 +2357,9 @@ async function superRoute(req, env, url, ctx) {
     // 防锁死：把“是否还有别的有效超管”做成 batch 内的断言，消除“先查后改”的并发窗口
     const losingSuper = target.role === "super_admin" && (role !== "super_admin" || status !== "active");
     const stmts = [
-      db.prepare("UPDATE app_users SET status=?, role=?, display_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-        .bind(status, role, s(body.display_name, 60) || target.display_name, targetId),
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ? AND role = ? AND status = ?)", [targetId, target.role, target.status]),
+      db.prepare("UPDATE app_users SET status=?, role=?, display_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND role=? AND status=?")
+        .bind(status, role, s(body.display_name, 60) || target.display_name, targetId, target.role, target.status),
       auditStmt(db, ctx, {
         action: "super.user.update", targetType: "user", targetId,
         before: { role: target.role, status: target.status }, after: { role, status },
@@ -2156,11 +2382,16 @@ async function superRoute(req, env, url, ctx) {
       ));
     }
     try {
-      await userBatch(db, ctx, stmts);
+      const updated = await userBatch(db, ctx, stmts);
+      const updateIndex = losingSuper ? 1 : 0;
+      if (!updated[updateIndex]?.meta?.changes) return fail("用户状态刚刚发生变化，请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
     } catch (e) {
       if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
-        await auditDenied(db, ctx, "super.user.update", "最后一个总管理员不可降级/停用", "user", targetId);
-        return fail("这是最后一个有效总管理员，不能降级或停用；请先创建另一个总管理员", 409, { code: "LAST_SUPER_ADMIN" });
+        if (losingSuper) {
+          await auditDenied(db, ctx, "super.user.update", "最后一个总管理员不可降级/停用或用户状态已变化", "user", targetId);
+          return fail("管理员状态已变化，或这是最后一个有效总管理员；请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
+        }
+        return fail("用户状态刚刚发生变化，请刷新后重试", 409, { code: "USER_STATE_CHANGED" });
       }
       throw e;
     }
@@ -2239,6 +2470,7 @@ async function superRoute(req, env, url, ctx) {
     const id = newId();
     try {
       await userBatch(db, ctx, [
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ?)", [targetId]),
       // 先把这个 (admin,target,scope) 下“已过期但未撤销”的记录置为 revoked，释放唯一索引
       db.prepare(
         `UPDATE admin_user_scopes SET revoked_at = CURRENT_TIMESTAMP
@@ -2256,6 +2488,9 @@ async function superRoute(req, env, url, ctx) {
       }),
       ]);
     } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("目标用户状态刚刚发生变化，请刷新后重试", 409, { code: "TARGET_USER_CHANGED" });
+      }
       if (/UNIQUE|constraint/i.test(String(e?.message || ""))) {
         return fail("并发授权冲突：已存在相同有效授权", 409, { code: "SCOPE_ALREADY_ACTIVE" });
       }
@@ -2268,14 +2503,22 @@ async function superRoute(req, env, url, ctx) {
     const scopeId = s(seg[3], 80);
     const row = await db.prepare("SELECT * FROM admin_user_scopes WHERE id = ?").bind(scopeId).first();
     if (!row) return fail("授权不存在", 404);
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE admin_user_scopes SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?").bind(scopeId),
-      db.prepare("UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE scope_id = ? AND revoked_at IS NULL").bind(scopeId),
-      auditStmt(db, ctx, {
-        action: "super.scope.revoke", targetType: "user", targetId: row.target_user_id,
-        before: { scope: row.scope },
-      }),
-    ]);
+    if (row.revoked_at) return json({ ok: true, data: { id: scopeId, revoked: true, already: true } });
+    try {
+      const revoked = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM admin_user_scopes WHERE id = ? AND revoked_at IS NULL)", [scopeId]),
+        db.prepare("UPDATE admin_user_scopes SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL").bind(scopeId),
+        db.prepare("UPDATE user_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE scope_id = ? AND revoked_at IS NULL").bind(scopeId),
+        auditStmt(db, ctx, {
+          action: "super.scope.revoke", targetType: "user", targetId: row.target_user_id,
+          before: { scope: row.scope },
+        }),
+      ]);
+      if (!revoked[1]?.meta?.changes) return fail("授权已变化", 409);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("授权已变化，请刷新后重试", 409);
+      throw e;
+    }
     return json({ ok: true, data: { id: scopeId, revoked: true } });
   }
 
@@ -2410,13 +2653,20 @@ async function superRoute(req, env, url, ctx) {
     }
     const row = await db.prepare("SELECT id, group_name FROM convert_links WHERE id = ?").bind(id).first();
     if (!row) return fail("链接不存在", 404);
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE convert_links SET group_name = ? WHERE id = ?").bind(group, id),
-      auditStmt(db, ctx, {
-        action: "convert.regroup", targetType: "convert_link", targetId: id,
-        before: { group: row.group_name }, after: { group },
-      }),
-    ]);
+    try {
+      const changed = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM convert_links WHERE id = ? AND group_name = ?)", [id, row.group_name]),
+        db.prepare("UPDATE convert_links SET group_name = ? WHERE id = ? AND group_name = ?").bind(group, id, row.group_name),
+        auditStmt(db, ctx, {
+          action: "convert.regroup", targetType: "convert_link", targetId: id,
+          before: { group: row.group_name }, after: { group },
+        }),
+      ]);
+      if (!changed[1]?.meta?.changes) return fail("转换链接刚刚发生变化，请刷新后重试", 409);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("转换链接刚刚发生变化，请刷新后重试", 409);
+      throw e;
+    }
     return json({ ok: true, data: { id, group } });
   }
 
@@ -2425,15 +2675,23 @@ async function superRoute(req, env, url, ctx) {
     const from = s(body.from, 60), to = s(body.to, 60);
     if (!from || !to) return fail("原分组名和新分组名都要填", 400);
     if (!/^[\u4e00-\u9fa5A-Za-z0-9 _-]{1,30}$/.test(to)) return fail("新分组名不合法", 400);
-    const res = await db.prepare("UPDATE convert_links SET group_name = ? WHERE group_name = ?").bind(to, from).run();
-    const changed = Number(res.meta?.changes || 0);
-    if (changed) {
-      await userBatch(db, ctx, [auditStmt(db, ctx, {
-        action: "convert.group.rename", targetType: "convert_group", targetId: from,
-        before: { from }, after: { to, links: changed },
-      })]);
+    const count = await db.prepare("SELECT COUNT(*) AS n FROM convert_links WHERE group_name = ?").bind(from).first();
+    if (!Number(count?.n || 0)) return json({ ok: true, data: { from, to, links: 0 } });
+    try {
+      const renamed = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM convert_links WHERE group_name = ?)", [from]),
+        db.prepare("UPDATE convert_links SET group_name = ? WHERE group_name = ?").bind(to, from),
+        auditStmt(db, ctx, {
+          action: "convert.group.rename", targetType: "convert_group", targetId: from,
+          before: { from }, after: { to, links: Number(count.n) },
+        }),
+      ]);
+      const changed = Number(renamed[1]?.meta?.changes || 0);
+      return json({ ok: true, data: { from, to, links: changed } });
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("转换分组刚刚发生变化，请刷新后重试", 409);
+      throw e;
     }
-    return json({ ok: true, data: { from, to, links: changed } });
   }
 
   // 超级管理员查看原始订阅源（含 token，默认脱敏，reveal=1 才给完整值；每次查看写审计）
@@ -2471,13 +2729,20 @@ async function superRoute(req, env, url, ctx) {
     const row = await db.prepare("SELECT id, group_name, revoked_at FROM convert_links WHERE id = ?").bind(id).first();
     if (!row) return fail("链接不存在", 404);
     if (row.revoked_at) return json({ ok: true, data: { id, revoked_at: row.revoked_at, already: true } });
-    await userBatch(db, ctx, [
-      db.prepare("UPDATE convert_links SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id),
-      auditStmt(db, ctx, {
-        action: "convert.revoke", targetType: "convert_link", targetId: id,
-        before: { revoked_at: null }, after: { revoked_at: "now" }, detail: `group=${row.group_name}`,
-      }),
-    ]);
+    try {
+      const revoked = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM convert_links WHERE id = ? AND revoked_at IS NULL)", [id]),
+        db.prepare("UPDATE convert_links SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL").bind(id),
+        auditStmt(db, ctx, {
+          action: "convert.revoke", targetType: "convert_link", targetId: id,
+          before: { revoked_at: null }, after: { revoked_at: "now" }, detail: `group=${row.group_name}`,
+        }),
+      ]);
+      if (!revoked[1]?.meta?.changes) return fail("转换链接已变化", 409);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) return fail("转换链接已变化，请刷新后重试", 409);
+      throw e;
+    }
     return json({ ok: true, data: { id, revoked: true } });
   }
 
@@ -2514,10 +2779,11 @@ async function superRoute(req, env, url, ctx) {
     // - 通过：不改 enabled（避免把管理员手动停用的来源重新启用）
     // - 拒绝：强制停用（不能继续同步）
     const stmts = [
+      assertStmt(db, "EXISTS (SELECT 1 FROM source_approvals WHERE source_id = ? AND status = ?)", [sourceId, approval.status]),
       db.prepare(
         `UPDATE source_approvals SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, reason = ?
-          WHERE source_id = ?`,
-      ).bind(approve ? "approved" : "rejected", ctx.actorId, reason, sourceId),
+          WHERE source_id = ? AND status = ?`,
+      ).bind(approve ? "approved" : "rejected", ctx.actorId, reason, sourceId, approval.status),
     ];
     if (!approve) {
       stmts.push(
@@ -2532,7 +2798,15 @@ async function superRoute(req, env, url, ctx) {
       reason,
       detail: approve ? "审核通过（不改变启用状态，需手动启用）" : "审核拒绝并停用",
     }));
-    await userBatch(db, ctx, stmts);
+    try {
+      const reviewed = await userBatch(db, ctx, stmts);
+      if (!reviewed[approve ? 1 : 1]?.meta?.changes) return fail("审核状态刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_APPROVAL_CHANGED" });
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("审核状态刚刚发生变化，请刷新后重试", 409, { code: "SOURCE_APPROVAL_CHANGED" });
+      }
+      throw e;
+    }
     return json({
       ok: true,
       data: { source_id: sourceId, approval_status: approve ? "approved" : "rejected", enabled_auto_changed: !approve },
@@ -2582,6 +2856,8 @@ async function superRoute(req, env, url, ctx) {
     const previous = await db.prepare("SELECT user_id FROM source_ownership WHERE source_id = ?").bind(sourceId).first();
     // 事务外读只用于 before 审计；批内再断言归属未变化，防止并发转移导致审计与实际不一致
     const stmts = [
+      assertStmt(db, "EXISTS (SELECT 1 FROM subscription_sources WHERE id = ?)", [sourceId]),
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ? AND status = 'active')", [targetId]),
       previous
         ? assertStmt(db, "EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)", [sourceId, previous.user_id])
         : assertStmt(db, "NOT EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ?)", [sourceId]),
@@ -2616,16 +2892,20 @@ async function superRoute(req, env, url, ctx) {
 
     // 解除分配：只删归属 + 停用来源（避免 Cron/手动继续选中），其他数据一律保留
     try {
-      await userBatch(db, ctx, [
+      const unassigned = await userBatch(db, ctx, [
+        assertStmt(db, "EXISTS (SELECT 1 FROM subscription_sources WHERE id = ? AND enabled = ?)", [sourceId, source.enabled]),
         assertStmt(db, "EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)", [sourceId, current.user_id]),
-        db.prepare("DELETE FROM source_ownership WHERE source_id = ?").bind(sourceId),
-        db.prepare("UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(sourceId),
+        db.prepare("DELETE FROM source_ownership WHERE source_id = ? AND user_id = ?").bind(sourceId, current.user_id),
+        db.prepare("UPDATE subscription_sources SET enabled = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND enabled = ?").bind(sourceId, source.enabled),
         auditStmt(db, ctx, {
           action: "super.source.unassign", targetType: "source", targetId: sourceId,
           before: { owner: current.user_id, enabled: source.enabled }, after: { owner: null, enabled: 0 },
           detail: "解除归属并停用；节点、覆盖、同步记录与审计全部保留",
         }),
       ]);
+      if (!unassigned[2]?.meta?.changes || !unassigned[3]?.meta?.changes) {
+        return fail("来源归属或启用状态刚刚发生变化，请刷新后重试", 409, { code: "OWNERSHIP_CHANGED" });
+      }
     } catch (e) {
       if (/malformed JSON|assert-failed/i.test(String(e?.message || ""))) {
         return fail("来源归属在操作期间已变化，请刷新后重试", 409, { code: "OWNERSHIP_CHANGED" });
@@ -3106,11 +3386,13 @@ async function checkGlobalLimit(db, env) {
 
 async function resolveOwnerKey(env, ownerId, guestKey) {
   if (ownerId) return `u:${ownerId}`;
-  if (/^[A-Za-z0-9_-]{8,64}$/.test(String(guestKey || ""))) {
-    const hash = await sha256Hex(`${guestKey}|${env.SESSION_PEPPER || ""}`);
-    return `g:${hash.slice(0, 24)}`;
+  const key = String(guestKey || "");
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(key)) {
+    throw sessionError("GUEST_KEY_REQUIRED", "匿名用户缺少有效 guest_key，请刷新页面后重试");
   }
-  return "g:anonymous";
+  const pepper = requiredSecret(env, "SESSION_PEPPER", 32);
+  const hash = await sha256Hex(`${key}|${pepper}`);
+  return `g:${hash.slice(0, 24)}`;
 }
 
 function clientIp(req) {
@@ -3353,24 +3635,26 @@ function randomCode() {
 }
 
 async function vipStatus(db, userId) {
-  // 新表可能还没建（首次部署）：VIP 状态失败不能连带登录/鉴权一起 500
+  // 当前有效期必须同时满足 starts_at <= now < ends_at；is_formal 保留历史语义。
   try {
     const row = await db.prepare(
-      `SELECT MAX(ends_at) AS until,
-              SUM(CASE WHEN kind = 'formal' THEN 1 ELSE 0 END) AS formal_count,
-              SUM(CASE WHEN kind = 'trial' THEN 1 ELSE 0 END) AS trial_count
-         FROM admin_vip_activations WHERE user_id = ?`,
+      `SELECT
+         MAX(CASE WHEN datetime(starts_at) <= datetime('now') AND datetime(ends_at) > datetime('now') THEN ends_at END) AS until,
+         MAX(CASE WHEN kind='formal' AND datetime(starts_at) <= datetime('now') AND datetime(ends_at) > datetime('now') THEN 1 ELSE 0 END) AS active_formal,
+         SUM(CASE WHEN kind='formal' THEN 1 ELSE 0 END) AS formal_count,
+         SUM(CASE WHEN kind='trial' THEN 1 ELSE 0 END) AS trial_count
+       FROM admin_vip_activations WHERE user_id = ?`,
     ).bind(userId).first();
     const until = row?.until || null;
-    const active = until ? await db.prepare("SELECT 1 AS ok WHERE datetime(?) > datetime('now')").bind(until).first() : null;
     return {
       until,
-      active: !!active,
-      is_formal: Number(row?.formal_count || 0) > 0,   // 只看正式卡密激活历史
+      active: !!until,
+      is_formal: Number(row?.formal_count || 0) > 0,
+      active_formal: Number(row?.active_formal || 0) > 0,
       has_trial: Number(row?.trial_count || 0) > 0,
     };
-  } catch (e) {
-    return { until: null, active: false, is_formal: false, has_trial: false, unavailable: true };
+  } catch {
+    return { until: null, active: false, is_formal: false, active_formal: false, has_trial: false, unavailable: true };
   }
 }
 
@@ -3558,6 +3842,51 @@ async function runVipCardMaintenance(db, ctx) {
   return { deactivated, restored };
 }
 
+async function userAppCardGroupsRoute(req, env, url, ctx) {
+  // Protocol66 card-group endpoint is isolated. Fail closed until
+  // both reviewed mapping/idempotency tables exist; never attempt implicit DDL.
+  const requiredTables = ["app_card_group_mappings", "app_card_group_admin_requests"];
+  let present;
+  try {
+    const result = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?)",
+    ).bind(...requiredTables).all();
+    present = new Set((result?.results || []).map(row => row.name));
+  } catch {
+    return fail("卡密分组配置暂不可用，请稍后重试", 503, { code: "CARD_GROUP_SCHEMA_CHECK_UNAVAILABLE" });
+  }
+  if (requiredTables.some(name => !present.has(name))) {
+    return fail("卡密分组功能尚未启用，现有卡密和分组不受影响", 503, {
+      code: "CARD_GROUP_SCHEMA_NOT_READY",
+      missing: requiredTables.filter(name => !present.has(name)),
+    });
+  }
+
+  const storage = createCardGroupD1Adapter({
+    db: env.DB,
+    resolveAccess: async adminId => ({
+      canRead: adminId === ctx.effectiveId,
+      // The outer Worker authorization adapter has already checked the live
+      // VIP/trial state and delegated scope. The D1 batch repeats the final
+      // activation/scope guard atomically before any mapping write.
+      canWrite: adminId === ctx.effectiveId && ctx.appAuthorization?.allowed === true,
+    }),
+  });
+  const service = createCardGroupAdminService({ storage });
+  const handler = createCardGroupAdminHandler({
+    service,
+    resolveSession: async () => ({
+      ...ctx,
+      isSuperAdmin: ctx.isSuper === true && ctx.actorId === ctx.effectiveId,
+    }),
+  });
+  try {
+    return await handler(req);
+  } catch {
+    return fail("卡密分组配置暂时不可用，请稍后重试", 503, { code: "CARD_GROUP_SERVICE_UNAVAILABLE" });
+  }
+}
+
 async function userAppCardsRoute(req, env, url, ctx) {
   const db = env.DB;
   const seg = url.pathname.split("/").filter(Boolean);   // api,user,app-cards,...
@@ -3597,7 +3926,17 @@ async function userAppCardsRoute(req, env, url, ctx) {
     if (Number(stock?.n || 0) + count > APP_CARD_STOCK_MAX) return fail(`未激活库存上限 ${APP_CARD_STOCK_MAX} 张`, 409);
 
     const codes = [];
-    const stmts = [];
+    const stmts = [
+      // Re-check both capacity limits inside the same D1 batch as the inserts.
+      // The earlier SELECTs provide friendly messages; these assertions close
+      // the concurrent-request window so two batches cannot both overfill stock.
+      assertStmt(db,
+        "(SELECT COUNT(*) FROM app_cards WHERE admin_user_id = ?) + ? <= ?",
+        [ctx.effectiveId, count, APP_CARD_TOTAL_MAX]),
+      assertStmt(db,
+        "(SELECT COUNT(*) FROM app_cards WHERE admin_user_id = ? AND status='normal' AND activated_at IS NULL AND used_at IS NULL) + ? <= ?",
+        [ctx.effectiveId, count, APP_CARD_STOCK_MAX]),
+    ];
     for (let i = 0; i < count; i++) {
       const code = appCardCode();
       codes.push(code);
@@ -3610,7 +3949,14 @@ async function userAppCardsRoute(req, env, url, ctx) {
       action: "app_card.create", targetType: "app_card", targetId: "-",
       after: { count, days }, detail: `生成 ${count} 张 APP 卡密`,
     }));
-    await userBatch(db, ctx, stmts);
+    try {
+      await userBatch(db, ctx, stmts);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("卡密库存或总记录容量刚刚发生变化，请刷新后重试", 409, { code: "APP_CARD_CAPACITY_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { count, days, codes } }, 201);
   }
 
@@ -3622,14 +3968,25 @@ async function userAppCardsRoute(req, env, url, ctx) {
     if (card.activated_at || card.used_at || card.status === 'used') {
       return fail("已激活/已使用的卡密不能删除，只能停用", 409, { code: "CARD_IN_USE" });
     }
-    await userBatch(db, ctx, [
-      db.prepare(`UPDATE app_cards SET status='inactive', manual_disabled=1, inactive_reason='user_deleted',
-                         inactive_at=CURRENT_TIMESTAMP WHERE id = ? AND admin_user_id = ?`).bind(id, ctx.effectiveId),
-      auditStmt(db, ctx, {
-        action: "app_card.delete", targetType: "app_card", targetId: id,
-        before: { status: card.status }, after: { status: 'inactive', reason: 'user_deleted' },
-      }),
-    ]);
+    try {
+      await userBatch(db, ctx, [
+        assertStmt(db,
+          "EXISTS (SELECT 1 FROM app_cards WHERE id = ? AND admin_user_id = ? AND activated_at IS NULL AND used_at IS NULL AND status <> 'used')",
+          [id, ctx.effectiveId]),
+        db.prepare(`UPDATE app_cards SET status='inactive', manual_disabled=1, inactive_reason='user_deleted',
+                           inactive_at=CURRENT_TIMESTAMP WHERE id = ? AND admin_user_id = ?
+                             AND activated_at IS NULL AND used_at IS NULL AND status <> 'used'`).bind(id, ctx.effectiveId),
+        auditStmt(db, ctx, {
+          action: "app_card.delete", targetType: "app_card", targetId: id,
+          before: { status: card.status }, after: { status: 'inactive', reason: 'user_deleted' },
+        }),
+      ]);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("卡密状态刚刚发生变化，已阻止删除，请刷新后重试", 409, { code: "CARD_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { id, deleted: true } });
   }
 
@@ -3706,8 +4063,8 @@ async function runNodeLifecycle(db, ctx) {
 
     // 最近 3 次成功同步的时间界：节点 last_seen 早于它 → 视为“这 3 次都没出现”
     const threshold = await db.prepare(
-      `SELECT created_at FROM sync_tasks WHERE source_id = ? AND status = 'success'
-        ORDER BY created_at DESC LIMIT 1 OFFSET 2`,
+      `SELECT created_at FROM sync_tasks WHERE source_id = ? AND status = 'committed'
+        ORDER BY committed_at DESC, created_at DESC LIMIT 1 OFFSET 2`,
     ).bind(n.source_id).first();
 
     let present = true;
@@ -3850,8 +4207,12 @@ function b64url(bytes) {
 
 /** 授权令牌：HMAC(pepper, entitlementId|deviceId)，防止别人拿到 device_id 就冒用 */
 async function entToken(env, entitlementId, deviceId) {
+  const secret = String(env.APP_HMAC_SECRET || env.SESSION_PEPPER || "");
+  if (secret.length < 32) {
+    throw sessionError("SECRET_NOT_CONFIGURED", "APP_HMAC_SECRET/SESSION_PEPPER 未配置或长度不足");
+  }
   const key = await crypto.subtle.importKey(
-    "raw", new TextEncoder().encode(String(env.SESSION_PEPPER || "starjump-app")),
+    "raw", new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${entitlementId}|${deviceId}`));
@@ -3863,6 +4224,100 @@ async function verifyEntToken(env, entitlementId, deviceId, token) {
   return timingSafeEqual(String(token), expect);
 }
 
+async function appRedeemRateLimitBuckets(req, deviceId, env) {
+  // Cloudflare's CF-Connecting-IP is edge supplied; never trust arbitrary X-Forwarded-For here.
+  const ip = s(req.headers.get("CF-Connecting-IP") || "unknown", 60);
+  const pepper = requiredSecret(env, "SESSION_PEPPER", 32);
+  const ipHash = await sha256Hex(`app-redeem-ip|failed-v2|${ip}|${pepper}`);
+  const deviceHash = await sha256Hex(`app-redeem-device|failed-v2|${deviceId}|${pepper}`);
+  return [
+    [`app:redeem:failed:v2:ip:${ipHash}`, 10],
+    [`app:redeem:failed:v2:device:${deviceHash}`, 5],
+  ];
+}
+
+// Read-only preflight. Successful activations and same-device network replays
+// never consume the failed-attempt budget.
+async function checkAppRedeemRateLimit(db, req, deviceId, env) {
+  try {
+    const limits = await appRedeemRateLimitBuckets(req, deviceId, env);
+    for (const [bucket, limit] of limits) {
+      const row = await db.prepare(
+        `SELECT CASE WHEN datetime(updated_at) <= datetime('now', '-15 minutes')
+                     THEN 0 ELSE count END AS count
+           FROM rate_limits WHERE bucket = ?`,
+      ).bind(bucket).first();
+      if (row && Number(row.count) > limit) {
+        return { ok: false, scope: bucket.includes(":device:") ? "device" : "ip" };
+      }
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+}
+
+// Only failed card-code/status attempts are counted. The fixed window starts
+// with the first failed attempt and is not extended by later failures.
+async function recordAppRedeemFailure(db, req, deviceId, env) {
+  try {
+    const limits = await appRedeemRateLimitBuckets(req, deviceId, env);
+    for (const [bucket, limit] of limits) {
+      await db.prepare(
+        `INSERT INTO rate_limits(bucket, count, updated_at) VALUES(?, 1, CURRENT_TIMESTAMP)
+         ON CONFLICT(bucket) DO UPDATE SET
+           count = CASE WHEN datetime(rate_limits.updated_at) <= datetime('now', '-15 minutes')
+                        THEN 1 ELSE rate_limits.count + 1 END,
+           updated_at = CASE
+             WHEN datetime(rate_limits.updated_at) <= datetime('now', '-15 minutes')
+             THEN CURRENT_TIMESTAMP ELSE rate_limits.updated_at END`,
+      ).bind(bucket).run();
+      const row = await db.prepare("SELECT count FROM rate_limits WHERE bucket = ?").bind(bucket).first();
+      if (!row) return { ok: false, unavailable: true };
+      if (Number(row.count) > limit) {
+        return { ok: false, scope: bucket.includes(":device:") ? "device" : "ip" };
+      }
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+}
+
+function appRedeemRateLimited() {
+  return new Response(JSON.stringify({ ok: false, message: "失败尝试次数过多，请 15 分钟后重试", code: "REDEEM_RATE_LIMITED" }), {
+    status: 429,
+    headers: { "content-type": "application/json; charset=utf-8", "retry-after": "900", "cache-control": "no-store" },
+  });
+}
+
+async function appRedeemFailedAttempt(db, req, deviceId, env, response) {
+  const result = await recordAppRedeemFailure(db, req, deviceId, env);
+  if (result.unavailable) return fail("激活服务暂不可用，请稍后重试", 503, { code: "REDEEM_THROTTLE_UNAVAILABLE" });
+  if (!result.ok) return appRedeemRateLimited();
+  return response;
+}
+
+async function appRedeemSuccess(db, env, entitlement, deviceId, adminUserId, days) {
+  const token = await entToken(env, entitlement.id, deviceId);
+  return json({
+    ok: true,
+    data: {
+      entitlement: {
+        id: entitlement.id,
+        expires_at: entitlement.expires_at,
+        purge_at: entitlement.purge_at,
+        status: entitlement.status,
+      },
+      admin_user_id: adminUserId,
+      token,
+      days,
+      local_retention_hours: ENT_LOCAL_RETENTION_HOURS,
+      note: "到期后停止更新，本地节点保留 24 小时；新卡密属于新授权",
+    },
+  }, 201);
+}
+
 async function appRedeemRoute(req, env, url, ctx) {
   const db = env.DB;
   if (url.pathname === "/api/app/redeem" && req.method === "POST") {
@@ -3872,48 +4327,62 @@ async function appRedeemRoute(req, env, url, ctx) {
     if (!/^[A-Z0-9]{8,24}$/.test(code)) return fail("卡密格式不正确", 400);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
 
+    const throttle = await checkAppRedeemRateLimit(db, req, deviceId, env);
+    if (throttle.unavailable) return fail("激活服务暂不可用，请稍后重试", 503, { code: "REDEEM_THROTTLE_UNAVAILABLE" });
+    if (!throttle.ok) return appRedeemRateLimited();
+
     const card = await db.prepare(
       "SELECT id, admin_user_id, days, status, manual_disabled, activated_at, used_at, expires_at FROM app_cards WHERE code = ?",
     ).bind(code).first();
-    if (!card) return fail("卡密不存在", 404);
-    if (card.manual_disabled) return fail("卡密已停用", 409, { code: "CARD_DISABLED" });
-    if (card.activated_at || card.used_at || card.status === "used") return fail("卡密已被使用", 409, { code: "CARD_USED" });
-    if (card.status !== "normal") return fail("卡密当前不可用", 409, { code: "CARD_INACTIVE" });
+    if (!card) return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密不存在", 404));
+
+    // A response may be lost after the activation transaction committed. If the
+    // same device retries this same card, return the original live entitlement
+    // and deterministic token instead of consuming the card twice or reporting
+    // a misleading "already used" error.
+    if (card.activated_at || card.used_at || card.status === "used") {
+      const existing = await db.prepare(
+        `SELECT id, expires_at, purge_at, status FROM app_entitlements
+          WHERE card_id = ? AND device_id = ? AND status = 'active'
+            AND datetime(expires_at) > datetime('now')
+          ORDER BY created_at DESC LIMIT 1`,
+      ).bind(card.id, deviceId).first();
+      if (existing) return appRedeemSuccess(db, env, existing, deviceId, card.admin_user_id, Number(card.days));
+      return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密已被使用", 409, { code: "CARD_USED" }));
+    }
+    if (card.manual_disabled) return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密已停用", 409, { code: "CARD_DISABLED" }));
+    if (card.status !== "normal") return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密当前不可用", 409, { code: "CARD_INACTIVE" }));
     const notExpired = await db.prepare("SELECT 1 AS ok WHERE datetime(?) > datetime('now')").bind(card.expires_at).first();
-    if (!notExpired) return fail("卡密已过期", 410, { code: "CARD_EXPIRED" });
+    if (!notExpired) return appRedeemFailedAttempt(db, req, deviceId, env, fail("卡密已过期", 410, { code: "CARD_EXPIRED" }));
 
     const days = Number(card.days);
     const id = newId();
+    // Validate the APP token secret before consuming the card or creating the entitlement.
+    const token = await entToken(env, id, deviceId);
     await userBatch(db, ctx, [
-      assertStmt(db, "EXISTS (SELECT 1 FROM app_cards WHERE id = ? AND status='normal' AND manual_disabled=0 AND activated_at IS NULL AND used_at IS NULL)", [card.id]),
+      assertStmt(db,
+        "EXISTS (SELECT 1 FROM app_cards WHERE id = ? AND admin_user_id = ? AND days = ? AND status='normal' AND manual_disabled=0 AND activated_at IS NULL AND used_at IS NULL AND datetime(expires_at) > datetime('now'))",
+        [card.id, card.admin_user_id, days]),
       db.prepare(
         `UPDATE app_cards SET status='used', activated_at=CURRENT_TIMESTAMP, used_at=CURRENT_TIMESTAMP
-          WHERE id = ? AND status='normal' AND activated_at IS NULL AND used_at IS NULL`,
-      ).bind(card.id),
+          WHERE id = ? AND admin_user_id = ? AND days = ? AND status='normal' AND manual_disabled=0
+            AND activated_at IS NULL AND used_at IS NULL AND datetime(expires_at) > datetime('now')`,
+      ).bind(card.id, card.admin_user_id, days),
       db.prepare(
         `INSERT INTO app_entitlements(id, admin_user_id, device_id, card_id, starts_at, expires_at, purge_at, status)
          VALUES(?,?,?,?, CURRENT_TIMESTAMP, datetime('now', ?), datetime('now', ?), 'active')`,
       ).bind(id, card.admin_user_id, deviceId, card.id, `+${days} days`, `+${days + 1} days`),
       // 激活过一次 → 永久保留该管理员的免费分组资格（卡密过期也不收回）
       db.prepare("INSERT OR IGNORE INTO app_free_grants(device_id, admin_user_id) VALUES(?,?)").bind(deviceId, card.admin_user_id),
+      db.prepare(
+        "INSERT INTO app_card_events(card_id, admin_user_id, action, detail, device_id) VALUES(?,?,?,?,?)",
+      ).bind(card.id, card.admin_user_id, "activate", `${days} 天`, deviceId),
     ]);
-    await db.prepare(
-      "INSERT INTO app_card_events(card_id, admin_user_id, action, detail, device_id) VALUES(?,?,?,?,?)",
-    ).bind(card.id, card.admin_user_id, "activate", `${days} 天`, deviceId).run().catch(() => {});
     const ent = await db.prepare(
       "SELECT id, expires_at, purge_at, status FROM app_entitlements WHERE id = ?",
     ).bind(id).first();
-    return json({
-      ok: true,
-      data: {
-        entitlement: ent,
-        admin_user_id: card.admin_user_id,
-        token: await entToken(env, id, deviceId),
-        days,
-        local_retention_hours: ENT_LOCAL_RETENTION_HOURS,
-        note: "到期后停止更新，本地节点保留 24 小时；新卡密属于新授权",
-      },
-    }, 201);
+    if (!ent) return fail("激活结果暂未确认，请刷新授权状态后再试", 503, { code: "REDEEM_RESULT_UNCONFIRMED" });
+    return appRedeemSuccess(db, env, ent, deviceId, card.admin_user_id, days);
   }
 
   if (url.pathname === "/api/app/status" && req.method === "GET") {
@@ -3987,176 +4456,194 @@ async function runEntitlementMaintenance(db) {
   return { expired: Number(expired.meta?.changes || 0), purged: Number(purgeable.meta?.changes || 0) };
 }
 
-/* ────────────────────────────── 一键建表（幂等）────────────────────────────── */
+/* ────────────────────────────── 数据库结构只读状态 ────────────────────────────── */
 /**
- * 让不懂 SQL 的人也能把新表建好：超管在后台点一次按钮即可。
- * 全部是 CREATE TABLE/INDEX IF NOT EXISTS 与一次 ADD COLUMN 尝试，可重复执行。
+ * RC1 安全门禁：
+ * - 仅报告当前核心业务表是否存在，不执行 DDL。
+ * - 旧版 migrateRoute 是逐条非事务 DDL、宽泛忽略重复错误、仅核对表名，
+ *   未验证列/索引/约束；在取得目标 D1 schema snapshot 前禁止执行。
+ * - 正式迁移必须由后续经过 manifest/checksum/plan/approve/postcondition 的迁移器接管。
  */
-
-const MIGRATE_STATEMENTS = [
-  ["convert_links", `CREATE TABLE IF NOT EXISTS convert_links (
-    id TEXT PRIMARY KEY, payload TEXT NOT NULL, targets TEXT NOT NULL DEFAULT '',
-    group_name TEXT NOT NULL DEFAULT '默认分组', owner_user_id TEXT,
-    ip_hash TEXT NOT NULL DEFAULT '', hits INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT,
-    expires_at TEXT NOT NULL, revoked_at TEXT)`],
-  ["ix_convert_links_expires", "CREATE INDEX IF NOT EXISTS ix_convert_links_expires ON convert_links(expires_at)"],
-  ["ix_convert_links_ip", "CREATE INDEX IF NOT EXISTS ix_convert_links_ip ON convert_links(ip_hash, created_at)"],
-  ["ix_convert_links_group", "CREATE INDEX IF NOT EXISTS ix_convert_links_group ON convert_links(group_name)"],
-  ["admin_vip_cards", `CREATE TABLE IF NOT EXISTS admin_vip_cards (
-    id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, days INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'unused', note TEXT NOT NULL DEFAULT '',
-    created_by TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    used_by TEXT, used_at TEXT)`],
-  ["ix_vip_cards_status", "CREATE INDEX IF NOT EXISTS ix_vip_cards_status ON admin_vip_cards(status, created_at)"],
-  ["admin_vip_activations", `CREATE TABLE IF NOT EXISTS admin_vip_activations (
-    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, card_id TEXT, days INTEGER NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'formal', starts_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ends_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_vip_activations_user", "CREATE INDEX IF NOT EXISTS ix_vip_activations_user ON admin_vip_activations(user_id, ends_at)"],
-  ["app_cards", `CREATE TABLE IF NOT EXISTS app_cards (
-    id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, admin_user_id TEXT NOT NULL,
-    days INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'normal',
-    inactive_reason TEXT NOT NULL DEFAULT '', inactive_at TEXT, restored_at TEXT,
-    manual_disabled INTEGER NOT NULL DEFAULT 0, expires_at TEXT, activated_at TEXT,
-    used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_cards_admin", "CREATE INDEX IF NOT EXISTS ix_app_cards_admin ON app_cards(admin_user_id, status)"],
-  ["ix_app_cards_code", "CREATE INDEX IF NOT EXISTS ix_app_cards_code ON app_cards(code)"],
-  ["node_lifecycle", `CREATE TABLE IF NOT EXISTS node_lifecycle (
-    node_id TEXT PRIMARY KEY, source_id TEXT NOT NULL, fail_streak INTEGER NOT NULL DEFAULT 0,
-    first_check_at TEXT, last_check_at TEXT, observation_started_at TEXT, stale_at TEXT,
-    state TEXT NOT NULL DEFAULT 'ok', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_node_lifecycle_state", "CREATE INDEX IF NOT EXISTS ix_node_lifecycle_state ON node_lifecycle(state)"],
-  ["ix_node_lifecycle_source", "CREATE INDEX IF NOT EXISTS ix_node_lifecycle_source ON node_lifecycle(source_id)"],
-  ["app_entitlements", `CREATE TABLE IF NOT EXISTS app_entitlements (
-    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, device_id TEXT NOT NULL, card_id TEXT NOT NULL,
-    starts_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, purge_at TEXT,
-    status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_ent_device", "CREATE INDEX IF NOT EXISTS ix_app_ent_device ON app_entitlements(device_id, status)"],
-  ["ix_app_ent_admin", "CREATE INDEX IF NOT EXISTS ix_app_ent_admin ON app_entitlements(admin_user_id, status)"],
-  ["ix_app_ent_expires", "CREATE INDEX IF NOT EXISTS ix_app_ent_expires ON app_entitlements(expires_at)"],
-  ["rate_limits", `CREATE TABLE IF NOT EXISTS rate_limits (
-    bucket TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["app_links", `CREATE TABLE IF NOT EXISTS app_links (
-    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL,
-    sort INTEGER NOT NULL DEFAULT 100, enabled INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_links_admin", "CREATE INDEX IF NOT EXISTS ix_app_links_admin ON app_links(admin_user_id, sort)"],
-  ["app_groups", `CREATE TABLE IF NOT EXISTS app_groups (
-    id TEXT PRIMARY KEY, admin_user_id TEXT NOT NULL, name TEXT NOT NULL,
-    mode TEXT NOT NULL DEFAULT 'assigned', sort INTEGER NOT NULL DEFAULT 100,
-    enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_app_groups_admin", "CREATE INDEX IF NOT EXISTS ix_app_groups_admin ON app_groups(admin_user_id, sort)"],
-  ["app_group_sources", "CREATE TABLE IF NOT EXISTS app_group_sources (group_id TEXT NOT NULL, source_id TEXT NOT NULL, PRIMARY KEY (group_id, source_id))"],
-  ["app_group_members", "CREATE TABLE IF NOT EXISTS app_group_members (group_id TEXT NOT NULL, device_id TEXT NOT NULL, PRIMARY KEY (group_id, device_id))"],
-  ["app_free_grants", "CREATE TABLE IF NOT EXISTS app_free_grants (device_id TEXT NOT NULL, admin_user_id TEXT NOT NULL, granted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (device_id, admin_user_id))"],
-  ["admin_share_codes", `CREATE TABLE IF NOT EXISTS admin_share_codes (
-    admin_user_id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_admin_share_codes_code", "CREATE INDEX IF NOT EXISTS ix_admin_share_codes_code ON admin_share_codes(code)"],
-  ["download_links", `CREATE TABLE IF NOT EXISTS download_links (
-    id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'global', admin_user_id TEXT,
-    title TEXT NOT NULL, url TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 100,
-    enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_download_links_scope", "CREATE INDEX IF NOT EXISTS ix_download_links_scope ON download_links(scope, admin_user_id, sort)"],
-  ["app_card_events", `CREATE TABLE IF NOT EXISTS app_card_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, card_id TEXT NOT NULL, admin_user_id TEXT NOT NULL,
-    action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["ix_card_events_card", "CREATE INDEX IF NOT EXISTS ix_card_events_card ON app_card_events(card_id, created_at)"],
-  ["releases", `CREATE TABLE IF NOT EXISTS releases (
-    id TEXT PRIMARY KEY, platform TEXT NOT NULL DEFAULT 'android', version_code INTEGER NOT NULL,
-    version_name TEXT NOT NULL, min_version_code INTEGER NOT NULL DEFAULT 0, url TEXT NOT NULL,
-    notes TEXT NOT NULL DEFAULT '', force INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["announcements", `CREATE TABLE IF NOT EXISTS announcements (
-    id TEXT PRIMARY KEY, scope TEXT NOT NULL DEFAULT 'web', title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
-    level TEXT NOT NULL DEFAULT 'info', active INTEGER NOT NULL DEFAULT 1, starts_at TEXT, ends_at TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
-  ["admin_app_perms", `CREATE TABLE IF NOT EXISTS admin_app_perms (
-    admin_user_id TEXT PRIMARY KEY, links_enabled INTEGER NOT NULL DEFAULT 1,
-    max_links INTEGER NOT NULL DEFAULT 1, free_group_enabled INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`],
+const REQUIRED_TABLES = [
+  "download_links", "convert_links", "admin_vip_cards", "admin_vip_activations",
+  "app_cards", "node_lifecycle", "app_entitlements", "rate_limits", "app_links",
+  "admin_app_perms", "app_groups", "app_group_sources", "app_group_members",
+  "app_free_grants", "admin_share_codes", "releases", "announcements", "app_card_events",
 ];
 
-const REQUIRED_TABLES = ["download_links", 
-  "convert_links", "admin_vip_cards", "admin_vip_activations", "app_cards", "node_lifecycle",
-  "app_entitlements", "rate_limits", "app_links", "admin_app_perms", "app_groups",
-  "app_group_sources", "app_group_members", "app_free_grants", "admin_share_codes",
-  "releases", "announcements", "app_card_events",
+// 另外 22 张表来自 Worker SQL 字段引用静态清单；没有完整 CREATE TABLE 证据。
+// 这里只检查名称是否存在，不据此推断字段结构或迁移安全。
+const WORKER_REFERENCED_TABLES = [
+  "app_users", "user_sessions", "admin_user_scopes", "subscription_sources",
+  "source_ownership", "source_approvals", "subscription_sync_state", "sync_tasks",
+  "sync_task_stage", "sync_task_manifests", "node_records", "node_groups",
+  "node_group_members", "node_overrides", "node_user_metadata", "node_identity_aliases",
+  "user_manual_nodes", "source_quota", "app_settings", "admin_audit",
+  "admin_audit_events", "node_sync_logs",
 ];
+
+const APP_SCHEMA_DIAGNOSTIC_TABLES = Object.freeze([
+  "app_cards", "app_entitlements", "app_groups", "app_group_sources",
+  "app_group_members", "app_free_grants", "app_card_events",
+  // Protocol66 candidate-only tables: observe if present; never create them here.
+  "app_card_group_mappings", "app_card_group_admin_requests",
+]);
+
+function quoteSchemaIdentifier(value) {
+  return '"' + String(value).replace(/"/g, '""') + '"';
+}
+
+async function schemaAll(db, sql, args = []) {
+  const statement = db.prepare(sql);
+  const result = await statement.bind(...args).all();
+  return Array.isArray(result?.results) ? result.results : [];
+}
+
+/**
+ * Read-only APP schema observation. This deliberately does not compare against
+ * an assumed production schema: without an approved D1 snapshot, observation
+ * is not a pass/fail compatibility verdict.
+ */
+async function inspectAppSchema(db, existingTableNames) {
+  const tables = await Promise.all(APP_SCHEMA_DIAGNOSTIC_TABLES.map(async (table) => {
+    if (!existingTableNames.has(table)) {
+      return { name: table, present: false, verification: "MISSING" };
+    }
+    const quoted = quoteSchemaIdentifier(table);
+    const [columnsResult, indexesResult, foreignKeysResult] = await Promise.allSettled([
+      schemaAll(db, `PRAGMA table_info(${quoted})`),
+      schemaAll(db, `PRAGMA index_list(${quoted})`),
+      schemaAll(db, `PRAGMA foreign_key_list(${quoted})`),
+    ]);
+    const columnsOk = columnsResult.status === "fulfilled";
+    const indexesOk = indexesResult.status === "fulfilled";
+    const foreignKeysOk = foreignKeysResult.status === "fulfilled";
+    const indexRows = indexesOk ? indexesResult.value : [];
+    const indexDetails = await Promise.all(indexRows.map(async (index) => {
+      try {
+        const indexColumns = await schemaAll(db, `PRAGMA index_info(${quoteSchemaIdentifier(index.name)})`);
+        return {
+          name: String(index.name || ""),
+          unique: Number(index.unique) === 1,
+          origin: String(index.origin || ""),
+          partial: Number(index.partial) === 1,
+          columns: indexColumns.map(column => ({
+            sequence: Number(column.seqno),
+            name: column.name == null ? null : String(column.name),
+          })),
+          verification: "OBSERVED",
+        };
+      } catch {
+        return {
+          name: String(index.name || ""),
+          unique: Number(index.unique) === 1,
+          origin: String(index.origin || ""),
+          partial: Number(index.partial) === 1,
+          columns: null,
+          verification: "NOT_VERIFIED",
+        };
+      }
+    }));
+    const complete = columnsOk && indexesOk && foreignKeysOk &&
+      indexDetails.every(index => index.verification === "OBSERVED");
+    return {
+      name: table,
+      present: true,
+      verification: complete ? "OBSERVED_SCHEMA_ONLY" : "PARTIAL_NOT_VERIFIED",
+      // Schema defaults can contain literal values. Expose presence + a digest,
+      // never the raw default expression/value in the diagnostic response.
+      columns: columnsOk ? await Promise.all(columnsResult.value.map(async column => ({
+        name: String(column.name),
+        type: String(column.type || ""),
+        not_null: Number(column.notnull) === 1,
+        default_present: column.dflt_value != null,
+        default_sha256: column.dflt_value == null ? null : await sha256Hex(String(column.dflt_value)),
+        primary_key_order: Number(column.pk || 0),
+      }))) : null,
+      indexes: indexesOk ? indexDetails : null,
+      foreign_keys: foreignKeysOk ? foreignKeysResult.value.map(fk => ({
+        id: Number(fk.id),
+        sequence: Number(fk.seq),
+        table: String(fk.table || ""),
+        from: String(fk.from || ""),
+        to: String(fk.to || ""),
+        on_update: String(fk.on_update || ""),
+        on_delete: String(fk.on_delete || ""),
+        match: String(fk.match || ""),
+      })) : null,
+    };
+  }));
+  let objects = [];
+  let objectsVerification = "OBSERVED";
+  try {
+    objects = await schemaAll(
+      db,
+      `SELECT type, name, tbl_name FROM sqlite_master
+       WHERE type IN ('trigger','view') AND tbl_name IN (${APP_SCHEMA_DIAGNOSTIC_TABLES.map(() => "?").join(",")})
+       ORDER BY tbl_name, type, name`,
+      APP_SCHEMA_DIAGNOSTIC_TABLES,
+    );
+    objects = objects.map(row => ({
+      type: String(row.type || ""),
+      name: String(row.name || ""),
+      table: String(row.tbl_name || ""),
+    }));
+  } catch {
+    objectsVerification = "NOT_VERIFIED";
+  }
+  const complete = tables.every(table => table.verification === "OBSERVED_SCHEMA_ONLY" || table.verification === "MISSING") &&
+    objectsVerification === "OBSERVED";
+  return {
+    scope: "APP_SCHEMA_DIAGNOSTIC_TABLES_ONLY",
+    verification: complete ? "OBSERVED_SCHEMA_ONLY" : "PARTIAL_NOT_VERIFIED",
+    baseline_comparison: "NOT_CONFIGURED",
+    compatibility_verdict: "NOT_EVALUATED",
+    table_count: tables.length,
+    tables,
+    objects,
+    objects_verification: objectsVerification,
+  };
+}
 
 async function migrateRoute(req, env, url, ctx) {
   const db = env.DB;
-
   if (url.pathname === "/api/super/schema-status" && req.method === "GET") {
+    const allTables = [...new Set([...REQUIRED_TABLES, ...WORKER_REFERENCED_TABLES, ...APP_SCHEMA_DIAGNOSTIC_TABLES])];
     const rows = await db.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_TABLES.map(() => "?").join(",")})`,
-    ).bind(...REQUIRED_TABLES).all();
+      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${allTables.map(() => "?").join(",")})`,
+    ).bind(...allTables).all();
     const have = (rows.results || []).map(r => r.name);
+    const appStructure = await inspectAppSchema(db, new Set(have));
+    const coreHave = REQUIRED_TABLES.filter(t => have.includes(t));
+    const workerHave = WORKER_REFERENCED_TABLES.filter(t => have.includes(t));
+    const missingCore = REQUIRED_TABLES.filter(t => !have.includes(t));
+    const missingWorker = WORKER_REFERENCED_TABLES.filter(t => !have.includes(t));
     return json({
       ok: true,
       data: {
-        ready: REQUIRED_TABLES.every(t => have.includes(t)),
-        have, missing: REQUIRED_TABLES.filter(t => !have.includes(t)),
+        required_tables_present: missingCore.length === 0,
+        have: coreHave,
+        missing: missingCore,
+        core_table_count: REQUIRED_TABLES.length,
+        worker_referenced_tables_present: missingWorker.length === 0,
+        worker_referenced_have: workerHave,
+        worker_referenced_missing: missingWorker,
+        worker_referenced_table_count: WORKER_REFERENCED_TABLES.length,
+        all_worker_tables_present: missingCore.length === 0 && missingWorker.length === 0,
+        total_checked_table_count: allTables.length,
+        verification: "TABLE_NAMES_ONLY",
+        app_structure: appStructure,
+        migration_enabled: false,
       },
     });
   }
-
   if (url.pathname === "/api/super/migrate" && req.method === "POST") {
-    const body = await readJson(req, { allowEmpty: true });
-    if (body.confirm !== "yes") return fail("需要确认参数 confirm=yes", 400);
-    const done = [];
-    const skipped = [];
-    const errors = [];
-    for (const [name, sql] of MIGRATE_STATEMENTS) {
-      try {
-        await db.prepare(sql).run();
-        done.push(name);
-      } catch (e) {
-        const msg = String(e?.message || "");
-        if (/already exists|duplicate column/i.test(msg)) skipped.push(name);
-        else errors.push({ name, error: msg.slice(0, 160) });
-      }
-    }
-    // 旧版 convert_links 可能缺列：逐个尝试补齐（已存在会报 duplicate column，忽略）
-    let addedOwner = false;
-    for (const [col, ddl] of [
-      ["owner_user_id", "ALTER TABLE convert_links ADD COLUMN owner_user_id TEXT"],
-      ["owner_key", "ALTER TABLE convert_links ADD COLUMN owner_key TEXT"],
-    ]) {
-      try {
-        await db.prepare(ddl).run();
-        addedOwner = true;
-      } catch (e) {
-        if (!/duplicate column|already exists/i.test(String(e?.message || ""))) {
-          errors.push({ name: `convert_links.${col}`, error: String(e?.message || "").slice(0, 160) });
-        }
-      }
-    }
-    try { await db.prepare("CREATE INDEX IF NOT EXISTS ix_convert_links_owner ON convert_links(owner_key, group_name)").run(); } catch {}
-    for (const ddl of [
-      "ALTER TABLE node_sync_logs ADD COLUMN trigger_kind TEXT NOT NULL DEFAULT 'manual'",
-      "ALTER TABLE node_sync_logs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
-      "ALTER TABLE node_sync_logs ADD COLUMN missing_nodes INTEGER NOT NULL DEFAULT 0",
-    ]) { try { await db.prepare(ddl).run(); } catch {} }
-    try { await db.prepare("ALTER TABLE admin_app_perms ADD COLUMN free_group_enabled INTEGER NOT NULL DEFAULT 0").run(); } catch {}
-    const rows = await db.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_TABLES.map(() => "?").join(",")})`,
-    ).bind(...REQUIRED_TABLES).all();
-    const have = (rows.results || []).map(r => r.name);
-    const missing = REQUIRED_TABLES.filter(t => !have.includes(t));
-    await auditStmt(db, ctx, {
-      action: "schema.migrate", targetType: "schema", targetId: "v1",
-      after: { done: done.length, skipped: skipped.length, missing: missing.length, addedOwner },
-      detail: missing.length ? `仍缺：${missing.join(",")}` : "全部就绪",
-    }).run().catch(() => {});
-    return json({
-      ok: missing.length === 0 && errors.length === 0,
-      data: { ready: missing.length === 0, done, skipped, errors, missing, owner_column_added: addedOwner },
-    }, missing.length === 0 && errors.length === 0 ? 200 : 500);
+    return fail(
+      "数据库自动迁移已安全暂停：当前版本只支持只读检查，需先完成目标数据库结构核对和迁移计划验收。",
+      503,
+      { code: "MIGRATION_REVIEW_REQUIRED" },
+    );
   }
-
   return fail("接口不存在", 404);
 }
 
@@ -4274,13 +4761,25 @@ async function addAppLink(db, ctx, adminId, body) {
   const count = await db.prepare("SELECT COUNT(*) AS n FROM app_links WHERE admin_user_id = ?").bind(adminId).first();
   if (Number(count?.n || 0) >= perms.max_links) return fail(`最多 ${perms.max_links} 个入口`, 409, { code: "LINKS_LIMIT" });
   const id = newId();
-  await db.prepare(
-    "INSERT INTO app_links(id, admin_user_id, title, url, sort) VALUES(?,?,?,?,?)",
-  ).bind(id, adminId, title, url, Number(body.sort) || APP_LINK_SORT_DEFAULT).run();
-  await auditStmt(db, ctx, {
-    action: "app_link.create", targetType: "app_link", targetId: id,
-    after: { title, url, admin: adminId }, detail: "APP 入口链接",
-  }).run().catch(() => {});
+  try {
+    await userBatch(db, ctx, [
+      assertStmt(db,
+        "EXISTS (SELECT 1 FROM app_users WHERE id = ?) AND COALESCE((SELECT links_enabled FROM admin_app_perms WHERE admin_user_id = ?),1) = 1 AND (SELECT COUNT(*) FROM app_links WHERE admin_user_id = ?) < COALESCE((SELECT max_links FROM admin_app_perms WHERE admin_user_id = ?),1)",
+        [adminId, adminId, adminId, adminId]),
+      db.prepare(
+        "INSERT INTO app_links(id, admin_user_id, title, url, sort) VALUES(?,?,?,?,?)",
+      ).bind(id, adminId, title, url, Number(body.sort) || APP_LINK_SORT_DEFAULT),
+      auditStmt(db, ctx, {
+        action: "app_link.create", targetType: "app_link", targetId: id,
+        after: { title, url, admin: adminId }, detail: "APP 入口链接",
+      }),
+    ]);
+  } catch (e) {
+    if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+      return fail("APP 入口权限或数量上限刚刚发生变化，请刷新后重试", 409, { code: "LINKS_LIMIT_CHANGED" });
+    }
+    throw e;
+  }
   return json({ ok: true, data: { id, title, url } }, 201);
 }
 
@@ -4299,12 +4798,14 @@ async function userAppLinksRoute(req, env, url, ctx) {
     const row = await db.prepare("SELECT id FROM app_links WHERE id = ? AND admin_user_id = ?").bind(id, ctx.effectiveId).first();
     if (!row) return fail("入口不存在", 404);
     const cutoff = ctx.appAuthorization?.formalCutoff || null;
-    const deleted = cutoff
-      ? await db.prepare("DELETE FROM app_links WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?)")
-          .bind(id, ctx.effectiveId, cutoff).run()
-      : await db.prepare("DELETE FROM app_links WHERE id = ? AND admin_user_id = ?")
-          .bind(id, ctx.effectiveId).run();
-    if (!deleted.meta?.changes) return fail("入口已变化或不符合历史删除范围", 409);
+    const deleted = await userBatch(db, ctx, [
+      cutoff
+        ? db.prepare("DELETE FROM app_links WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?)")
+            .bind(id, ctx.effectiveId, cutoff)
+        : db.prepare("DELETE FROM app_links WHERE id = ? AND admin_user_id = ?")
+            .bind(id, ctx.effectiveId),
+    ]);
+    if (!deleted[0]?.meta?.changes) return fail("入口已变化或不符合历史删除范围", 409);
     return json({ ok: true, data: { id, deleted: true } });
   }
   return fail("接口不存在", 404);
@@ -4333,9 +4834,14 @@ async function superAppLinksRoute(req, env, url, ctx) {
   }
   if (seg[2] === "app-links" && seg.length === 4 && req.method === "DELETE") {
     const id = s(seg[3], 80);
-    const row = await db.prepare("SELECT id FROM app_links WHERE id = ?").bind(id).first();
+    const row = await db.prepare("SELECT * FROM app_links WHERE id = ?").bind(id).first();
     if (!row) return fail("入口不存在", 404);
-    await db.prepare("DELETE FROM app_links WHERE id = ?").bind(id).run();
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_links WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_links WHERE id = ?").bind(id),
+      auditStmt(db, ctx, { action: "app_link.super_delete", targetType: "app_link", targetId: id, before: { admin_user_id: row.admin_user_id, title: row.title, url: row.url } }),
+    ]);
+    if (!deleted[1]?.meta?.changes) return fail("入口已变化", 409);
     return json({ ok: true, data: { id, deleted: true } });
   }
   if (seg[2] === "app-perms" && seg.length === 4 && req.method === "PUT") {
@@ -4345,19 +4851,25 @@ async function superAppLinksRoute(req, env, url, ctx) {
     const enabled = body.links_enabled === undefined ? 1 : (body.links_enabled ? 1 : 0);
     const maxLinks = num(body.max_links, 1);
     if (!Number.isInteger(maxLinks) || maxLinks < 0 || maxLinks > 10) return fail("max_links 需为 0-10", 400);
+    const hasFreeGroup = body.free_group_enabled === undefined ? 0 : 1;
     const cur = await db.prepare("SELECT free_group_enabled FROM admin_app_perms WHERE admin_user_id = ?").bind(adminId).first();
     const freeGroup = body.free_group_enabled === undefined
       ? (cur ? Number(cur.free_group_enabled) : 0)
       : (body.free_group_enabled ? 1 : 0);
-    await db.prepare(
-      `INSERT INTO admin_app_perms(admin_user_id, links_enabled, max_links, free_group_enabled) VALUES(?,?,?,?)
-       ON CONFLICT(admin_user_id) DO UPDATE SET links_enabled=excluded.links_enabled, max_links=excluded.max_links,
-         free_group_enabled=excluded.free_group_enabled, updated_at=CURRENT_TIMESTAMP`,
-    ).bind(adminId, enabled, maxLinks, freeGroup).run();
-    await auditStmt(db, ctx, {
-      action: "app_perm.update", targetType: "user", targetId: adminId,
-      after: { links_enabled: enabled, max_links: maxLinks, free_group_enabled: freeGroup },
-    }).run().catch(() => {});
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ?)", [adminId]),
+      db.prepare(
+        `INSERT INTO admin_app_perms(admin_user_id, links_enabled, max_links, free_group_enabled) VALUES(?,?,?,?)
+         ON CONFLICT(admin_user_id) DO UPDATE SET links_enabled=excluded.links_enabled, max_links=excluded.max_links,
+           free_group_enabled=CASE WHEN ? = 1 THEN excluded.free_group_enabled ELSE admin_app_perms.free_group_enabled END,
+           updated_at=CURRENT_TIMESTAMP`,
+      ).bind(adminId, enabled, maxLinks, freeGroup, hasFreeGroup),
+      auditStmt(db, ctx, {
+        action: "app_perm.update", targetType: "user", targetId: adminId,
+        before: cur ? { free_group_enabled: cur.free_group_enabled } : null,
+        after: { links_enabled: enabled, max_links: maxLinks, free_group_enabled: freeGroup },
+      }),
+    ]);
     return json({ ok: true, data: { admin_user_id: adminId, links_enabled: enabled, max_links: maxLinks, free_group_enabled: freeGroup } });
   }
   if (seg[2] === "app-entitlements" && seg.length === 5 && seg[4] === "rebind" && req.method === "POST") {
@@ -4365,14 +4877,21 @@ async function superAppLinksRoute(req, env, url, ctx) {
     const body = await readJson(req);
     const deviceId = s(body.device_id, 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
-    const row = await db.prepare("SELECT id, device_id FROM app_entitlements WHERE id = ?").bind(id).first();
+    const row = await db.prepare("SELECT id, admin_user_id, device_id FROM app_entitlements WHERE id = ?").bind(id).first();
     if (!row) return fail("授权不存在", 404);
-    await db.prepare("UPDATE app_entitlements SET device_id = ? WHERE id = ?").bind(deviceId, id).run();
-    await auditStmt(db, ctx, {
-      action: "app_entitlement.rebind", targetType: "app_entitlement", targetId: id,
-      before: { device_id: row.device_id }, after: { device_id: deviceId }, detail: "换绑设备",
-    }).run().catch(() => {});
-    return json({ ok: true, data: { id, device_id: deviceId, token: await entToken(env, id, deviceId) } });
+    const token = await entToken(env, id, deviceId);
+    const updated = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_entitlements WHERE id = ? AND device_id = ?)", [id, row.device_id]),
+      db.prepare("UPDATE app_entitlements SET device_id = ? WHERE id = ? AND device_id = ?")
+        .bind(deviceId, id, row.device_id),
+      auditStmt(db, ctx, {
+        action: "app_entitlement.rebind", targetType: "app_entitlement", targetId: id,
+        before: { admin_user_id: row.admin_user_id, device_id: row.device_id },
+        after: { admin_user_id: row.admin_user_id, device_id: deviceId }, detail: "换绑设备",
+      }),
+    ]);
+    if (!updated[1]?.meta?.changes) return fail("授权已被其他操作更新，请刷新后重试", 409);
+    return json({ ok: true, data: { id, device_id: deviceId, token } });
   }
   return fail("接口不存在", 404);
 }
@@ -4414,23 +4933,42 @@ async function appFreeGroupRoute(req, env, url) {
 async function appLinksForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const token = s(url.searchParams.get("token"), 200);
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))];
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
-  const ent = await db.prepare(
-    `SELECT id, admin_user_id FROM app_entitlements
-      WHERE device_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
-      ORDER BY created_at DESC LIMIT 1`,
-  ).bind(deviceId).first();
-  if (!ent) return fail("授权已过期或不存在", 403, { code: "ENTITLEMENT_EXPIRED" });
-  if (!(await verifyEntToken(env, ent.id, deviceId, token))) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
-  const perms = await adminPerms(db, ent.admin_user_id);
-  if (!perms.links_enabled) return json({ ok: true, data: [] });
-  const rows = await db.prepare(
-    "SELECT id, title, url FROM app_links WHERE admin_user_id = ? AND enabled = 1 ORDER BY sort ASC, created_at ASC",
-  ).bind(ent.admin_user_id).all();
-  const list = rows.results || [];
-  if (!list.length) return json({ ok: true, data: [{ id: "default", title: "购买卡密", url: "", default: true }] });
-  return json({ ok: true, data: list });
+  if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
+  if (!tokens.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
+  const ents = await db.prepare(
+    `SELECT e.id, e.admin_user_id FROM app_entitlements e
+      JOIN app_cards c ON c.id = e.card_id AND c.admin_user_id = e.admin_user_id
+      WHERE e.device_id = ? AND e.status = 'active'
+        AND datetime(e.expires_at) > datetime('now')
+        AND c.status = 'used' AND COALESCE(c.manual_disabled, 0) = 0
+        AND (c.expires_at IS NULL OR datetime(c.expires_at) > datetime('now'))
+      ORDER BY e.created_at DESC`,
+  ).bind(deviceId).all();
+  const authorized = [];
+  for (const ent of ents.results || []) {
+    for (const candidate of tokens) {
+      if (await verifyEntToken(env, ent.id, deviceId, candidate)) {
+        authorized.push(ent);
+        break;
+      }
+    }
+  }
+  if (!authorized.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
+  const adminIds = [...new Set(authorized.map(x => x.admin_user_id).filter(Boolean))];
+  const out = [];
+  for (const adminId of adminIds) {
+    const perms = await adminPerms(db, adminId);
+    if (!perms.links_enabled) continue;
+    const rows = await db.prepare(
+      "SELECT id, title, url FROM app_links WHERE admin_user_id = ? AND enabled = 1 ORDER BY sort ASC, created_at ASC",
+    ).bind(adminId).all();
+    const list = rows.results || [];
+    if (!list.length) out.push({ id: "default", admin_user_id: adminId, title: "购买卡密", url: "", default: true });
+    else for (const item of list) out.push({ ...item, admin_user_id: adminId });
+  }
+  return json({ ok: true, data: out });
 }
 
 /* ────────────────────────────── 管理员自定义 APP 分组 ────────────────────────────── */
@@ -4459,7 +4997,7 @@ async function groupNodeList(db, groupId) {
 async function superAppGroupsRoute(req, env, url, ctx) {
   const db = env.DB;
   const seg = url.pathname.split("/").filter(Boolean);   // api,super,app-groups,<id>,<sub>,<key>
-  const id = seg[3];
+  const id = s(seg[3], 80);
 
   if (seg.length === 3 && req.method === "GET") {
     const adminId = s(url.searchParams.get("admin"), 80);
@@ -4477,9 +5015,12 @@ async function superAppGroupsRoute(req, env, url, ctx) {
     if (!name) return fail("分组名不能为空", 400);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 只能是 public/assigned/free", 400);
     const gid = newId();
-    await db.prepare(
-      "INSERT INTO app_groups(id, admin_user_id, name, mode, sort) VALUES(?,?,?,?,?)",
-    ).bind(gid, adminId, name, mode, num(body.sort, 100)).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_users WHERE id = ?)", [adminId]),
+      db.prepare("INSERT INTO app_groups(id, admin_user_id, name, mode, sort) VALUES(?,?,?,?,?)")
+        .bind(gid, adminId, name, mode, num(body.sort, 100)),
+      auditStmt(db, ctx, { action: "app_group.super_create", targetType: "app_group", targetId: gid, after: { admin_user_id: adminId, name, mode } }),
+    ]);
     return json({ ok: true, data: { id: gid, name, mode } }, 201);
   }
   if (seg.length === 4 && req.method === "PUT") {
@@ -4490,43 +5031,98 @@ async function superAppGroupsRoute(req, env, url, ctx) {
     const mode = body.mode === undefined ? row.mode : s(body.mode, 20);
     const enabled = body.enabled === undefined ? row.enabled : (body.enabled ? 1 : 0);
     const sort = body.sort === undefined ? row.sort : num(body.sort, row.sort);
+    if (!name) return fail("分组名不能为空", 400);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 不合法", 400);
-    await db.prepare("UPDATE app_groups SET name=?, mode=?, enabled=?, sort=? WHERE id=?").bind(name, mode, enabled, sort, id).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("UPDATE app_groups SET name=?, mode=?, enabled=?, sort=? WHERE id=?")
+        .bind(name, mode, enabled, sort, id),
+      auditStmt(db, ctx, { action: "app_group.super_update", targetType: "app_group", targetId: id, before: { admin_user_id: row.admin_user_id, name: row.name, mode: row.mode, enabled: row.enabled, sort: row.sort }, after: { admin_user_id: row.admin_user_id, name, mode, enabled, sort } }),
+    ]);
     return json({ ok: true, data: { id, name, mode, enabled, sort } });
   }
   if (seg.length === 4 && req.method === "DELETE") {
-    await db.prepare("DELETE FROM app_groups WHERE id = ?").bind(id).run();
-    await db.prepare("DELETE FROM app_group_sources WHERE group_id = ?").bind(id).run();
-    await db.prepare("DELETE FROM app_group_members WHERE group_id = ?").bind(id).run();
+    const row = await db.prepare("SELECT * FROM app_groups WHERE id = ?").bind(id).first();
+    if (!row) return fail("分组不存在", 404);
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)").bind(id, id),
+      db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)").bind(id, id),
+      db.prepare("DELETE FROM app_groups WHERE id = ?").bind(id),
+      auditStmt(db, ctx, { action: "app_group.super_delete", targetType: "app_group", targetId: id, before: { admin_user_id: row.admin_user_id, name: row.name, mode: row.mode } }),
+    ]);
     return json({ ok: true, data: { id, deleted: true } });
   }
   if (seg.length === 5 && seg[4] === "sources" && req.method === "POST") {
     const body = await readJson(req);
     const sourceId = s(body.source_id, 80);
+    if (!sourceId) return fail("来源 ID 无效", 400);
     const exists = await db.prepare("SELECT 1 AS ok FROM subscription_sources WHERE id = ?").bind(sourceId).first();
     if (!exists) return fail("来源不存在", 404);
-    await db.prepare("INSERT OR IGNORE INTO app_group_sources(group_id, source_id) VALUES(?,?)").bind(id, sourceId).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?) AND EXISTS (SELECT 1 FROM subscription_sources WHERE id = ?)", [id, sourceId]),
+      db.prepare("INSERT OR IGNORE INTO app_group_sources(group_id, source_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM app_groups WHERE id = ?) AND EXISTS (SELECT 1 FROM subscription_sources WHERE id = ?)")
+        .bind(id, sourceId, id, sourceId),
+      auditStmt(db, ctx, { action: "app_group.super_source_add", targetType: "app_group", targetId: id, after: { source_id: sourceId } }),
+    ]);
     return json({ ok: true, data: { group_id: id, source_id: sourceId } }, 201);
   }
   if (seg.length === 6 && seg[4] === "sources" && req.method === "DELETE") {
-    await db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND source_id = ?").bind(id, s(seg[5], 80)).run();
-    return json({ ok: true, data: { removed: true } });
+    const sourceId = s(seg[5], 80);
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND source_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)")
+        .bind(id, sourceId, id),
+      auditStmt(db, ctx, { action: "app_group.super_source_remove", targetType: "app_group", targetId: id, before: { source_id: sourceId } }),
+    ]);
+    return json({ ok: true, data: { removed: !!deleted[1]?.meta?.changes } });
   }
   if (seg.length === 5 && seg[4] === "members" && req.method === "POST") {
     const body = await readJson(req);
     const deviceId = s(body.device_id, 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
-    await db.prepare("INSERT OR IGNORE INTO app_group_members(group_id, device_id) VALUES(?,?)").bind(id, deviceId).run();
+    await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("INSERT OR IGNORE INTO app_group_members(group_id, device_id) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM app_groups WHERE id = ?)")
+        .bind(id, deviceId, id),
+      auditStmt(db, ctx, { action: "app_group.super_member_add", targetType: "app_group", targetId: id, after: { device_id: deviceId } }),
+    ]);
     return json({ ok: true, data: { group_id: id, device_id: deviceId } }, 201);
   }
   if (seg.length === 6 && seg[4] === "members" && req.method === "DELETE") {
-    await db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND device_id = ?").bind(id, s(seg[5], 80)).run();
-    return json({ ok: true, data: { removed: true } });
+    const deviceId = s(seg[5], 80);
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND device_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ?)")
+        .bind(id, deviceId, id),
+      auditStmt(db, ctx, { action: "app_group.super_member_remove", targetType: "app_group", targetId: id, before: { device_id: deviceId } }),
+    ]);
+    return json({ ok: true, data: { removed: !!deleted[1]?.meta?.changes } });
   }
   return fail("接口不存在", 404);
 }
 
 /** 管理员管理自己的分组（注册用户也能用） */
+async function cardGroupMappingHistory(db, adminId, groupId) {
+  try {
+    const table = await db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    ).bind("app_card_group_mappings").first();
+    if (!table) return { ready: false, hasHistory: false, hasActive: false };
+    const result = await db.prepare(
+      "SELECT status FROM app_card_group_mappings WHERE admin_user_id = ? AND group_id = ?",
+    ).bind(adminId, groupId).all();
+    const rows = result?.results || [];
+    return {
+      ready: true,
+      hasHistory: rows.length > 0,
+      hasActive: rows.some(row => row.status === "active"),
+    };
+  } catch {
+    return { unavailable: true };
+  }
+}
+
 async function userAppGroupsRoute(req, env, url, ctx) {
   const db = env.DB;
   const seg = url.pathname.split("/").filter(Boolean);   // api,user,app-groups,<id>,...
@@ -4546,8 +5142,11 @@ async function userAppGroupsRoute(req, env, url, ctx) {
     if (!name) return fail("分组名不能为空", 400);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 不合法", 400);
     const gid = newId();
-    await db.prepare("INSERT INTO app_groups(id, admin_user_id, name, mode, sort) VALUES(?,?,?,?,?)")
-      .bind(gid, ctx.effectiveId, name, mode, num(body.sort, 100)).run();
+    await userBatch(db, ctx, [
+      db.prepare("INSERT INTO app_groups(id, admin_user_id, name, mode, sort) VALUES(?,?,?,?,?)")
+        .bind(gid, ctx.effectiveId, name, mode, num(body.sort, 100)),
+      auditStmt(db, ctx, { action: "app_group.create", targetType: "app_group", targetId: gid, after: { name, mode } }),
+    ]);
     return json({ ok: true, data: { id: gid, name, mode } }, 201);
   }
   if (seg.length === 4 && req.method === "PUT") {
@@ -4557,22 +5156,43 @@ async function userAppGroupsRoute(req, env, url, ctx) {
     const name = body.name === undefined ? row.name : s(body.name, 40);
     const mode = body.mode === undefined ? row.mode : s(body.mode, 20);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 不合法", 400);
-    const updated = await db.prepare("UPDATE app_groups SET name=?, mode=? WHERE id=? AND admin_user_id=?")
-      .bind(name, mode, id, ctx.effectiveId).run();
-    if (!updated.meta?.changes) return fail("分组已变化或不属于你", 409);
+    if (row.mode === "card" && mode !== "card") {
+      const mappings = await cardGroupMappingHistory(db, ctx.effectiveId, id);
+      if (mappings.unavailable) return fail("无法确认卡密分组关联状态，请稍后重试", 503, { code: "APP_GROUP_MAPPING_CHECK_UNAVAILABLE" });
+      if (mappings.hasActive) return fail("该分组仍分配给有效卡密，请先调整卡密分组配置后再修改类型", 409, { code: "APP_GROUP_HAS_ACTIVE_CARD_MAPPINGS" });
+    }
+    const updated = await userBatch(db, ctx, [
+      db.prepare("UPDATE app_groups SET name=?, mode=? WHERE id=? AND admin_user_id=?")
+        .bind(name, mode, id, ctx.effectiveId),
+      auditStmt(db, ctx, { action: "app_group.update", targetType: "app_group", targetId: id, before: { name: row.name, mode: row.mode }, after: { name, mode } }),
+    ]);
+    if (!updated[0]?.meta?.changes) return fail("分组已变化或不属于你", 409);
     return json({ ok: true, data: { id, name, mode } });
   }
   if (seg.length === 4 && req.method === "DELETE") {
-    if (!(await own(id))) return fail("分组不存在", 404);
+    const row = await own(id);
+    if (!row) return fail("分组不存在", 404);
+    const mappings = await cardGroupMappingHistory(db, ctx.effectiveId, id);
+    if (mappings.unavailable) return fail("无法确认卡密分组关联状态，请稍后重试", 503, { code: "APP_GROUP_MAPPING_CHECK_UNAVAILABLE" });
+    if (mappings.hasHistory) return fail("该分组曾关联卡密，当前版本暂不允许物理删除；待 APP 增量同步与清理确认机制完成后再开放删除", 409, { code: "APP_GROUP_HAS_CARD_MAPPING_HISTORY" });
     const cutoff = ctx.appAuthorization?.formalCutoff || null;
-    const deleted = cutoff
-      ? await db.prepare("DELETE FROM app_groups WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?)")
-          .bind(id, ctx.effectiveId, cutoff).run()
-      : await db.prepare("DELETE FROM app_groups WHERE id = ? AND admin_user_id = ?")
-          .bind(id, ctx.effectiveId).run();
-    if (!deleted.meta?.changes) return fail("分组已变化或不符合历史删除范围", 409);
-    await db.prepare("DELETE FROM app_group_sources WHERE group_id = ?").bind(id).run();
-    await db.prepare("DELETE FROM app_group_members WHERE group_id = ?").bind(id).run();
+    const ownershipGuard = cutoff
+      ? assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?))", [id, ctx.effectiveId, cutoff])
+      : assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)", [id, ctx.effectiveId]);
+    const deleted = await userBatch(db, ctx, [
+      ownershipGuard,
+      db.prepare("DELETE FROM app_group_sources WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)")
+        .bind(id, id, ctx.effectiveId),
+      db.prepare("DELETE FROM app_group_members WHERE group_id = ? AND EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)")
+        .bind(id, id, ctx.effectiveId),
+      cutoff
+        ? db.prepare("DELETE FROM app_groups WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?)")
+            .bind(id, ctx.effectiveId, cutoff)
+        : db.prepare("DELETE FROM app_groups WHERE id = ? AND admin_user_id = ?")
+            .bind(id, ctx.effectiveId),
+      auditStmt(db, ctx, { action: "app_group.delete", targetType: "app_group", targetId: id, before: { name: row.name, mode: row.mode } }),
+    ]);
+    if (!deleted[3]?.meta?.changes) return fail("分组已变化或不符合历史删除范围", 409);
     return json({ ok: true, data: { deleted: true } });
   }
   if (seg.length === 5 && seg[4] === "sources" && req.method === "POST") {
@@ -4583,27 +5203,45 @@ async function userAppGroupsRoute(req, env, url, ctx) {
       "SELECT s.id FROM subscription_sources s JOIN source_ownership so ON so.source_id = s.id WHERE s.id = ? AND so.user_id = ?",
     ).bind(sourceId, ctx.effectiveId).first();
     if (!src) return fail("来源不存在或不属于你", 404);
-    await db.prepare(
-      `INSERT OR IGNORE INTO app_group_sources(group_id, source_id)
-       SELECT ?, ? WHERE EXISTS (
-         SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?
-       ) AND EXISTS (
-         SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?
-       )`,
-    ).bind(id, sourceId, id, ctx.effectiveId, sourceId, ctx.effectiveId).run();
+    await userBatch(db, ctx, [
+      db.prepare(
+        `INSERT OR IGNORE INTO app_group_sources(group_id, source_id)
+         SELECT ?, ? WHERE EXISTS (
+           SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?
+         ) AND EXISTS (
+           SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?
+         )`,
+      ).bind(id, sourceId, id, ctx.effectiveId, sourceId, ctx.effectiveId),
+      auditStmt(db, ctx, { action: "app_group.source.add", targetType: "app_group", targetId: id, after: { source_id: sourceId } }),
+    ]);
     return json({ ok: true, data: { group_id: id, source_id: sourceId } }, 201);
+  }
+  if (seg.length === 6 && seg[4] === "sources" && req.method === "DELETE") {
+    if (!(await own(id))) return fail("分组不存在", 404);
+    const sourceId = s(seg[5], 80);
+    const deleted = await userBatch(db, ctx, [
+      db.prepare(
+        `DELETE FROM app_group_sources WHERE group_id = ? AND source_id = ?
+          AND EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?)`,
+      ).bind(id, sourceId, id, ctx.effectiveId),
+      auditStmt(db, ctx, { action: "app_group.source.remove", targetType: "app_group", targetId: id, before: { source_id: sourceId } }),
+    ]);
+    return json({ ok: true, data: { removed: !!deleted[0]?.meta?.changes } });
   }
   if (seg.length === 5 && seg[4] === "members" && req.method === "POST") {
     if (!(await own(id))) return fail("分组不存在", 404);
     const body = await readJson(req);
     const deviceId = s(body.device_id, 80);
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
-    await db.prepare(
-      `INSERT OR IGNORE INTO app_group_members(group_id, device_id)
-       SELECT ?, ? WHERE EXISTS (
-         SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?
-       )`,
-    ).bind(id, deviceId, id, ctx.effectiveId).run();
+    await userBatch(db, ctx, [
+      db.prepare(
+        `INSERT OR IGNORE INTO app_group_members(group_id, device_id)
+         SELECT ?, ? WHERE EXISTS (
+           SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ?
+         )`,
+      ).bind(id, deviceId, id, ctx.effectiveId),
+      auditStmt(db, ctx, { action: "app_group.member.add", targetType: "app_group", targetId: id, after: { device_id: deviceId } }),
+    ]);
     return json({ ok: true, data: { group_id: id, device_id: deviceId } }, 201);
   }
   return fail("接口不存在", 404);
@@ -4613,43 +5251,167 @@ async function userAppGroupsRoute(req, env, url, ctx) {
 async function appGroupsForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const token = s(url.searchParams.get("token"), 200);
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))];
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
+  if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
 
-  const ent = await db.prepare(
-    `SELECT id, admin_user_id FROM app_entitlements
-      WHERE device_id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
-      ORDER BY created_at DESC LIMIT 1`,
-  ).bind(deviceId).first();
-  if (!ent) {
-    // 没有有效授权：只能用“激活过且仍保留”的免费分组
-    const grants = await db.prepare("SELECT admin_user_id FROM app_free_grants WHERE device_id = ?").bind(deviceId).all();
+  const entitlementResult = await db.prepare(
+    `SELECT e.id, e.admin_user_id, e.card_id, e.expires_at, e.purge_at, e.status
+       FROM app_entitlements e
+       JOIN app_cards c ON c.id = e.card_id AND c.admin_user_id = e.admin_user_id
+      WHERE e.device_id = ? AND e.status = 'active'
+        AND datetime(e.expires_at) > datetime('now')
+        AND c.status = 'used' AND COALESCE(c.manual_disabled, 0) = 0
+        AND (c.expires_at IS NULL OR datetime(c.expires_at) > datetime('now'))
+      ORDER BY e.created_at DESC`,
+  ).bind(deviceId).all();
+  const entitlements = entitlementResult?.results || [];
+
+  if (!entitlements.length) {
+    // No active card entitlement: keep the existing per-admin free-grant path.
+    const grants = await db.prepare("SELECT admin_user_id FROM app_free_grants WHERE device_id = ? ORDER BY admin_user_id").bind(deviceId).all();
     if (!(grants.results || []).length) return fail("授权已过期或不存在", 403, { code: "ENTITLEMENT_EXPIRED" });
     const out = [];
-    for (const g of grants.results) {
-      const rows = await db.prepare("SELECT * FROM app_groups WHERE admin_user_id = ? AND mode = 'free' AND enabled = 1 ORDER BY sort").bind(g.admin_user_id).all();
-      for (const grp of rows.results || []) {
-        out.push({ id: grp.id, name: grp.name, mode: grp.mode, locked: true, free: true, nodes: await groupNodeList(db, grp.id) });
+    const seen = new Set();
+    for (const grant of grants.results || []) {
+      const rows = await db.prepare("SELECT * FROM app_groups WHERE admin_user_id = ? AND mode = 'free' AND enabled = 1 ORDER BY sort, created_at")
+        .bind(grant.admin_user_id).all();
+      for (const group of rows.results || []) {
+        const key = String(group.admin_user_id) + ":" + String(group.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          id: group.id, admin_user_id: group.admin_user_id,
+          name: group.name, mode: group.mode, locked: true, free: true,
+          card_ids: [], nodes: await groupNodeList(db, group.id),
+        });
       }
     }
-    return json({ ok: true, data: { entitled: false, groups: out } });
+    return json({ ok: true, data: { entitled: false, admin_user_ids: [...new Set((grants.results || []).map(x => x.admin_user_id))], card_groups_ready: false, groups: out } });
   }
-  if (!(await verifyEntToken(env, ent.id, deviceId, token))) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
 
-  const groups = await db.prepare(
+  // Each token authorizes only its matching card entitlement. New clients
+  // send one token per active card; legacy clients that store one token keep
+  // access to that card only, never to another admin/card by token coincidence.
+  const authorizedEntitlements = [];
+  for (const entitlement of entitlements) {
+    for (const token of tokens) {
+      if (await verifyEntToken(env, entitlement.id, deviceId, token)) {
+        authorizedEntitlements.push(entitlement);
+        break;
+      }
+    }
+  }
+  if (!authorizedEntitlements.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
+
+  const adminIds = [...new Set(authorizedEntitlements.map(x => x.admin_user_id).filter(Boolean))];
+  if (!adminIds.length) return fail("授权数据无效", 403, { code: "ENTITLEMENT_INVALID" });
+  const adminPlaceholders = adminIds.map(() => "?").join(",");
+  const legacyGroups = await db.prepare(
     `SELECT g.* FROM app_groups g
-      WHERE g.admin_user_id = ? AND g.enabled = 1 AND (
+      WHERE g.admin_user_id IN (${adminPlaceholders}) AND g.enabled = 1 AND (
         g.mode = 'public'
         OR g.mode = 'free'
-        OR (g.mode = 'assigned' AND EXISTS (SELECT 1 FROM app_group_members m WHERE m.group_id = g.id AND m.device_id = ?))
-      ) ORDER BY CASE g.mode WHEN 'free' THEN 2 ELSE 0 END, g.sort ASC, g.created_at ASC`,
-  ).bind(ent.admin_user_id, deviceId).all();
+        OR (g.mode = 'assigned' AND EXISTS (
+          SELECT 1 FROM app_group_members m
+           WHERE m.group_id = g.id AND m.device_id = ?
+        ))
+      )
+      ORDER BY g.admin_user_id,
+        CASE g.mode WHEN 'public' THEN 0 WHEN 'assigned' THEN 1 WHEN 'free' THEN 2 ELSE 3 END,
+        g.sort ASC, g.created_at ASC`,
+  ).bind(...adminIds, deviceId).all();
 
-  const out = [];
-  for (const grp of groups.results || []) {
-    out.push({ id: grp.id, name: grp.name, mode: grp.mode, locked: true, nodes: await groupNodeList(db, grp.id) });
+  const groupMap = new Map();
+  const addGroup = async (group, cardId = null) => {
+    const key = String(group.admin_user_id) + ":" + String(group.id);
+    let item = groupMap.get(key);
+    if (!item) {
+      item = {
+        id: group.id, admin_user_id: group.admin_user_id,
+        name: group.name, mode: group.mode, locked: true,
+        free: group.mode === "free", card_ids: [],
+        nodes: await groupNodeList(db, group.id),
+      };
+      groupMap.set(key, item);
+    }
+    if (cardId && !item.card_ids.includes(cardId)) item.card_ids.push(cardId);
+  };
+
+  for (const group of legacyGroups.results || []) await addGroup(group);
+
+  // A device keeps each admin's one-time free grant even after that admin's
+  // card entitlement expires; merge these grants once per admin, independently
+  // of which other admin currently has an active card.
+  const freeGrants = await db.prepare(
+    "SELECT admin_user_id FROM app_free_grants WHERE device_id = ? ORDER BY admin_user_id",
+  ).bind(deviceId).all();
+  const freeAdminIds = [...new Set((freeGrants.results || []).map(x => x.admin_user_id).filter(Boolean))];
+  if (freeAdminIds.length) {
+    const freePlaceholders = freeAdminIds.map(() => "?").join(",");
+    const freeGroups = await db.prepare(
+      `SELECT * FROM app_groups
+        WHERE admin_user_id IN (${freePlaceholders}) AND mode = 'free' AND enabled = 1
+        ORDER BY admin_user_id, sort ASC, created_at ASC`,
+    ).bind(...freeAdminIds).all();
+    for (const group of freeGroups.results || []) await addGroup(group);
   }
-  return json({ ok: true, data: { entitled: true, admin_user_id: ent.admin_user_id, groups: out } });
+
+  let cardGroupsReady = false;
+  let cardGroupsError = false;
+  try {
+    const table = await db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    ).bind("app_card_group_mappings").first();
+    if (table) {
+      const authorizedIds = new Set(authorizedEntitlements.map(x => x.id));
+      const mapped = await db.prepare(
+        `SELECT g.*, m.card_id, e.id AS entitlement_id
+           FROM app_card_group_mappings m
+           JOIN app_entitlements e
+             ON e.card_id = m.card_id
+            AND e.admin_user_id = m.admin_user_id
+            AND e.device_id = ?
+            AND e.status = 'active'
+            AND datetime(e.expires_at) > datetime('now')
+           JOIN app_groups g
+             ON g.id = m.group_id
+            AND g.admin_user_id = m.admin_user_id
+            AND g.mode = 'card'
+            AND g.enabled = 1
+          WHERE m.status = 'active'
+          ORDER BY g.admin_user_id, g.sort ASC, g.created_at ASC, m.card_id`,
+      ).bind(deviceId).all();
+      for (const group of mapped.results || []) {
+        if (authorizedIds.has(group.entitlement_id)) await addGroup(group, group.card_id);
+      }
+      cardGroupsReady = true;
+    }
+  } catch {
+    // New card-group storage is optional until its reviewed D1 migration lands.
+    // Do not break legacy public/free/assigned groups for existing APP users.
+    cardGroupsError = true;
+  }
+
+  const groups = [...groupMap.values()];
+  for (const group of groups) group.card_ids.sort();
+  return json({
+    ok: true,
+    data: {
+      entitled: true,
+      // Preserve the old singular field for clients that only understand one admin.
+      admin_user_id: entitlements[0].admin_user_id,
+      admin_user_ids: adminIds,
+      free_admin_user_ids: freeAdminIds,
+      entitlements: authorizedEntitlements.map(x => ({
+        id: x.id, admin_user_id: x.admin_user_id, card_id: x.card_id,
+        expires_at: x.expires_at, purge_at: x.purge_at, status: x.status,
+      })),
+      card_groups_ready: cardGroupsReady,
+      ...(cardGroupsError ? { card_groups_error: true } : {}),
+      groups,
+    },
+  });
 }
 
 /* ────────────────────────────── 管理员分享编号 ────────────────────────────── */
@@ -4781,15 +5543,27 @@ async function superReleasesRoute(req, env, url, ctx) {
       if (!versionName) return fail("版本名不能为空", 400);
       if (!/^https:\/\/.+/.test(url0)) return fail("下载地址必须是 https", 400);
       const id = newId();
-      await db.prepare(
-        `INSERT INTO releases(id, platform, version_code, version_name, min_version_code, url, notes, force)
-         VALUES(?,?,?,?,?,?,?,?)`,
-      ).bind(id, s(body.platform, 20) || "android", versionCode, versionName,
-        num(body.min_version_code, 0), url0, s(body.notes, 2000), body.force ? 1 : 0).run();
+      const platform = s(body.platform, 20) || "android";
+      await db.batch([
+        db.prepare(
+          `INSERT INTO releases(id, platform, version_code, version_name, min_version_code, url, notes, force)
+           VALUES(?,?,?,?,?,?,?,?)`,
+        ).bind(id, platform, versionCode, versionName,
+          num(body.min_version_code, 0), url0, s(body.notes, 2000), body.force ? 1 : 0),
+        auditStmt(db, ctx, { action: "release.create", targetType: "release", targetId: id, after: { platform, version_code: versionCode, version_name: versionName, min_version_code: num(body.min_version_code, 0), force: body.force ? 1 : 0 } }),
+      ]);
       return json({ ok: true, data: { id, version_code: versionCode } }, 201);
     }
     if (seg.length === 4 && req.method === "DELETE") {
-      await db.prepare("DELETE FROM releases WHERE id = ?").bind(s(seg[3], 80)).run();
+      const id = s(seg[3], 80);
+      const row = await db.prepare("SELECT * FROM releases WHERE id = ?").bind(id).first();
+      if (!row) return fail("版本记录不存在", 404);
+      const deleted = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM releases WHERE id = ?)", [id]),
+        db.prepare("DELETE FROM releases WHERE id = ?").bind(id),
+        auditStmt(db, ctx, { action: "release.delete", targetType: "release", targetId: id, before: { platform: row.platform, version_code: row.version_code, version_name: row.version_name } }),
+      ]);
+      if (!deleted[1]?.meta?.changes) return fail("版本记录已变化", 409);
       return json({ ok: true, data: { deleted: true } });
     }
   }
@@ -4806,22 +5580,43 @@ async function superReleasesRoute(req, env, url, ctx) {
       if (!title) return fail("标题不能为空", 400);
       if (!["web", "app", "both"].includes(scope)) return fail("scope 不合法", 400);
       const id = newId();
-      await db.prepare(
-        `INSERT INTO announcements(id, scope, title, body, level, starts_at, ends_at) VALUES(?,?,?,?,?,?,?)`,
-      ).bind(id, scope, title, s(body.body, 4000), s(body.level, 10) || "info",
-        s(body.starts_at, 30) || null, s(body.ends_at, 30) || null).run();
+      const announcement = {
+        scope, title, body: s(body.body, 4000), level: s(body.level, 10) || "info",
+        starts_at: s(body.starts_at, 30) || null, ends_at: s(body.ends_at, 30) || null,
+      };
+      await db.batch([
+        db.prepare(
+          `INSERT INTO announcements(id, scope, title, body, level, starts_at, ends_at) VALUES(?,?,?,?,?,?,?)`,
+        ).bind(id, announcement.scope, announcement.title, announcement.body, announcement.level,
+          announcement.starts_at, announcement.ends_at),
+        auditStmt(db, ctx, { action: "announcement.create", targetType: "announcement", targetId: id, after: announcement }),
+      ]);
       return json({ ok: true, data: { id } }, 201);
     }
     if (seg.length === 4 && req.method === "PUT") {
       const body = await readJson(req);
       const id = s(seg[3], 80);
-      const row = await db.prepare("SELECT id FROM announcements WHERE id = ?").bind(id).first();
+      const row = await db.prepare("SELECT id, active, title, scope FROM announcements WHERE id = ?").bind(id).first();
       if (!row) return fail("公告不存在", 404);
-      await db.prepare("UPDATE announcements SET active = ? WHERE id = ?").bind(body.active ? 1 : 0, id).run();
-      return json({ ok: true, data: { id, active: body.active ? 1 : 0 } });
+      const active = body.active ? 1 : 0;
+      const updated = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM announcements WHERE id = ?)", [id]),
+        db.prepare("UPDATE announcements SET active = ? WHERE id = ?").bind(active, id),
+        auditStmt(db, ctx, { action: "announcement.toggle", targetType: "announcement", targetId: id, before: { active: row.active, title: row.title, scope: row.scope }, after: { active } }),
+      ]);
+      if (!updated[1]?.meta?.changes) return fail("公告已变化", 409);
+      return json({ ok: true, data: { id, active } });
     }
     if (seg.length === 4 && req.method === "DELETE") {
-      await db.prepare("DELETE FROM announcements WHERE id = ?").bind(s(seg[3], 80)).run();
+      const id = s(seg[3], 80);
+      const row = await db.prepare("SELECT id, title, scope, active FROM announcements WHERE id = ?").bind(id).first();
+      if (!row) return fail("公告不存在", 404);
+      const deleted = await db.batch([
+        assertStmt(db, "EXISTS (SELECT 1 FROM announcements WHERE id = ?)", [id]),
+        db.prepare("DELETE FROM announcements WHERE id = ?").bind(id),
+        auditStmt(db, ctx, { action: "announcement.delete", targetType: "announcement", targetId: id, before: { title: row.title, scope: row.scope, active: row.active } }),
+      ]);
+      if (!deleted[1]?.meta?.changes) return fail("公告已变化", 409);
       return json({ ok: true, data: { deleted: true } });
     }
   }
@@ -4857,9 +5652,29 @@ async function addDownload(db, ctx, scope, adminId, body) {
   ).bind(scope, adminId || "").first();
   if (Number(count?.n || 0) >= 20) return fail("最多 20 条下载链接", 409);
   const id = newId();
-  await db.prepare(
-    "INSERT INTO download_links(id, scope, admin_user_id, title, url, sort) VALUES(?,?,?,?,?,?)",
-  ).bind(id, scope, adminId, title, url, num(body.sort, 100)).run();
+  const quotaSql = scope === "admin"
+    ? "EXISTS (SELECT 1 FROM app_users WHERE id = ?) AND (SELECT COUNT(*) FROM download_links WHERE scope = ? AND COALESCE(admin_user_id,'') = ?) < 20"
+    : "(SELECT COUNT(*) FROM download_links WHERE scope = ? AND COALESCE(admin_user_id,'') = ?) < 20";
+  const quotaBinds = scope === "admin"
+    ? [adminId, scope, adminId || ""]
+    : [scope, adminId || ""];
+  try {
+    await userBatch(db, ctx, [
+      assertStmt(db, quotaSql, quotaBinds),
+      db.prepare(
+        "INSERT INTO download_links(id, scope, admin_user_id, title, url, sort) VALUES(?,?,?,?,?,?)",
+      ).bind(id, scope, adminId, title, url, num(body.sort, 100)),
+      auditStmt(db, ctx, {
+        action: "download_link.create", targetType: "download_link", targetId: id,
+        after: { scope, admin_user_id: adminId, title, url },
+      }),
+    ]);
+  } catch (e) {
+    if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+      return fail("下载链接数量或管理员状态刚刚发生变化，请刷新后重试", 409, { code: "DOWNLOAD_LIMIT_CHANGED" });
+    }
+    throw e;
+  }
   return json({ ok: true, data: { id, title, url, scope } }, 201);
 }
 
@@ -4893,7 +5708,15 @@ async function superDownloadsRoute(req, env, url, ctx) {
     return addDownload(db, ctx, adminId ? "admin" : "global", adminId || null, body);
   }
   if (seg.length === 4 && req.method === "DELETE") {
-    await db.prepare("DELETE FROM download_links WHERE id = ?").bind(s(seg[3], 80)).run();
+    const id = s(seg[3], 80);
+    const row = await db.prepare("SELECT * FROM download_links WHERE id = ?").bind(id).first();
+    if (!row) return fail("链接不存在", 404);
+    const deleted = await db.batch([
+      assertStmt(db, "EXISTS (SELECT 1 FROM download_links WHERE id = ?)", [id]),
+      db.prepare("DELETE FROM download_links WHERE id = ?").bind(id),
+      auditStmt(db, ctx, { action: "download_link.super_delete", targetType: "download_link", targetId: id, before: { scope: row.scope, admin_user_id: row.admin_user_id, title: row.title } }),
+    ]);
+    if (!deleted[1]?.meta?.changes) return fail("链接已变化", 409);
     return json({ ok: true, data: { deleted: true } });
   }
   return fail("接口不存在", 404);
@@ -4911,9 +5734,14 @@ async function userDownloadsRoute(req, env, url, ctx) {
   }
   if (seg.length === 4 && req.method === "DELETE") {
     const id = s(seg[3], 80);
-    const row = await db.prepare("SELECT id FROM download_links WHERE id = ? AND admin_user_id = ?").bind(id, ctx.effectiveId).first();
+    const row = await db.prepare("SELECT id, scope, title FROM download_links WHERE id = ? AND admin_user_id = ?").bind(id, ctx.effectiveId).first();
     if (!row) return fail("链接不存在", 404);
-    await db.prepare("DELETE FROM download_links WHERE id = ?").bind(id).run();
+    const deleted = await userBatch(db, ctx, [
+      assertStmt(db, "EXISTS (SELECT 1 FROM download_links WHERE id = ? AND admin_user_id = ?)", [id, ctx.effectiveId]),
+      db.prepare("DELETE FROM download_links WHERE id = ? AND admin_user_id = ?").bind(id, ctx.effectiveId),
+      auditStmt(db, ctx, { action: "download_link.delete", targetType: "download_link", targetId: id, before: { scope: row.scope, title: row.title } }),
+    ]);
+    if (!deleted[1]?.meta?.changes) return fail("链接已变化", 409);
     return json({ ok: true, data: { deleted: true } });
   }
   return fail("接口不存在", 404);
@@ -5373,7 +6201,7 @@ export default {
     if (url.pathname === "/health" && req.method === "GET") {
       return withCors(json({
         ok: true, service: "starjump-api", version: VERSION,
-        build: "2026-11-23-diag",
+        build: "2026-11-28-v2.5.0-rc1",
         auth_mode: "multi_user_session",
         legacy_admin_token: "restricted",
         features: ["multi_user", "overrides", "groups", "audit_events", "sync_staging", "password_change"],
@@ -5385,8 +6213,9 @@ export default {
       if (!env.DB) return withCors(fail("D1 binding DB 未配置", 500));
       try {
         return withCors(await convertRoute(req, env, url, null));
-      } catch (e) {
-        return withCors(fail(String(e?.message || "转换链接读取失败").slice(0, 200), 500));
+      } catch {
+        // 订阅短链是公开接口；数据库/内部异常不得原样返回给客户端。
+        return withCors(fail("订阅服务处理失败，请稍后重试", 500, { code: "INTERNAL_ERROR" }));
       }
     }
 
@@ -5398,7 +6227,9 @@ export default {
     let ctx = null;
     try {
       ctx = await resolveSession(req, env);
-    } catch {
+    } catch (e) {
+      if (e?.code === "INVALID_SESSION") return withCors(fail("未登录或会话已失效", 401, { code: "INVALID_SESSION" }));
+      if (e?.code === "SECRET_NOT_CONFIGURED") return withCors(fail("认证密钥未配置或长度不足", 503, { code: "SECRET_NOT_CONFIGURED" }));
       return withCors(fail("会话解析失败", 500));
     }
     const ctxWithReq = { ...(ctx || { actorId: null, effectiveId: null, isSuper: false, legacy: false }), requestId: requestId(req) };
@@ -5512,6 +6343,10 @@ export default {
         if (url.pathname.startsWith("/api/user/app-links")) {
           return withCors(await userAppLinksRoute(req, env, url, ctxWithReq));
         }
+        if (/^\/api\/user\/app-cards\/[A-Za-z0-9_-]{1,128}\/groups$/.test(url.pathname) &&
+            ["GET", "PUT"].includes(req.method)) {
+          return withCors(await userAppCardGroupsRoute(req, env, url, ctxWithReq));
+        }
         if (url.pathname.startsWith("/api/user/app-cards")) {
           return withCors(await userAppCardsRoute(req, env, url, ctxWithReq));
         }
@@ -5547,8 +6382,10 @@ export default {
         return withCors(await superAlertsRoute(req, env, url, ctxWithReq));
       }
       if (url.pathname === "/api/super/schema-status" || url.pathname === "/api/super/migrate") {
-        // 允许 ADMIN_TOKEN（legacy）作为兜底：登录异常时也能把表建好
-        if (!ctx || !ctx.isSuper) return withCors(fail("需要超级管理员或 ADMIN_TOKEN", 403));
+        // 数据库检查/迁移仅允许本人登录的超级管理员 Session；拒绝 ADMIN_TOKEN 与协助会话。
+        if (!ctx || !ctx.isSuper || ctx.legacy || ctx.actorId !== ctx.effectiveId) {
+          return withCors(fail("需要本人登录的超级管理员会话", 403));
+        }
         return withCors(await migrateRoute(req, env, url, ctxWithReq));
       }
 
@@ -5590,6 +6427,8 @@ export default {
       return withCors(fail("接口不存在", 404));
     } catch (e) {
       const message = String(e?.message || "");
+      if (e?.code === "GUEST_KEY_REQUIRED") return withCors(fail(message, 400, { code: e.code }));
+      if (e?.code === "SECRET_NOT_CONFIGURED") return withCors(fail("Worker 认证密钥未配置或长度不足", 503, { code: e.code }));
       if (/^请求体|^JSON|^请求必须/.test(message)) return withCors(fail(message, 400));
       if (/fence-lost|assert-failed|malformed JSON/i.test(message)) {
         // 断言失败（fence/scope/不变量）都会让整批回滚
@@ -5597,12 +6436,9 @@ export default {
       }
       // 诊断模式（仅在 staging 设置 DIAGNOSTICS=1）下返回错误类型与短消息，便于定位；不含堆栈与凭据
       if (String(env.DIAGNOSTICS || "") === "1") {
-        return withCors(json({
-          ok: false,
-          error: "服务器处理失败（诊断模式）",
-          code: String(e?.name || "Error"),
-          detail: String(e?.message || "").slice(0, 300),
-        }, 500));
+        // 诊断开关只改变服务端日志策略；响应体仍保持通用，避免配置误开时泄露 D1/内部错误细节。
+        try { console.error("[worker] request failed", ctxWithReq.requestId, String(e?.name || "Error")); } catch { /* ignore */ }
+        return withCors(fail("服务器处理失败，请检查 Worker 日志", 500, { code: "INTERNAL_ERROR" }));
       }
       // 不向客户端泄露堆栈
       return withCors(fail("服务器处理失败，请检查 Worker 日志", 500));
@@ -5620,7 +6456,7 @@ export default {
     const rows = await db.prepare(
       // 公平轮转：用 sync_tasks.created_at 取“最近一次同步尝试”（含失败）。
       // 从未尝试 → 最早；尝试过的按时间升序，失败来源也会被排到队尾，不会永远占住前 N 个。
-      `SELECT s.id, s.name, s.url, s.tier,
+      `SELECT s.id, s.name, s.url, s.tier, so.user_id AS owner_user_id,
               (SELECT MAX(t.created_at) FROM sync_tasks t WHERE t.source_id = s.id) AS last_attempt_at
          FROM subscription_sources s
          JOIN source_ownership so ON so.source_id = s.id
@@ -5631,19 +6467,22 @@ export default {
         LIMIT ?`,
     ).bind(MAX_SYNC_SOURCES).all();
     const sources = rows.results || [];
-    if (!sources.length) return;
     const cronCtx = {
       actorId: "scheduled", effectiveId: null, isSuper: false, legacy: false,
       requestId: `cron-${event?.cron || "manual"}-${Date.now()}`,
     };
     try {
+      // Lifecycle/entitlement maintenance must run even when no sync sources are assigned.
       await runVipCardMaintenance(db, cronCtx).catch(() => {});
       await runNodeLifecycle(db, cronCtx).catch(() => {});
       await runEntitlementMaintenance(db).catch(() => {});
-      const run = await runSync(db, sources, { actorUserId: null, triggerKind: "scheduled", ctx: cronCtx, env });
-      await db.prepare("INSERT INTO admin_audit(action, detail) VALUES('nodes.sync.scheduled', ?)")
-        .bind(JSON.stringify({ total: run.total, success: run.success, failed: run.failed, busy: run.busy }))
-        .run().catch(() => {});
+      // Only the source synchronization is conditional on having eligible sources.
+      if (sources.length) {
+        const run = await runSync(db, sources, { actorUserId: null, triggerKind: "scheduled", ctx: cronCtx, env });
+        await db.prepare("INSERT INTO admin_audit(action, detail) VALUES('nodes.sync.scheduled', ?)")
+          .bind(JSON.stringify({ total: run.total, success: run.success, failed: run.failed, busy: run.busy }))
+          .run().catch(() => {});
+      }
     } catch {
       // 定时任务失败不能抛到平台层；失败详情在 sync_tasks 里
     }

@@ -8,6 +8,8 @@ function actionFor(path, method) {
     if (p.length === 4 && method === "PUT") return "update";
     if (p.length === 4 && method === "DELETE") return "delete_history";
     if (p.length === 5 && p[4] === "sources" && method === "POST") return "associate";
+    // Removing a source association is still a configuration mutation, not historical-data deletion.
+    if (p.length === 6 && p[4] === "sources" && method === "DELETE") return "associate";
     if (p.length === 5 && p[4] === "members" && method === "POST") return "associate";
   }
   if (p[2] === "app-links") {
@@ -15,6 +17,8 @@ function actionFor(path, method) {
     if (p.length === 4 && method === "DELETE") return "delete_history";
   }
   if (p[2] === "app-cards") {
+    // Protocol66 card-group replacement is a configuration association, not historical deletion.
+    if (p.length === 5 && p[4] === "groups" && method === "PUT") return "associate";
     if (p.length === 3 && method === "POST") return "generate";
     if (p.length === 4 && method === "DELETE") return "disable";
     if (p.length === 5 && p[4] === "disable" && method === "POST") return "disable";

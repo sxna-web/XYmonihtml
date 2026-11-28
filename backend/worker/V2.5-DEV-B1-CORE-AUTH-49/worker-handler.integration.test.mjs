@@ -3,13 +3,16 @@ import assert from "node:assert/strict";
 import worker from "./Worker.js";
 
 const now = "2026-11-27T12:00:00.000Z";
-const activeTrial = [{kind:"trial",starts_at:"2026-11-20T00:00:00Z",ends_at:"2026-11-28T00:00:00Z"}];
+const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"2099-01-01T00:00:00Z"}];
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, schemaDefault=null, rateLimitFailure=false, cardLookupMissing=false, cardOverride=null, replayEntitlement=null, missingCardGroupTables=false, cardGroupMappingTable=false, cardGroupMappings=[], appEntitlements=[], appCards=[], appGroups=[], appGroupNodes=[], appFreeGrants=[], failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
+  const batches=[];
+  const reads=[];
+  const rateBuckets=new Map();
   const sessionRow={
     id:"session-1",user_id:role==="super_admin"?"root":"u1",acting_as_user_id:actingAs,
     scope_id:actingAs?"scope-1":null,expires_at:"2099-01-01 00:00:00",revoked_at:null,
@@ -17,46 +20,216 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
   };
   return {
     writes,
+    batches,
+    reads,
     prepare(sql) {
       return {
         bind(...args) {
           return {
+            sql, args,
             async first() {
+              if (sql.includes("FROM rate_limits WHERE bucket = ?")) {
+                if (rateLimitFailure) throw new Error("rate limit store unavailable");
+                return rateBuckets.has(args[0]) ? {count:rateBuckets.get(args[0]),updated_at:"2099-01-01 00:00:00"} : null;
+              }
               if (sql.includes("FROM user_sessions s")) return sessionRow;
               if (sql.includes("SELECT 1 AS ok WHERE datetime(?)")) return {ok:1};
+              if (sql.includes("SELECT * FROM admin_user_scopes WHERE id = ?")) return {id:args[0],target_user_id:"u1",scope:"manage",revoked_at:null};
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
+              if (sql.includes("sqlite_master") && sql.includes("name = ?") && args[0] === "app_card_group_mappings") return cardGroupMappingTable ? {name:"app_card_group_mappings"} : null;
+              if (sql.includes("SELECT COUNT(*) AS n FROM convert_links WHERE group_name = ?")) return {n:2};
+              if (sql.includes("SELECT id, group_name FROM convert_links WHERE id = ?")) return {id:args[0],group_name:"Old"};
+              if (sql.includes("SELECT id, group_name, revoked_at FROM convert_links WHERE id = ?")) return {id:args[0],group_name:"Old",revoked_at:null};
               if (sql.includes("FROM app_groups WHERE id = ? AND admin_user_id = ?")) return resource;
+              if (sql.includes("FROM node_groups WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"group",sort_order:0,remark:""};
+              if (sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"Manual",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1,remark:""};
+              if (sql.includes("FROM node_records WHERE id = ?")) return {id:args[0],source_id:"src1",name:"Node",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1};
+              if (sql.includes("SELECT user_id FROM source_ownership WHERE source_id = ?")) return {user_id:"u1"};
+              if (sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")) return {ok:1};
+              if (sql.includes("SELECT id, role, status, display_name FROM app_users WHERE id = ?")) return {id:args[0],role:"user",status:"active",display_name:"Tester"};
+              if (sql.includes("SELECT id, status FROM app_users WHERE id = ?")) return {id:args[0],status:"active"};
+              if (sql.includes("SELECT * FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source",url:"https://example.com/sub",tier:"free",enabled:1,priority:100,remark:""};
+              if (sql.includes("SELECT id, name, enabled FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source",enabled:1};
+              if (sql.includes("SELECT id, name FROM subscription_sources WHERE id = ?")) return {id:args[0],name:"Source"};
+              if (sql.includes("SELECT status FROM source_approvals WHERE source_id = ?")) return {status:"pending"};
+              if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
+              if (sql.includes("FROM app_cards WHERE code = ?")) return cardLookupMissing ? null : (cardOverride || {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"});
+              if (sql.includes("FROM app_entitlements") && sql.includes("card_id = ? AND device_id = ?")) { reads.push({sql,args}); return replayEntitlement; }
+              if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
+              if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {links_enabled:1,max_links:3,free_group_enabled:1};
+              if (sql.includes("COUNT(*) AS n FROM app_links WHERE admin_user_id = ?")) return {n:0};
+              if (sql.includes("COUNT(*) AS n FROM download_links")) return {n:0};
+              if (sql.includes("FROM download_links WHERE id = ?")) return {id:args[0],scope:"admin",admin_user_id:"u1",title:"Downloads",url:"https://example.test/file.apk"};
+              if (sql.includes("FROM app_entitlements WHERE id = ?")) return {id:args[0],admin_user_id:"u1",device_id:"old-device-123456"};
+              if (sql.includes("FROM app_links WHERE id = ?")) return {id:args[0],admin_user_id:"u1",title:"Support",url:"https://example.test"};
+              if (sql.includes("FROM releases WHERE id = ?")) return {id:args[0],platform:"android",version_code:10,version_name:"1.0.0"};
+              if (sql.includes("FROM announcements WHERE id = ?")) return {id:args[0],title:"Notice",scope:"app",active:1};
               if (sql.includes("FROM subscription_sources s JOIN source_ownership")) return {id:"src1"};
               return null;
             },
             async all() {
+              reads.push({sql,args});
               if (sql.includes("FROM admin_vip_activations")) {
                 if (activationFailure) throw new Error("activation store unavailable");
                 return {results:activations};
               }
+              if (sql.includes("FROM app_card_group_mappings WHERE admin_user_id = ? AND group_id = ?")) return {results:cardGroupMappings};
+              if (sql.includes("FROM app_entitlements e") && sql.includes("JOIN app_cards c")) {
+                const rows = !appCards.length ? appEntitlements : appEntitlements.filter(ent => {
+                  const card = appCards.find(c => c.id === ent.card_id && c.admin_user_id === ent.admin_user_id);
+                  return card && card.status === "used" && !card.manual_disabled &&
+                    (!card.expires_at || new Date(card.expires_at).getTime() > Date.now());
+                });
+                return {results:rows};
+              }
+              if (sql.includes("FROM app_entitlements") && sql.includes("device_id = ?") && sql.includes("status = 'active'")) return {results:appEntitlements};
+              if (sql.includes("FROM app_groups g")) return {results:appGroups.filter(g=>args.slice(0,-1).includes(g.admin_user_id))};
+              if (sql.includes("FROM app_card_group_mappings m")) {
+                const deviceId = args[0];
+                const rows = [];
+                for (const mapping of cardGroupMappings) {
+                  const entitlement = appEntitlements.find(e =>
+                    e.card_id === mapping.card_id &&
+                    e.admin_user_id === mapping.admin_user_id &&
+                    (!e.device_id || e.device_id === deviceId) &&
+                    e.status === "active" &&
+                    (!e.expires_at || new Date(e.expires_at.replace(" ", "T") + (e.expires_at.includes("Z") ? "" : "Z")).getTime() > Date.now())
+                  );
+                  if (!entitlement) continue;
+                  rows.push({...mapping, entitlement_id:entitlement.id});
+                }
+                return {results:rows};
+              }
+              if (sql.includes("FROM app_free_grants WHERE device_id = ?")) return {results:appFreeGrants};
+              if (sql.includes("FROM app_groups") && sql.includes("mode = 'free'")) return {results:appGroups.filter(g=>g.mode==="free" && args.includes(g.admin_user_id))};
+              if (sql.includes("FROM app_group_sources gs")) return {results:appGroupNodes.filter(n=>!n.group_id || n.group_id===args[0])};
+              if (sql.includes("sqlite_master") && /type\s*=\s*'table'/.test(sql)) {
+                const missing = missingCardGroupTables ? new Set(["app_card_group_mappings","app_card_group_admin_requests"]) : new Set();
+                return {results:args.filter(name=>!missing.has(name)).map(name=>({name}))};
+              }
+              if (sql.startsWith("PRAGMA table_info(")) {
+                if (schemaFailure) throw new Error("schema metadata unavailable");
+                return {results:[
+                  {cid:0,name:"id",type:"TEXT",notnull:1,dflt_value:null,pk:1},
+                  {cid:1,name:"admin_user_id",type:"TEXT",notnull:1,dflt_value:schemaDefault,pk:0},
+                ]};
+              }
+              if (sql.startsWith("PRAGMA index_list(")) {
+                return {results:[{seq:0,name:"idx_schema_admin",unique:0,origin:"c",partial:0}]};
+              }
+              if (sql.startsWith("PRAGMA index_info(")) {
+                return {results:[{seqno:0,cid:1,name:"admin_user_id"}]};
+              }
+              if (sql.startsWith("PRAGMA foreign_key_list(")) return {results:[]};
+              if (sql.includes("FROM sqlite_master") && sql.includes("type IN ('trigger','view')")) return {results:[]};
               return {results:[]};
             },
             async run() {
               writes.push({sql,args});
+              if (sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)")) {
+                if (rateLimitFailure) throw new Error("rate limit store unavailable");
+                const current=rateBuckets.get(args[0]) || 0;
+                rateBuckets.set(args[0], current + 1);
+              }
+              if (failCapacityAssertion && sql.includes("COUNT(*) FROM app_cards")) throw new Error("assert-failed");
+              if (failCardDeleteAssertion && sql.includes("activated_at IS NULL AND used_at IS NULL AND status <> 'used'")) throw new Error("assert-failed");
+              if (failAppLinkCapacityAssertion && sql.includes("COUNT(*) FROM app_links WHERE admin_user_id = ?")) throw new Error("assert-failed");
+              if (failDownloadQuotaAssertion && sql.includes("COUNT(*) FROM download_links WHERE scope = ?")) throw new Error("assert-failed");
+              if (failNodeOwnerAssertion && (sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)") || sql.includes("EXISTS (SELECT 1 FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id"))) throw new Error("assert-failed");
               return {meta:{changes:1}};
             },
           };
         },
       };
     },
+    async batch(statements) {
+      batches.push(statements.map(statement => statement.sql || ""));
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
+    },
   };
 }
 function businessWrites(db) {
-  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards)/i.test(x.sql.trim()));
+  return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards|INSERT INTO download_links|DELETE FROM download_links|INSERT INTO releases|DELETE FROM releases|INSERT INTO announcements|UPDATE announcements|DELETE FROM announcements|INSERT INTO node_user_metadata|INSERT INTO node_overrides|DELETE FROM node_overrides)/i.test(x.sql.trim()));
 }
-async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"}}={}) {
+async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"},
+  authorization="Bearer test-session",sessionPepper="test-pepper-test-pepper-test-pepper"}={}) {
   const req=new Request("https://worker.test"+path,{
-    method,headers:{"Authorization":"Bearer test-session","Content-Type":"application/json"},
+    method,headers:{"Authorization":authorization,"Content-Type":"application/json"},
     ...(method==="GET"||method==="DELETE"?{}:{body:JSON.stringify(body)}),
   });
-  const res=await worker.fetch(req,{DB:db,SESSION_PEPPER:"test-pepper"});
+  const res=await worker.fetch(req,{DB:db,SESSION_PEPPER:sessionPepper});
   return {res,json:await res.json()};
 }
+
+test("schema diagnostics expose APP metadata only to a direct super-admin session and hash defaults",async()=>{
+  const db=mockDb({role:"super_admin",schemaDefault:"'DO_NOT_ECHO_SCHEMA_DEFAULT'"});
+  const {res,json}=await call(db,{path:"/api/super/schema-status",method:"GET",role:"super_admin"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  assert.equal(json.data.verification,"TABLE_NAMES_ONLY");
+  assert.equal(json.data.app_structure.verification,"OBSERVED_SCHEMA_ONLY");
+  assert.equal(json.data.app_structure.baseline_comparison,"NOT_CONFIGURED");
+  assert.equal(json.data.app_structure.compatibility_verdict,"NOT_EVALUATED");
+  assert.equal(json.data.app_structure.tables.length,9);
+  const diagnosticNames=json.data.app_structure.tables.map(table=>table.name);
+  assert.ok(diagnosticNames.includes("app_card_group_mappings"));
+  assert.ok(diagnosticNames.includes("app_card_group_admin_requests"));
+  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(") && x.sql.includes("app_card_group_mappings")));
+  assert.ok(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(") && x.sql.includes("app_card_group_admin_requests")));
+  assert.ok(db.reads.some(x=>x.sql.includes("type IN ('trigger','view')") &&
+    x.args.includes("app_card_group_mappings") && x.args.includes("app_card_group_admin_requests")));
+  assert.equal(db.reads.some(x=>/SELECT .*response_json|SELECT .*payload_sha256/i.test(x.sql)),false);
+  assert.equal(json.data.app_structure.tables[0].columns[1].name,"admin_user_id");
+  assert.equal(json.data.app_structure.tables[0].columns[1].default_present,true);
+  assert.match(json.data.app_structure.tables[0].columns[1].default_sha256,/^[a-f0-9]{64}$/);
+  assert.equal(JSON.stringify(json).includes("DO_NOT_ECHO_SCHEMA_DEFAULT"),false);
+  assert.equal("default_value" in json.data.app_structure.tables[0].columns[1],false);
+  assert.equal(json.data.app_structure.tables[0].indexes[0].columns[0].name,"admin_user_id");
+  assert.equal(businessWrites(db).length,0);
+  assert.equal(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(")),true);
+  assert.equal(JSON.stringify(json).includes("redeem_code_value"),false);
+});
+test("schema diagnostics reject non-super-admin sessions before metadata reads",async()=>{
+  const db=mockDb({role:"user"});
+  const {res,json}=await call(db,{path:"/api/super/schema-status",method:"GET"});
+  assert.equal(res.status,403);assert.equal(json.ok,false);
+  assert.equal(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(")),false);
+});
+test("schema metadata failures remain PARTIAL_NOT_VERIFIED and never become a pass",async()=>{
+  const db=mockDb({role:"super_admin",schemaFailure:true});
+  const {res,json}=await call(db,{path:"/api/super/schema-status",method:"GET",role:"super_admin"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  assert.equal(json.data.app_structure.verification,"PARTIAL_NOT_VERIFIED");
+  assert.equal(json.data.app_structure.compatibility_verdict,"NOT_EVALUATED");
+  assert.equal(json.data.app_structure.tables[0].verification,"PARTIAL_NOT_VERIFIED");
+  assert.equal(json.data.app_structure.tables[0].columns,null);
+  assert.equal(businessWrites(db).length,0);
+});
+
+test("anonymous conversion requires a per-user guest key",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/convert/groups",method:"GET",authorization:""});
+  assert.equal(res.status,400);assert.equal(json.code,"GUEST_KEY_REQUIRED");
+});
+
+test("anonymous conversion accepts a valid guest key",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/convert/groups?guest_key=guest-key-123456789",method:"GET",authorization:""});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+});
+
+test("malformed Authorization cannot downgrade to anonymous",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{authorization:"Basic invalid"});
+  assert.equal(res.status,401);assert.equal(json.code,"INVALID_SESSION");assert.equal(businessWrites(db).length,0);
+});
+
+test("short SESSION_PEPPER fails closed before session lookup",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{sessionPepper:"too-short"});
+  assert.equal(res.status,503);assert.equal(json.code,"SECRET_NOT_CONFIGURED");assert.equal(businessWrites(db).length,0);
+});
 
 test("Worker handler rejects L1 group creation before business write",async()=>{
   const db=mockDb();
@@ -135,4 +308,851 @@ test("Worker handler associates APP member only through group-owner SQL predicat
   assert.equal(res.status,201);
   const write=businessWrites(db).find(x=>x.sql.includes("app_group_members"));
   assert.ok(write);assert.match(write.sql,/app_groups WHERE id = \? AND admin_user_id = \?/);
+});
+
+
+test("delegated APP group mutation includes the live scope guard in the same D1 batch",async()=>{
+  const db=mockDb({role:"super_admin",actingAs:"u1",scope:"manage",activations:activeTrial});
+  const {res}=await call(db,{path:"/api/user/app-groups",method:"POST",body:{name:"Scoped",mode:"assigned"}});
+  assert.equal(res.status,201);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM admin_user_scopes") && x.sql.includes("revoked_at IS NULL")));
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_groups")).length,1);
+});
+
+test("expired formal VIP cannot remove an APP group source association as a configuration mutation",async()=>{
+  const db=mockDb({activations:expiredFormal});
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1/sources/src1",method:"DELETE"});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"VIP_REQUIRED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("DELETE FROM app_group_sources")).length,0);
+});
+
+test("APP group source removal checks group ownership in the final SQL and scope batch",async()=>{
+  const db=mockDb({role:"super_admin",actingAs:"u1",scope:"manage",activations:activeTrial});
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1/sources/src1",method:"DELETE"});
+  assert.equal(res.status,200);
+  assert.equal(json.data.removed,true);
+  const del=businessWrites(db).find(x=>x.sql.startsWith("DELETE FROM app_group_sources"));
+  assert.ok(del);
+  assert.match(del.sql,/EXISTS \(SELECT 1 FROM app_groups WHERE id = \? AND admin_user_id = \?\)/);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM admin_user_scopes") && x.sql.includes("revoked_at IS NULL")));
+});
+
+
+test("APP card generation rechecks total and unactivated stock limits inside its batch",async()=>{
+  const db=mockDb({activations:activeTrial});
+  const {res}=await call(db,{path:"/api/user/app-cards",method:"POST",body:{count:2,days:30}});
+  assert.equal(res.status,201);
+  const capacityChecks=db.writes.filter(x=>x.sql.includes("COUNT(*) FROM app_cards"));
+  assert.equal(capacityChecks.length,2);
+  assert.ok(businessWrites(db).some(x=>x.sql.startsWith("INSERT INTO app_cards")));
+});
+
+test("APP card generation fails closed when the in-batch capacity assertion detects a concurrent fill",async()=>{
+  const db=mockDb({activations:activeTrial,failCapacityAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards",method:"POST",body:{count:2,days:30}});
+  assert.equal(res.status,409);
+  assert.equal(json.code,"APP_CARD_CAPACITY_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_cards")).length,0);
+});
+
+
+test("super APP permission update batches admin existence, upsert and audit while preserving omitted free-group setting",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/app-perms/u1",method:"PUT",body:{links_enabled:0,max_links:4}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const upsert=db.writes.find(x=>x.sql.includes("INSERT INTO admin_app_perms"));
+  assert.ok(upsert);assert.match(upsert.sql,/free_group_enabled=CASE WHEN \? = 1 THEN excluded\.free_group_enabled ELSE admin_app_perms\.free_group_enabled END/);
+  assert.equal(upsert.args[4],0);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM app_users WHERE id = ?")));
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super APP entitlement rebind uses compare-and-swap and atomic audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/app-entitlements/ent-1/rebind",method:"POST",body:{device_id:"new-device-123456"}});
+  assert.equal(res.status,200);assert.equal(json.data.device_id,"new-device-123456");
+  const update=db.writes.find(x=>x.sql.startsWith("UPDATE app_entitlements SET device_id"));
+  assert.ok(update);assert.match(update.sql,/WHERE id = \? AND device_id = \?/);
+  assert.deepEqual(update.args,["new-device-123456","ent-1","old-device-123456"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("FROM app_entitlements WHERE id = ? AND device_id = ?")));
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super APP link delete batches final existence check, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/app-links/link-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.deleted,true);
+  const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM app_links"));
+  assert.ok(del);assert.deepEqual(del.args,["link-1"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("mapped card groups cannot be physically deleted before APP tombstone cleanup support",async()=>{
+  const db=mockDb({
+    activations:activeTrial,cardGroupMappingTable:true,
+    cardGroupMappings:[{status:"removed"}],
+    resource:{id:"g1",admin_user_id:"u1",name:"Card group",mode:"card",created_at:"2026-10-20 00:00:00"},
+  });
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1",method:"DELETE"});
+  assert.equal(res.status,409);
+  assert.equal(json.code,"APP_GROUP_HAS_CARD_MAPPING_HISTORY");
+  assert.equal(db.batches.length,0);
+  assert.ok(db.writes.every(x => !x.sql.includes("DELETE FROM app_groups") && !x.sql.includes("DELETE FROM app_group_sources") && !x.sql.includes("DELETE FROM app_group_members")));
+});
+test("card group mode cannot change while active card mappings exist",async()=>{
+  const db=mockDb({
+    activations:activeTrial,cardGroupMappingTable:true,
+    cardGroupMappings:[{status:"active"}],
+    resource:{id:"g1",admin_user_id:"u1",name:"Card group",mode:"card",created_at:"2026-10-20 00:00:00"},
+  });
+  const {res,json}=await call(db,{path:"/api/user/app-groups/g1",method:"PUT",body:{mode:"free"}});
+  assert.equal(res.status,409);
+  assert.equal(json.code,"APP_GROUP_HAS_ACTIVE_CARD_MAPPINGS");
+  assert.equal(db.batches.length,0);
+  assert.ok(db.writes.every(x => !x.sql.includes("UPDATE app_groups SET name=?")));
+});
+
+test("Protocol66 card-group route fails closed while mapping tables are absent",async()=>{
+  const db=mockDb({activations:activeTrial,missingCardGroupTables:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"GET"});
+  assert.equal(res.status,503);
+  assert.equal(json.code,"CARD_GROUP_SCHEMA_NOT_READY");
+  assert.deepEqual(json.missing,["app_card_group_mappings","app_card_group_admin_requests"]);
+  assert.equal(db.batches.length,0);
+  assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
+});
+test("active seven-day trial admins pass the VIP gate but schema absence remains isolated",async()=>{
+  const db=mockDb({activations:activeTrial,missingCardGroupTables:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"PUT",body:{groupIds:[]}});
+  assert.equal(res.status,503);
+  assert.equal(json.code,"CARD_GROUP_SCHEMA_NOT_READY");
+  assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
+});
+
+test("Protocol66 card-group writes remain behind the existing active VIP gate",async()=>{
+  const db=mockDb({activations:expiredFormal,missingCardGroupTables:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1/groups",method:"PUT",headers:{"Idempotency-Key":"idem-key-12345678"},body:{groupIds:[]}});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"VIP_REQUIRED");
+  assert.ok(db.batches.every(batch => !batch.some(stmt => stmt.sql.includes("app_card_group_mappings") || stmt.sql.includes("app_card_group_admin_requests"))));
+  assert.ok(db.writes.every(x => !x.sql.includes("app_card_group_mappings") && !x.sql.includes("app_card_group_admin_requests")));
+});
+
+async function appEntitlementToken(secret,entitlementId,deviceId) {
+  const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const signature=await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(`${entitlementId}|${deviceId}`));
+  return Buffer.from(signature).toString("base64url");
+}
+
+test("APP groups merge all active card entitlements and deduplicate free grants per admin",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const qs=new URLSearchParams({device_id:deviceId});
+  qs.append("token",await appEntitlementToken(secret,"ent-3",deviceId));
+  qs.append("token",await appEntitlementToken(secret,"ent-2",deviceId));
+  qs.append("token",await appEntitlementToken(secret,"ent-1",deviceId));
+  const db=mockDb({
+    cardGroupMappingTable:true,
+    appEntitlements:[
+      {id:"ent-3",admin_user_id:"admin-b",card_id:"card-3",expires_at:"2099-03-01 00:00:00",purge_at:"2099-03-02 00:00:00",status:"active"},
+      {id:"ent-2",admin_user_id:"admin-a",card_id:"card-2",expires_at:"2099-02-01 00:00:00",purge_at:"2099-02-02 00:00:00",status:"active"},
+      {id:"ent-1",admin_user_id:"admin-a",card_id:"card-1",expires_at:"2099-01-01 00:00:00",purge_at:"2099-01-02 00:00:00",status:"active"},
+    ],
+    appGroups:[
+      {id:"public-a",admin_user_id:"admin-a",name:"Public A",mode:"public",enabled:1},
+      {id:"free-a",admin_user_id:"admin-a",name:"Free A",mode:"free",enabled:1},
+      {id:"public-b",admin_user_id:"admin-b",name:"Public B",mode:"public",enabled:1},
+      {id:"free-b",admin_user_id:"admin-b",name:"Free B",mode:"free",enabled:1},
+      {id:"free-old",admin_user_id:"admin-old",name:"Free old",mode:"free",enabled:1},
+    ],
+    appFreeGrants:[
+      {admin_user_id:"admin-a"},{admin_user_id:"admin-a"},
+      {admin_user_id:"admin-b"},{admin_user_id:"admin-old"},
+    ],
+    cardGroupMappings:[
+      {id:"card-a",admin_user_id:"admin-a",card_id:"card-1",entitlement_id:"ent-1",name:"Card A",mode:"card",enabled:1},
+      {id:"card-a",admin_user_id:"admin-a",card_id:"card-2",entitlement_id:"ent-2",name:"Card A",mode:"card",enabled:1},
+      {id:"card-b",admin_user_id:"admin-b",card_id:"card-3",entitlement_id:"ent-3",name:"Card B",mode:"card",enabled:1},
+    ],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+qs.toString(),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,200);
+  assert.equal(json.data.entitled,true);
+  assert.equal(json.data.entitlements.length,3);
+  assert.deepEqual(json.data.admin_user_ids,["admin-b","admin-a"]);
+  assert.equal(json.data.card_groups_ready,true);
+  const groups=json.data.groups;
+  assert.ok(groups.some(g=>g.id==="public-a"&&g.admin_user_id==="admin-a"));
+  assert.ok(groups.some(g=>g.id==="public-b"&&g.admin_user_id==="admin-b"));
+  assert.ok(groups.some(g=>g.id==="free-old"&&g.admin_user_id==="admin-old"));
+  const cardA=groups.find(g=>g.id==="card-a");
+  assert.deepEqual(cardA.card_ids,["card-1","card-2"]);
+  assert.equal(groups.filter(g=>g.id==="free-a"&&g.admin_user_id==="admin-a").length,1);
+});
+test("one card token cannot read another admin's card groups",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const token=await appEntitlementToken(secret,"ent-a",deviceId);
+  const db=mockDb({
+    cardGroupMappingTable:true,
+    appEntitlements:[
+      {id:"ent-a",admin_user_id:"admin-a",card_id:"card-a",expires_at:"2099-01-01 00:00:00",status:"active"},
+      {id:"ent-b",admin_user_id:"admin-b",card_id:"card-b",expires_at:"2099-01-01 00:00:00",status:"active"},
+    ],
+    appGroups:[
+      {id:"public-a",admin_user_id:"admin-a",name:"Public A",mode:"public",enabled:1},
+      {id:"public-b",admin_user_id:"admin-b",name:"Public B",mode:"public",enabled:1},
+    ],
+    appFreeGrants:[{admin_user_id:"admin-a"}],
+    cardGroupMappings:[
+      {id:"card-group-a",admin_user_id:"admin-a",card_id:"card-a",entitlement_id:"ent-a",name:"Card A",mode:"card",enabled:1},
+      {id:"card-group-b",admin_user_id:"admin-b",card_id:"card-b",entitlement_id:"ent-b",name:"Card B",mode:"card",enabled:1},
+    ],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,200);
+  assert.equal(json.data.entitlements.length,1);
+  assert.deepEqual(json.data.admin_user_ids,["admin-a"]);
+  assert.ok(json.data.groups.some(g=>g.id==="card-group-a"));
+  assert.equal(json.data.groups.some(g=>g.id==="card-group-b"),false);
+  assert.equal(json.data.groups.some(g=>g.id==="public-b"),false);
+});
+
+test("APP groups retain legacy response when Protocol66 mapping table is not installed",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const token=await appEntitlementToken(secret,"ent-1",deviceId);
+  const db=mockDb({
+    appEntitlements:[{id:"ent-1",admin_user_id:"admin-a",card_id:"card-1",expires_at:"2099-01-01 00:00:00",status:"active"}],
+    appGroups:[{id:"public-a",admin_user_id:"admin-a",name:"Public A",mode:"public",enabled:1}],
+    appFreeGrants:[{admin_user_id:"admin-a"}],
+    cardGroupMappingTable:false,
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,200);
+  assert.equal(json.data.card_groups_ready,false);
+  assert.equal(json.data.card_groups_error,undefined);
+  assert.ok(json.data.groups.some(g=>g.id==="public-a"));
+});
+test("APP groups do not expose card groups for a manually disabled or expired card",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const token=await appEntitlementToken(secret,"ent-disabled",deviceId);
+  const db=mockDb({
+    appEntitlements:[{id:"ent-disabled",admin_user_id:"admin-a",card_id:"card-disabled",expires_at:"2099-01-01 00:00:00",status:"active"}],
+    appCards:[{id:"card-disabled",admin_user_id:"admin-a",status:"used",manual_disabled:1,expires_at:"2099-01-01 00:00:00"}],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"ENTITLEMENT_EXPIRED");
+});
+
+test("APP groups reject a token that does not match any active entitlement",async()=>{
+  const deviceId="device-12345678",secret="test-pepper-test-pepper-test-pepper";
+  const db=mockDb({appEntitlements:[{id:"ent-1",admin_user_id:"admin-a",card_id:"card-1",expires_at:"2099-01-01 00:00:00",status:"active"}]});
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:deviceId,token:"invalid-token"}),method:"GET",sessionPepper:secret});
+  assert.equal(res.status,403);
+  assert.equal(json.code,"BAD_TOKEN");
+});
+test("APP groups preserve each admin free grant when no active card entitlement remains",async()=>{
+  const db=mockDb({
+    appFreeGrants:[{admin_user_id:"admin-a"},{admin_user_id:"admin-b"}],
+    appGroups:[
+      {id:"free-a",admin_user_id:"admin-a",name:"Free A",mode:"free",enabled:1},
+      {id:"free-b",admin_user_id:"admin-b",name:"Free B",mode:"free",enabled:1},
+    ],
+  });
+  const {res,json}=await call(db,{path:"/api/app/groups?"+new URLSearchParams({device_id:"device-12345678"}),method:"GET"});
+  assert.equal(res.status,200);
+  assert.equal(json.data.entitled,false);
+  assert.deepEqual(json.data.admin_user_ids,["admin-a","admin-b"]);
+  assert.deepEqual(json.data.groups.map(g=>g.id).sort(),["free-a","free-b"]);
+});
+
+test("APP redemption rate limit counts failed guesses only and uses a fixed 15-minute window",async()=>{
+  const db=mockDb({cardLookupMissing:true});
+  let last;
+  for(let i=0;i<6;i++) last=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(last.res.status,429);
+  assert.equal(last.json.code,"REDEEM_RATE_LIMITED");
+  const counterSql=db.writes.find(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)"))?.sql || "";
+  assert.ok(counterSql.includes("updated_at = CASE") && counterSql.includes("THEN CURRENT_TIMESTAMP ELSE rate_limits.updated_at END"));
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)") && String(x.args[0]).startsWith("app:redeem:failed:v2:")));
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
+});
+test("APP successful redemption does not consume the failed-attempt budget",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)")),false);
+});
+test("APP redemption retry on the same device replays the existing live entitlement",async()=>{
+  const db=mockDb({
+    cardOverride:{id:"card-1",admin_user_id:"u1",days:30,status:"used",manual_disabled:0,activated_at:"2026-11-28 10:00:00",used_at:"2026-11-28 10:00:00",expires_at:"2099-01-01 00:00:00"},
+    replayEntitlement:{id:"ent-existing",expires_at:"2099-01-01 00:00:00",purge_at:"2099-01-02 00:00:00",status:"active"},
+  });
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,201,JSON.stringify(json));assert.equal(json.ok,true);
+  assert.ok(db.reads.some(x=>x.sql.includes("FROM app_entitlements") && x.sql.includes("card_id = ? AND device_id = ?")));
+  assert.equal(json.data.entitlement.id,"ent-existing");
+  assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO rate_limits(bucket, count, updated_at)")),false);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
+});
+test("APP redemption fails closed when rate limit storage is unavailable",async()=>{
+  const db=mockDb({rateLimitFailure:true});
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,503);
+  assert.equal(json.code,"REDEEM_THROTTLE_UNAVAILABLE");
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
+});
+
+test("APP card redemption commits card, entitlement, free grant and activation event in one batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/app/redeem",method:"POST",body:{code:"ABCD12345678",device_id:"device-12345678"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO app_entitlements")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE app_cards SET status='used'")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT OR IGNORE INTO app_free_grants")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO app_card_events")));
+  const update=db.writes.find(x=>x.sql.startsWith("UPDATE app_cards SET status='used'"));
+  assert.match(update.sql,/admin_user_id = \? AND days = \?/);
+  assert.match(update.sql,/manual_disabled=0/);
+  assert.match(update.sql,/datetime\(expires_at\) > datetime\('now'\)/);
+});
+
+test("APP card soft-delete rejects a concurrent activation before writing",async()=>{
+  const db=mockDb({activations:activeTrial,failCardDeleteAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards/card-1",method:"DELETE",body:{}});
+  assert.equal(res.status,409);assert.equal(json.code,"CARD_STATE_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("UPDATE app_cards")).length,0);
+});
+
+
+test("APP link creation batches quota assertion, insert and audit",async()=>{
+  const db=mockDb({activations:activeTrial});
+  const {res,json}=await call(db,{path:"/api/user/app-links",method:"POST",body:{title:"Support",url:"https://example.test"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO app_links")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("COUNT(*) FROM app_links WHERE admin_user_id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("APP link creation returns conflict when concurrent request consumes the last slot",async()=>{
+  const db=mockDb({activations:activeTrial,failAppLinkCapacityAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/app-links",method:"POST",body:{title:"Support",url:"https://example.test"}});
+  assert.equal(res.status,409);assert.equal(json.code,"LINKS_LIMIT_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_links")).length,0);
+});
+
+
+test("user download link creation batches quota assertion, insert and audit",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/downloads",method:"POST",body:{title:"Downloads",url:"https://example.test/file.apk"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO download_links")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("COUNT(*) FROM download_links WHERE scope = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("download link creation rejects concurrent quota exhaustion",async()=>{
+  const db=mockDb({failDownloadQuotaAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/downloads",method:"POST",body:{title:"Downloads",url:"https://example.test/file.apk"}});
+  assert.equal(res.status,409);assert.equal(json.code,"DOWNLOAD_LIMIT_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO download_links")).length,0);
+});
+
+test("user download deletion keeps owner predicate in the final SQL and audit batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/downloads/dl-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM download_links"));
+  assert.ok(del);assert.match(del.sql,/WHERE id = \? AND admin_user_id = \?/);
+  assert.deepEqual(del.args,["dl-1","u1"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super download deletion batches existence assertion, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/downloads/dl-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.deleted,true);
+  const del=db.writes.find(x=>x.sql.startsWith("DELETE FROM download_links"));
+  assert.ok(del);assert.deepEqual(del.args,["dl-1"]);
+  assert.ok(db.writes.some(x=>x.sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super release creation batches insert and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/releases",method:"POST",body:{platform:"android",version_code:10,version_name:"1.0.0",url:"https://example.test/app.apk"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO releases")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super release deletion batches existence assertion, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/releases/rel-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM releases")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("SELECT CASE WHEN (EXISTS (SELECT 1 FROM releases")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super announcement creation batches insert and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/announcements",method:"POST",body:{title:"Notice",scope:"app",body:"Hello"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO announcements")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super announcement toggle batches existence assertion, update and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/announcements/ann-1",method:"PUT",body:{active:false}});
+  assert.equal(res.status,200);assert.equal(json.data.active,0);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE announcements")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super announcement deletion batches existence assertion, delete and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/announcements/ann-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM announcements")));
+  assert.ok(batch);assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("node-group member add batches group and node ownership assertions",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/node-groups/g1/members",method:"POST",body:{node_kind:"manual",node_id:"manual123"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT OR IGNORE INTO node_group_members")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM node_groups WHERE id = ? AND user_id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")));
+});
+
+test("node-group member add rejects ownership change before inserting membership",async()=>{
+  const db=mockDb({failNodeOwnerAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/node-groups/g1/members",method:"POST",body:{node_kind:"manual",node_id:"manual123"}});
+  assert.equal(res.status,409);assert.equal(json.code,"GROUP_MEMBER_STATE_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT OR IGNORE INTO node_group_members")).length,0);
+});
+
+test("manual node metadata update rechecks node ownership in the same batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual123/metadata",method:"PUT",body:{remark:"note"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO node_user_metadata")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")));
+});
+
+test("subscription node override update rechecks source ownership in the same batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/overrides/name",method:"PUT",body:{value:"Changed"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO node_overrides")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id")));
+});
+
+test("subscription node override returns conflict when ownership changes before batch",async()=>{
+  const db=mockDb({failNodeOwnerAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/overrides/name",method:"PUT",body:{value:"Changed"}});
+  assert.equal(res.status,409);assert.equal(json.code,"NODE_OWNERSHIP_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO node_overrides")).length,0);
+});
+
+
+test("subscription node enabled toggle rechecks source ownership in the same batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO node_overrides")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id")));
+});
+
+test("subscription node enabled toggle rejects ownership change before writing",async()=>{
+  const db=mockDb({failNodeOwnerAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/nodes/node123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,409);assert.equal(json.code,"NODE_OWNERSHIP_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO node_overrides")).length,0);
+});
+
+
+test("super scope grant asserts target user in the same batch as grant and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/users/u1/scopes",method:"POST",body:{scope:"manage",reason:"support",expires_in_hours:24}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO admin_user_scopes")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM app_users WHERE id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super scope revoke batches active-scope assertion, revoke and session invalidation",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/scopes/scope-1",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.revoked,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE admin_user_scopes SET revoked_at")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM admin_user_scopes WHERE id = ? AND revoked_at IS NULL")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_sessions SET revoked_at")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super conversion group rename batches final existence check, update and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/convert-groups/rename",method:"POST",body:{from:"Old",to:"New"}});
+  assert.equal(res.status,200);assert.equal(json.data.links,1);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET group_name")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE group_name = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super user status/password update rechecks snapshot and batches update, session revocation and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/users/u1",method:"PUT",body:{status:"disabled",password:"new-secure-password"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE app_users SET status=")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM app_users WHERE id = ? AND role = ? AND status = ?")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_sessions SET revoked_at")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+  const update=batch.find(sql=>sql.startsWith("UPDATE app_users SET status="));
+  assert.match(update,/WHERE id=.*AND role=.*AND status=/);
+});
+
+test("super convert-link regroup uses compare-and-swap and atomic audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/convert-links/link123/group",method:"PATCH",body:{group:"New"}});
+  assert.equal(res.status,200);assert.equal(json.data.group,"New");
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET group_name = ? WHERE id = ? AND group_name = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE id = ? AND group_name = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super convert-link revoke rechecks active state in the same batch",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/convert-links/link123/revoke",method:"POST"});
+  assert.equal(res.status,200);assert.equal(json.data.revoked,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET revoked_at")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE id = ? AND revoked_at IS NULL")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super source approval rechecks prior status and batches decision with audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/sources/src123/approve",method:"POST",body:{reason:"checked"}});
+  assert.equal(res.status,200);assert.equal(json.data.approval_status,"approved");
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE source_approvals SET status")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM source_approvals WHERE source_id = ? AND status = ?")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE source_approvals SET status") && sql.includes("AND status = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super source assignment rechecks source and active target in the ownership batch",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/sources/src123/assign",method:"POST",body:{user_id:"u1"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO source_ownership")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM subscription_sources WHERE id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("FROM app_users WHERE id = ? AND status = 'active'")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super source unassignment compare-and-swaps ownership and enabled state atomically",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/sources/src123/assign",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.data.owner,null);assert.equal(json.data.enabled,0);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM source_ownership WHERE source_id = ? AND user_id = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM subscription_sources WHERE id = ? AND enabled = ?")));
+  assert.ok(batch.some(sql=>sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET enabled = 0") && sql.includes("AND enabled = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("manual node update rechecks ownership and checks final UPDATE changes",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual/manual123",method:"PUT",body:{name:"Manual Updated"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET name=")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET name=") && sql.includes("WHERE id=? AND user_id=?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("manual node delete rechecks ownership before deleting node metadata and group members",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual/manual123",method:"DELETE"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("DELETE FROM user_manual_nodes WHERE id = ? AND user_id = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("DELETE FROM node_user_metadata")));
+  assert.ok(batch.some(sql=>sql.startsWith("DELETE FROM node_group_members")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("subscription node enabled toggle checks ownership and final upsert result",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/sub123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by)")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("JOIN source_ownership so ON so.source_id = n.source_id")));
+  assert.ok(batch.some(sql=>sql.startsWith("INSERT INTO node_overrides")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("manual node enabled toggle checks ownership and final UPDATE result",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/nodes/manual/manual123/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET enabled = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_manual_nodes SET enabled = ?") && sql.includes("WHERE id = ? AND user_id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("source enabled mutation checks final UPDATE result in the ownership batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/sources/src1/enabled",method:"PATCH",body:{enabled:false}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE subscription_sources SET enabled = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET enabled = ?") && sql.includes("source_ownership so")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("source edit mutation checks final UPDATE result in the ownership batch",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{path:"/api/user/sources/src1",method:"PUT",body:{name:"Source revised",url:"https://example.com/sub",tier:"free",priority:100,remark:"updated"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE subscription_sources SET name=")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("EXISTS (SELECT 1 FROM source_ownership WHERE source_id = ? AND user_id = ?)")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE subscription_sources SET name=") && sql.includes("source_ownership so")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+// These tests invoke the exported module-worker fetch entry with Node's native
+// Request/Response Web APIs. They are real entrypoint smoke tests, but not workerd/Cloudflare-isolate tests.
+test("module Worker fetch entry serves health with the candidate version and CORS headers",async()=>{
+  const request=new Request("https://worker.test/health",{method:"GET",headers:{Origin:"https://admin.test"}});
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,200);
+  assert.equal(body.ok,true);
+  assert.equal(body.service,"starjump-api");
+  assert.equal(body.version,"2.5.0-rc1");
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.equal(response.headers.get("cache-control"),"no-store");
+});
+
+test("module Worker fetch entry handles allowed CORS preflight without touching D1",async()=>{
+  const request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{
+    method:"OPTIONS",
+    headers:{Origin:"https://admin.test","Access-Control-Request-Method":"PUT","Access-Control-Request-Headers":"authorization,content-type"},
+  });
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  assert.equal(response.status,204);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.match(response.headers.get("access-control-allow-methods")||"",/PUT/);
+});
+
+test("module Worker fetch entry rejects disallowed CORS preflight before D1 access",async()=>{
+  const request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{
+    method:"OPTIONS",headers:{Origin:"https://attacker.test","Access-Control-Request-Method":"PUT"},
+  });
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  assert.equal(response.status,403);
+  assert.equal(response.headers.get("access-control-allow-origin"),null);
+});
+
+test("module Worker fetch entry reports missing D1 binding through the real Response path",async()=>{
+  const request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{
+    method:"GET",headers:{Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.ok,false);
+  assert.match(body.error,/D1 binding DB 未配置/);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
+
+
+test("module Worker fetch entry rejects an invalid session before user API dispatch",async()=>{
+  const db=mockDb();
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Basic invalid",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,401);
+  assert.equal(body.ok,false);
+  assert.equal(body.code,"INVALID_SESSION");
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.equal(db.reads.length,0);
+  assert.equal(businessWrites(db).length,0);
+});
+
+test("module Worker fetch entry rejects a disallowed Origin before session and database access",async()=>{
+  const db=mockDb();
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Bearer test-session",Origin:"https://attacker.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.match(body.error,/Origin 不允许/);
+  assert.equal(response.headers.get("access-control-allow-origin"),null);
+  assert.equal(db.reads.length,0);
+  assert.equal(businessWrites(db).length,0);
+});
+
+test("module Worker fetch entry blocks APP VIP denial before business route writes",async()=>{
+  const db=mockDb();
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"POST",
+    headers:{Authorization:"Bearer test-session","Content-Type":"application/json",Origin:"https://admin.test"},
+    body:JSON.stringify({name:"Denied group",mode:"assigned"}),
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.equal(body.code,"VIP_REQUIRED");
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.equal(businessWrites(db).length,0);
+  assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO app_groups")),false);
+});
+
+
+test("module Worker fetch masks public subscription D1 failures and preserves allowed Origin CORS",async()=>{
+  const db={prepare(){throw new Error("SQLITE_ERROR: PRIVATE_SCHEMA_DETAILS");}};
+  const request=new Request("https://worker.test/c/ABCDEF",{
+    method:"GET",headers:{Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.code,"INTERNAL_ERROR");
+  assert.match(body.error,/订阅服务处理失败/);
+  assert.equal(JSON.stringify(body).includes("PRIVATE_SCHEMA_DETAILS"),false);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
+
+test("module Worker fetch masks authenticated route D1 failures without exposing SQL details",async()=>{
+  const base=mockDb();
+  const db={
+    prepare(sql){
+      if(sql.includes("FROM app_groups")) throw new Error("SQLITE_ERROR: PRIVATE_SCHEMA_DETAILS");
+      return base.prepare(sql);
+    },
+    batch:base.batch.bind(base),
+  };
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Bearer test-session",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.ok,false);
+  assert.equal(JSON.stringify(body).includes("PRIVATE_SCHEMA_DETAILS"),false);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
+
+test("module Worker diagnostic mode never returns internal exception messages",async()=>{
+  const base=mockDb();
+  const db={
+    prepare(sql){
+      if(sql.includes("FROM app_groups")) throw new Error("SQLITE_ERROR: PRIVATE_SCHEMA_DETAILS");
+      return base.prepare(sql);
+    },
+    batch:base.batch.bind(base),
+  };
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Bearer test-session",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{
+    DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",
+    ADMIN_ORIGIN:"https://admin.test",DIAGNOSTICS:"1",
+  });
+  const body=await response.json();
+  assert.equal(response.status,500);
+  assert.equal(body.code,"INTERNAL_ERROR");
+  assert.equal(JSON.stringify(body).includes("PRIVATE_SCHEMA_DETAILS"),false);
+  assert.equal(body.detail,undefined);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+});
+
+
+test("module Worker migration endpoint remains fail-closed for a direct super-admin session",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const request=new Request("https://worker.test/api/super/migrate",{
+    method:"POST",headers:{Authorization:"Bearer test-session","Content-Type":"application/json",Origin:"https://admin.test"},
+    body:JSON.stringify({}),
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,503);
+  assert.equal(body.ok,false);
+  assert.equal(body.code,"MIGRATION_REVIEW_REQUIRED");
+  assert.equal(businessWrites(db).length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
+  assert.equal(db.reads.some(x=>/CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE/i.test(x.sql)),false);
+});
+
+test("module Worker migration endpoint rejects legacy ADMIN_TOKEN before migration handler",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const token="legacy-admin-token-that-is-longer-than-thirty-two-characters";
+  const request=new Request("https://worker.test/api/super/migrate",{
+    method:"POST",headers:{Authorization:"Bearer "+token,Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{
+    DB:db,ADMIN_TOKEN:token,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test",
+  });
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.equal(businessWrites(db).length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
+});
+
+test("module Worker migration endpoint rejects impersonation sessions before migration handler",async()=>{
+  const db=mockDb({role:"super_admin",actingAs:"target-user"});
+  const request=new Request("https://worker.test/api/super/migrate",{
+    method:"POST",headers:{Authorization:"Bearer test-session",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{
+    DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test",
+  });
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.equal(businessWrites(db).length,0);
+  assert.equal(db.batches.some(batch=>batch.some(sql=>sql.includes("UPDATE app_cards SET status='used'"))),false);
 });

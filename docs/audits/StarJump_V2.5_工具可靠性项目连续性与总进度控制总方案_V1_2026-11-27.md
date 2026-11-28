@@ -1524,3 +1524,106 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 新增 scoped alias 模型与测试、manifest schema/validator/tests、Batch 85 workflow。CI 通过状态须由 Actions 实际日志另行确认；不把 workflow 文件存在等同于测试通过。
 - 未连接 D1、未读取 Secrets、未执行 SQL/迁移、未修改 Worker/HTML/APK/Room/Cloudflare 配置、未部署。
 - **第八十六批唯一接手卡：**建立持久化 backfill checkpoint 离线状态机；复核 scoped alias 在 owner/tenant 迁移、软删除、重放及 dimension_type 版本演进下的唯一性；将 manifest metadata 与八方法 statement matrix、D1-001..034 对齐；继续验证 K1 重算证据；保持离线不部署。
+
+
+## 第七十批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-CARD-MAP-70`；报告：`docs/backend/StarJump_V2.5_APP卡密分组映射迁移前置设计与数据库只读诊断方案_第七十批_V2.5-DEV-B1-APP-CARD-MAP-70_2026-11-28.md`。
+- 当前 PR #2：Draft/Open/Unmerged；批次报告提交后 head：`b2c9c9cd45e0beecf62636fb24da1e9ed4c0314f`。
+- 本批只读复核 Batch 49 `schema-status`、HTML 数据库诊断、APP 分组模式和 Protocol 65 生产接入边界；明确当前 40 表检查仍只是 table-name inventory。
+- 新增卡密-分组映射候选逻辑模型和迁移前置证据清单；不视为批准 DDL，不创建表、不改现有 mode、不接入 Protocol 65。
+- 只读结构诊断建议先确认 D1 元数据 SQL 支持，再设计 schema manifest；任何 unsupported/error 均为 not_verified，不得显示 PASS。业务数据和凭证不得返回。
+- 当前阻塞：无目标 D1 schema snapshot；旧 `public/assigned/free` 与 Protocol 65 `card/free` 语义不兼容；无真实 D1 adapter/正式 route/APK 多 entitlement 兼容证据。
+- 本批无代码测试、无 D1、无 Secrets、无 Cloudflare 部署；PR 仍保持 Draft/Open。
+- **第七十一批唯一接手卡：**先核查 schema-status 超管鉴权和 Worker build/test wiring；从官方 D1 支持范围确认只读 schema introspection；定义固定 schema manifest 与安全输出；使用 isolated SQLite + Worker integration tests 验证后再实施只读诊断；卡密 mapping migration 继续等真实 D1 schema 证据及用户授权。
+
+- 第七十批 PR CI Run `46113454480` completed/success，head `91a223d656a42e11082823e6baa6d3bf5f4b9cc8`；Worker bundle、Cron/static、SQLite verifier、auth adapter、Worker integration、APP v2 contracts 和 artifact upload 均成功。该 CI 不验证本批设计文档中的 schema introspection 或生产 D1。
+
+
+## 第七十一批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-SCHEMA-DIAG-71`；报告：`docs/backend/StarJump_V2.5_APP数据库只读结构诊断Worker与后台接入实施报告_第七十一批_V2.5-DEV-B1-APP-SCHEMA-DIAG-71_2026-11-28.md`。
+- 在 Batch 49 Worker 的既有 schema-status 上新增 7 张 APP 表的只读结构观察；保留 40 表名称检查。新增列、索引、索引列、外键、trigger/view 元数据；没有批准 schema baseline 时只报告 observed/not_verified，不给兼容性 PASS。
+- HTML 诊断已接入逐表结构信息。本人登录超管路由鉴权未放宽；非超管请求在 schema query 前拒绝。
+- Cloudflare D1 官方文档确认 table_info/index_list/index_info/foreign_key_list 等 metadata PRAGMA 和 sqlite_master 查询属于 D1 支持范围；但本批没有访问真实 D1，仍需隔离/真实目标环境验证。
+- 最终测试 head `3f4980a90ef4c81d45a63b2352b5effbf6d1ff20`：Push Run `46113685467` 与 PR Run `46113689633` 均 SUCCESS；Worker integration 62/62、auth adapter 12/12、APP suites 19/19 + 23/23 + 26/26，bundle/static/SQLite/artifact 全部通过。中间两次 CI 因测试 mock 适配/regex 断言失败，已根据真实日志修复，最终 head 双 CI 通过。
+- 仍无生产 D1 schema snapshot；卡密映射表、管理端配置 API/UI、真实 D1 adapter、正式 route 和 APK 多 entitlement 未完成。迁移保持 fail-closed；未部署、未改 Secrets、未合并。
+- **第七十二批唯一接手卡：**先让用户确认目标 D1 环境和 schema-only snapshot 获取方式；取得只含 schema metadata 的 APP 7 表快照后再建立批准的 manifest comparison；隔离验证 mapping migration 与 rollback；继续旧 mode 兼容审查。不得导出业务行/卡密/令牌，不连生产写入、不部署。
+
+
+## 第七十二批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-CARD-MAP-72`；报告：`docs/backend/StarJump_V2.5_APP卡密分组映射候选模型隔离SQLite验证报告_第七十二批_V2.5-DEV-B1-APP-CARD-MAP-72_2026-11-28.md`。
+- 新增 `tools/database_migrations/tests/test_app_card_group_mapping_candidate.py`，以最小历史字段 fixture 验证候选 mapping model；该文件只测试、不属于 migration catalog，没有新增 SQL migration。
+- 约束：同管理员 card/group、group.mode=card、unique(card_id,group_id)、软解绑保留、父记录 RESTRICT、阻止活跃映射 mode 降级、阻止关联历史 owner 转移。11 项 SQLite fixture tests CI 通过。
+- 测试 head `b6078a207ce036eb4f160b1e16db75da96f33a23`，Push `46113980630` 与 PR `46113985475` SUCCESS。该证据仅为隔离 SQLite 和现有 mock/integration 测试，不代表 D1 生产约束验证。
+- 没有真实 D1 schema snapshot；候选模型不是可执行生产 DDL。无管理 API/UI、D1 loader、正式 composed route、APK 多凭据闭环；未部署/未合并/未操作 Secrets。
+- **第七十三批唯一接手卡：**做管理员卡密-分组 API 的 handler/SQL adapter contract fixture，测试 owner/VIP/card status/replace semantics/audit 同批次/幂等/脱敏；不接真实 D1，不创建 migration SQL，不注册 route。
+
+
+## 第七十三批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-CARD-API-73`；报告：`docs/backend/StarJump_V2.5_APP卡密分组管理API契约与原子写入边界测试报告_第七十三批_V2.5-DEV-B1-APP-CARD-API-73_2026-11-28.md`。
+- Protocol 66 新增独立 card-group admin service/handler/test contract，CI push/PR 路径已纳入。GET/PUT 逐卡密映射、空数组 replace clear、owner scope、VIP 只读、activated used 卡密可配置、inactive/manual-disabled/expired 拒绝、card-only mode、脱敏响应。
+- Storage adapter 必须在最终 batch 重新校验 VIP/体验期权限、card 状态/过期、owner/mode/enabled，并将 mapping + audit 同批；requestId 幂等与 payload 冲突由 adapter 处理。当前尚无 D1 adapter/正式 Worker route/HTML UI。
+- 最终测试 head `02153a1c6304124f466691a75514fcff970c240c`：Push `46114516960` 和 PR `46114520394` SUCCESS；Protocol 66 15/15，Protocol 65 26/26，其他 Worker/SQLite/static/build checks passed。
+- 本批未访问生产 D1、未修改 Secrets、未部署或合并。PR #2 保持 Draft/Open/Unmerged。
+- **第七十四批唯一接手卡：**实现 D1 adapter SQL statement plan 与 isolated SQLite fixture，验证 owner/card/VIP 最终条件、mapping soft remove/restore、audit 原子性、requestId + payload digest 幂等及敏感字段不读取；真实 schema 未确认前不接入正式 Worker、不创建生产 migration。
+
+
+## 第七十四批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-D1-PLAN-74`；报告：`docs/backend/StarJump_V2.5_APP卡密分组管理候选D1_SQL计划与隔离原子性验证报告_第七十四批_V2.5-DEV-B1-APP-D1-PLAN-74_2026-11-28.md`。
+- Protocol 66 新增候选 D1 statement plan、7 项 Node plan tests、隔离 SQLite schema fixture 与 10 项 Python 测试；Service adapter input 新增 `expectedGroupIds` CAS 快照。
+- 写计划：最终 VIP/card/group/active mapping CAS 断言 → requestId 幂等记录 → mapping soft-remove/upsert restore → audit 同批写入 → 最后 SELECT。读路径按 owner scope，不查询卡密 redeem code。
+- CI 最终 head `a3694adb0c83df7db57d51a655376cbd6d3ec79a`：Push `46115274952` / PR `46115278626` SUCCESS；Python SQLite 46 tests、Protocol 66 service 16/16、SQL plan 7/7，其他 regression/integration tests 通过。
+- 仍然只是候选 plan/fixture：没有真实 D1 adapter、生产 schema/migration、正式 Worker route、HTML UI 或 APK 多凭据闭环；无生产 D1/Secrets/部署/合并。
+- **第七十五批唯一接手卡：**实现隔离 D1 adapter harness：scoped reads、canonical payload SHA-256、batch 执行、duplicate requestId reread/hash compare、不同 payload 冲突、错误映射和安全投影；不注册正式 route、不创建生产 migration、不连接真实 D1。
+
+
+## 第七十五批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-D1-HARNESS-75`；报告：`docs/backend/StarJump_V2.5_APP卡密分组隔离D1适配器Harness与幂等并发恢复测试报告_第七十五批_V2.5-DEV-B1-APP-D1-HARNESS-75_2026-11-28.md`。
+- Protocol 66 新增隔离 D1 adapter harness：scoped reads、canonical SHA-256、requestId 幂等预查、D1 batch statement plan、冲突后 reread/digest compare、失败后状态分类和安全映射投影。adapter 的 `resolveAccess` 由依赖注入，未接正式 Worker。
+- Service 归一化 D1 INTEGER 布尔值，enabled=1 / is_expired=1 正确处理。
+- 测试 head `20555872b2aa126fd6e7832191232a7b4b6e7b97`：Push `46115692564` 与 PR `46115696474` SUCCESS；Protocol 66 adapter 13/13、service 17/17、SQL plan 7/7、Python SQLite 46 tests。
+- 没有真实 D1 schema、migration、正式 route、HTML UI、APK 多 entitlement 闭环；未触碰生产 D1/Secrets/部署/合并。
+- **第七十六批唯一接手卡：**正式 route 前边界加固：delegated actor/effective owner、VIP/trial/read-only/fail-closed、batch result shape、损坏幂等记录、duplicate mapping、group disable/delete race、requestId 传递；整理真实 D1 schema manifest 只读诊断字段清单。不注册 route、不创建 migration。
+
+
+## 第七十六批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-SCOPE-76`；报告：`docs/backend/StarJump_V2.5_APP卡密分组委托管理员权限与D1最终CAS边界加固报告_第七十六批_V2.5-DEV-B1-APP-SCOPE-76_2026-11-28.md`。
+- 完成 delegated identity 分层：actorId 审计真实操作者，adminId/effectiveId 为目标 VIP owner；GET delegated 需 read/operate/manage，PUT 需 operate/manage；scopeId 从 session 传递，body 不可指定 owner。
+- 候选 D1 final assertion 重新验证 admin_user_scopes 的 actor/effective/scopeId、revoked_at、expires_at 与 operate/manage，防止预检后撤权仍写入。真实 D1 未验证。
+- CAS snapshot 取安全映射投影 group.id；SQL plan 重建，去除意外重复与转义损坏。
+- 最终 head `d795b0e87166b6f2440987f771421adf84b2d608`：Push `46116688615`、PR `46116692609` SUCCESS；Protocol66 service 21/21、adapter 14/14、SQL plan 8/8；Python SQLite 46，Batch49 auth 12，Worker integration 62，Protocol60 19、64 23、65 26。
+- Artifact `15252361198`（134,139 bytes，expires 2026-12-12T06:27:43Z）。PR #2 继续 Draft/Open/Unmerged。
+- 仍无真实 D1 schema/migration、正式 route、生产 VIP resolver、HTML UI、APK 多 entitlement 端到端；未操作生产 D1/Secrets/部署/合并。
+- **第七十七批唯一接手卡：**设计真实 D1 schema manifest 只读诊断：table_info、index_list/index_info、foreign_key_list、sqlite_master triggers/index SQL；检查历史重复/孤儿/owner 冲突只输出脱敏计数；产出 staging/production 只读 SQL 与人工执行说明，不执行 DDL/DML，不注册 route。
+
+
+## 第七十七批连续性更新（2026-11-28）
+
+- 批次 V2.5-DEV-B1-APP-SCHEMA-MANIFEST-77 已提交人工 schema-only 诊断 SQL 与实施报告。
+- 核验清单固定为 7 张表：app_cards、app_groups、admin_vip_activations、admin_user_scopes、admin_audit_events、候选 app_card_group_mappings、候选 app_card_group_admin_requests。
+- 诊断只读取 sqlite_master 与 PRAGMA table_info/index_list/foreign_key_list；索引列需按实际返回索引名另行读取 index_info/index_xinfo。缺表或空结果不是创建授权，也不是 PASS。
+- 数据异常计数暂缓，直到真实 schema manifest 确认列、FK、索引和状态语义；后续查询只允许 COUNT_ONLY 脱敏计数，不返回业务行、卡密 code、session/APP token 或订阅 URL。
+- 本批没有真实 D1 连接或 SQL 执行，没有 DDL/DML、Secrets、部署或合并。生产 schema 仍 NOT VERIFIED。
+- PR #2 保持 Draft/Open/Unmerged；多卡密聚合、卡密映射 migration/adapter/route/UI、APK 多凭据闭环仍为上线阻断。
+- **第七十八批唯一接手卡：**在取得脱敏 schema-only snapshot 后制作分环境版本化 manifest comparison；之后才根据真实字段生成重复映射、孤儿和 owner 冲突的只读计数 SQL。不得在无 snapshot 情况下猜测 schema。
+
+
+## 第七十八批连续性更新（2026-11-28）
+
+- 新增 `tools/database_migrations/schema_manifest.py` 与 `tests/test_schema_manifest.py`，读取既有 schema_snapshot JSON，纯离线生成分环境 manifest 并比较，不连接任何数据库。
+- 固定核验 Batch77 的 7 张 APP/VIP 表；输出列约束、索引属性/键列、外键动作、表/索引/trigger/view 对象的 SHA-256 摘要。默认值和 SQL 定义只输出 hash，不回显原文。
+- 新增 13 项测试覆盖缺表、列/索引/FK 差异、环境标签、非法输入、scope 差异和敏感字面量不回显。由 RC1 既有 unittest discovery 纳入 CI。
+- Manifest MATCH 仅为结构投影相同，不等同语义兼容、D1 事务验证、迁移批准或上线通过。没有真实 snapshot 时，生产 schema 继续 NOT VERIFIED。
+- 本批未连接 D1、未执行 SQL/DDL/DML、未读业务行、未触碰 Secrets/部署/合并。PR #2 保持 Draft/Open/Unmerged。
+- APP 卡密分组 mapping migration、真实 D1 adapter、正式 Worker route、管理 UI、APK 多 entitlement 联调仍是阻断项。
+- **第七十九批唯一接手卡：**核对 Batch78 CI head/run；静态审查 manifest 输入鲁棒性、重复对象、缺失索引详情、SQL/default hash 脱敏与稳定性。若无真实 schema snapshot，不生成业务数据异常 SQL 或生产 migration。
+
+- Batch78 CI 复核：PR Run 46124644301 / Job 140916448057 SUCCESS；日志明确显示 schema_manifest 13/13、database_migrations 全套 59/59 tests，最终 OK。该 CI 仅验证离线工具与本地 fixture，不证明真实 D1 schema 或生产兼容。
+
+- Batch78 负面输入审查再加固：manifest builder 对缺失 objects、缺失 index_details 和重复 schema object identity fail closed；新增 3 项测试。最新代码 head `f47b9577cdca896aef6379dcdd637429aa79eb21) 的 PR Run 46124797390 / Job 140916926570 SUCCESS；Schema Manifest 16/16、database_migrations 62/62 tests，最终 OK。之后仅追加测试报告/进度/README/连续性文档；最终文档 head 后续需以分支最新提交复核，不能把该代码 head CI 说成覆盖文档提交。

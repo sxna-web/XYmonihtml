@@ -16,10 +16,27 @@ def schema_snapshot(conn: sqlite3.Connection) -> dict:
     for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"):
         name = row[0]
         qname = '"' + name.replace('"', '""') + '"'
+        index_rows = [list(r) for r in conn.execute("PRAGMA index_list(" + qname + ")")]
+        index_details = []
+        for index_row in index_rows:
+            index_name = str(index_row[1])
+            qindex = '"' + index_name.replace('"', '""') + '"'
+            index_details.append({
+                "name": index_name,
+                "list_row": index_row,
+                "columns": [list(r) for r in conn.execute("PRAGMA index_info(" + qindex + ")")],
+                "extended_columns": [list(r) for r in conn.execute("PRAGMA index_xinfo(" + qindex + ")")],
+                "sql": conn.execute(
+                    "SELECT COALESCE(sql, '') FROM sqlite_master WHERE type='index' AND name=?",
+                    (index_name,),
+                ).fetchone()[0],
+            })
         tables[name] = {
-            "columns": [list(r) for r in conn.execute(f"PRAGMA table_info({qname})")],
-            "indexes": [list(r) for r in conn.execute(f"PRAGMA index_list({qname})")],
-            "foreign_keys": [list(r) for r in conn.execute(f"PRAGMA foreign_key_list({qname})")],
+            "columns": [list(r) for r in conn.execute("PRAGMA table_info(" + qname + ")")],
+            "extended_columns": [list(r) for r in conn.execute("PRAGMA table_xinfo(" + qname + ")")],
+            "indexes": index_rows,
+            "index_details": index_details,
+            "foreign_keys": [list(r) for r in conn.execute("PRAGMA foreign_key_list(" + qname + ")")],
         }
     return {"objects": [list(r) for r in objects], "tables": tables}
 
