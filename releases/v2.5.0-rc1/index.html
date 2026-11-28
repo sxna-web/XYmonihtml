@@ -1861,16 +1861,57 @@ function apiUrl(path) {
 }
 async function api(path, options={}) {
   if (!token) throw new Error('未登录');
-  const res = await fetch(apiUrl(path), {
-    ...options,
-    headers: { ...(options.body ? {'content-type':'application/json'} : {}), Authorization: 'Bearer ' + token, ...(options.headers||{}) },
-    cache: 'no-store', redirect: 'error',
-  });
-  let data = null;
-  try { data = await res.json(); } catch { data = null; }
-  if (res.status === 401) { token=''; showLogin('会话已失效，请重新登录'); throw new Error('未登录'); }
-  if (!res.ok || !data || data.ok !== true) throw new Error((data && data.error) || ('HTTP ' + res.status));
-  return data;
+  const url = apiUrl(path);
+  const method = String(options.method || 'GET').toUpperCase();
+  const safeRead = method === 'GET' || method === 'HEAD';
+  const maxAttempts = safeRead ? 2 : 1;
+  let lastNetworkError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const res = await fetch(url, {
+        ...options,
+        signal: options.signal || controller.signal,
+        headers: { ...(options.body ? {'content-type':'application/json'} : {}), Authorization: 'Bearer ' + token, ...(options.headers||{}) },
+        cache: 'no-store', redirect: 'error',
+      });
+      let data = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (res.status === 401) { token=''; showLogin('会话已失效，请重新登录'); throw new Error('登录状态已失效，请重新登录'); }
+      if (res.status === 429) {
+        const seconds = Math.max(1, Number(res.headers.get('Retry-After') || 60));
+        throw new Error('操作过于频繁，请等待约 ' + seconds + ' 秒后再试');
+      }
+      if ([502, 503, 504].includes(res.status) && safeRead && attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 350 * attempt));
+        continue;
+      }
+      if (!res.ok || !data || data.ok !== true) {
+        const message = (data && (data.error || data.message)) || ('服务器暂时无法完成请求（HTTP ' + res.status + '）');
+        throw new Error(message);
+      }
+      return data;
+    } catch (error) {
+      if (error && error.name === 'AbortError') {
+        lastNetworkError = new Error('连接等待超时（20 秒）。请检查网络后重试。');
+      } else if (error instanceof TypeError) {
+        lastNetworkError = new Error(navigator.onLine === false ? '当前设备似乎处于离线状态，请恢复网络后重试。' : '网络连接失败，请检查网络或稍后重试。');
+      } else {
+        throw error;
+      }
+      if (!safeRead || attempt >= maxAttempts) {
+        if (!safeRead) {
+          throw new Error(lastNetworkError.message + ' 本次为写入操作，服务器是否已收到请求暂时无法确认；请先刷新并核对结果，不要连续重复提交。');
+        }
+        throw lastNetworkError;
+      }
+      await new Promise(resolve => setTimeout(resolve, 350 * attempt));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastNetworkError || new Error('网络请求暂时失败，请稍后重试');
 }
 function fmtBytes(v) {
   if (v === null || v === undefined) return '暂未获取';
