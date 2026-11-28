@@ -28,10 +28,11 @@ CREATE TABLE IF NOT EXISTS admin_vip_activations (
 
 CREATE TABLE IF NOT EXISTS app_card_group_mappings (
   id TEXT PRIMARY KEY,
-  card_id TEXT NOT NULL REFERENCES app_cards(id) ON DELETE RESTRICT,
+  card_id TEXT NOT NULL,
   admin_user_id TEXT NOT NULL,
-  group_id TEXT NOT NULL REFERENCES app_groups(id) ON DELETE RESTRICT,
+  group_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','removed')),
+  CHECK ((status = 'active' AND removed_at IS NULL) OR (status = 'removed' AND removed_at IS NOT NULL)),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   removed_at TEXT,
@@ -41,18 +42,18 @@ CREATE TABLE IF NOT EXISTS app_card_group_mappings (
     (status = 'removed' AND removed_at IS NOT NULL)
   )
 );
-CREATE INDEX IF NOT EXISTS idx_app_card_group_card_owner_status
-  ON app_card_group_mappings(card_id, admin_user_id, status);
-CREATE INDEX IF NOT EXISTS idx_app_card_group_owner_group_status
-  ON app_card_group_mappings(admin_user_id, group_id, status);
+CREATE INDEX IF NOT EXISTS ix_card_group_mappings_admin_card_status
+  ON app_card_group_mappings(admin_user_id, card_id, status);
+CREATE INDEX IF NOT EXISTS ix_card_group_mappings_group_status
+  ON app_card_group_mappings(group_id, status);
 
 CREATE TABLE IF NOT EXISTS app_card_group_admin_requests (
   admin_user_id TEXT NOT NULL,
-  request_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
   payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64),
   response_json TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY(admin_user_id, request_id)
+  PRIMARY KEY(admin_user_id, idempotency_key)
 );
 
 CREATE TABLE IF NOT EXISTS admin_audit_events (
@@ -92,6 +93,23 @@ WHEN NOT EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT, 'CARD_GROUP_OWNER_OR_MODE_MISMATCH');
+END;
+
+CREATE INDEX IF NOT EXISTS ix_card_group_admin_requests_created
+  ON app_card_group_admin_requests(created_at);
+
+CREATE TRIGGER IF NOT EXISTS app_card_group_mapping_card_delete_guard
+BEFORE DELETE ON app_cards
+WHEN EXISTS (SELECT 1 FROM app_card_group_mappings m WHERE m.card_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'CARD_HAS_GROUP_MAPPING_HISTORY');
+END;
+
+CREATE TRIGGER IF NOT EXISTS app_card_group_mapping_group_delete_guard
+BEFORE DELETE ON app_groups
+WHEN EXISTS (SELECT 1 FROM app_card_group_mappings m WHERE m.group_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'GROUP_HAS_CARD_MAPPING_HISTORY');
 END;
 
 CREATE TRIGGER IF NOT EXISTS app_cards_owner_transfer_guard
