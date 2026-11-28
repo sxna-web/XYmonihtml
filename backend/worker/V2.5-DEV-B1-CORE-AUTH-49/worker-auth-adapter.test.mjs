@@ -40,6 +40,8 @@ test("maps all supported write operations and leaves GET outside gate",()=>{
   assert.equal(_actionForTest("/api/user/app-cards","POST"),"generate");
   assert.equal(_actionForTest("/api/user/app-cards/c1","DELETE"),"disable");
   assert.equal(_actionForTest("/api/user/app-cards/c1/disable","POST"),"disable");
+  assert.equal(_actionForTest("/api/user/app-cards/c1/groups","GET"),null);
+  assert.equal(_actionForTest("/api/user/app-cards/c1/groups","PUT"),"associate");
 });
 
 test("L1/no VIP cannot create and performs no writes",async()=>{
@@ -107,4 +109,40 @@ test("unowned delete is denied",async()=>{
   const db=mockDb({activations:formalActive,resource:null});
   const r=await authorizeAppManagementRequest({db,path:"/api/user/app-groups/g1",method:"DELETE",ctx:user,now});
   assert.equal(r.allowed,false); assert.equal(r.code,"RESOURCE_NOT_OWNED"); assert.equal(db.calls.writes,0);
+});
+
+test("Protocol66 card-group PUT is a VIP-gated configuration association",async()=>{
+  const db=mockDb({activations:trialActive});
+  const r=await authorizeAppManagementRequest({
+    db,path:"/api/user/app-cards/c1/groups",method:"PUT",ctx:user,now,
+  });
+  assert.equal(r.allowed,true);
+  assert.equal(r.action,"associate");
+  assert.equal(r.vipState,"active_trial");
+  assert.equal(db.calls.writes,0);
+});
+
+test("Protocol66 card-group PUT is denied after formal VIP expiry",async()=>{
+  const db=mockDb({activations:formalExpired});
+  const r=await authorizeAppManagementRequest({
+    db,path:"/api/user/app-cards/c1/groups",method:"PUT",ctx:user,now,
+  });
+  assert.equal(r.allowed,false);
+  assert.equal(r.action,"associate");
+  assert.equal(db.calls.writes,0);
+});
+
+test("Protocol66 card-group PUT remains denied when target VIP lookup fails",async()=>{
+  const db=mockDb();
+  db.prepare=(sql)=>({bind(){return {
+    async all(){throw new Error("D1 unavailable");},
+    async first(){return null;},
+    async run(){db.calls.writes++;},
+  };}});
+  const r=await authorizeAppManagementRequest({
+    db,path:"/api/user/app-cards/c1/groups",method:"PUT",ctx:user,now,
+  });
+  assert.equal(r.allowed,false);
+  assert.equal(r.code,"VIP_STATUS_UNAVAILABLE");
+  assert.equal(db.calls.writes,0);
 });
