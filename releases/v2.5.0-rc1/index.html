@@ -1859,6 +1859,45 @@ function apiUrl(path) {
   if (u.pathname && u.pathname !== '/') throw new Error('请填写 Worker 根地址，不要带子路径');
   return u.origin + path;
 }
+async function fetchWithNetworkPolicy(url, options={}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const safeRead = method === 'GET' || method === 'HEAD';
+  const maxAttempts = safeRead ? 2 : 1;
+  let lastNetworkError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const res = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        cache: options.cache || 'no-store',
+        redirect: 'error',
+      });
+      if (safeRead && [502, 503, 504].includes(res.status) && attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 350 * attempt));
+        continue;
+      }
+      if (!safeRead && res.status >= 500) {
+        throw new Error('服务器暂时异常（HTTP ' + res.status + '）。本次写入结果可能尚未确认，请刷新并核对后再决定是否重试。');
+      }
+      return res;
+    } catch (error) {
+      if (error instanceof Error && error.name !== 'AbortError' && !(error instanceof TypeError)) throw error;
+      lastNetworkError = error && error.name === 'AbortError'
+        ? new Error('连接等待超时（20 秒）。请检查网络后重试。')
+        : new Error(navigator.onLine === false ? '当前设备似乎处于离线状态，请恢复网络后重试。' : '网络连接失败，请检查网络或稍后重试。');
+      if (!safeRead || attempt >= maxAttempts) {
+        if (!safeRead) throw new Error(lastNetworkError.message + ' 服务器是否已收到本次操作暂时无法确认，请先刷新核对，避免重复提交。');
+        throw lastNetworkError;
+      }
+      await new Promise(resolve => setTimeout(resolve, 350 * attempt));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastNetworkError || new Error('网络请求暂时失败，请稍后重试');
+}
 async function api(path, options={}) {
   if (!token) throw new Error('未登录');
   const url = apiUrl(path);
@@ -1942,7 +1981,7 @@ async function doLogin() {
   if (!username || !password) return setStatus('loginStatus','请输入用户名和密码','bad');
   $('loginBtn').disabled = true;
   try {
-    const res = await fetch(apiUrl('/api/auth/login'), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ username, password }) });
+    const res = await fetchWithNetworkPolicy(apiUrl('/api/auth/login'), { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ username, password }) });
     const data = await res.json().catch(()=>null);
     if (!res.ok || !data || data.ok !== true) throw new Error((data && data.error) || ('登录失败 HTTP ' + res.status));
     token = data.data.token;
@@ -2008,7 +2047,7 @@ async function doLogout() {
 async function endAssistQuiet() {
   if (!assistToken) return;
   try {
-    await fetch(apiUrl('/api/super/impersonation/end'), {
+    await fetchWithNetworkPolicy(apiUrl('/api/super/impersonation/end'), {
       method:'POST', headers:{ Authorization:'Bearer ' + assistToken, 'content-type':'application/json' }, body:'{}',
     });
   } catch {}
@@ -2146,7 +2185,7 @@ async function loadSources() {
     toggle.textContent = Number(r.enabled) ? '停用' : '启用';
     toggle.addEventListener('click', async () => {
       try {
-        const res = await fetch(apiUrl('/api/user/sources/' + encodeURIComponent(r.source_id) + '/enabled'), {
+        const res = await fetchWithNetworkPolicy(apiUrl('/api/user/sources/' + encodeURIComponent(r.source_id) + '/enabled'), {
           method:'PATCH', headers:{ Authorization:'Bearer ' + token, 'content-type':'application/json' },
           body: JSON.stringify({ enabled: !Number(r.enabled) }),
         });
@@ -2160,7 +2199,7 @@ async function loadSources() {
     syncBtn.addEventListener('click', async () => {
       syncBtn.disabled = true; syncBtn.textContent = '同步中…';
       try {
-        const res = await fetch(apiUrl('/api/admin/sync'), {
+        const res = await fetchWithNetworkPolicy(apiUrl('/api/admin/sync'), {
           method:'POST', headers:{ Authorization:'Bearer ' + token, 'content-type':'application/json' },
           body: JSON.stringify({ source_id: r.source_id }),
         });
@@ -2180,7 +2219,7 @@ async function loadSources() {
       un.addEventListener('click', async () => {
         if (!confirm('解除「' + (r.name || r.source_id) + '」的归属？来源会被停用，节点与历史数据全部保留。')) return;
         try {
-          await fetch(apiUrl('/api/super/sources/' + encodeURIComponent(r.source_id) + '/assign'), { method:'DELETE', headers:{ Authorization:'Bearer ' + token } })
+          await fetchWithNetworkPolicy(apiUrl('/api/super/sources/' + encodeURIComponent(r.source_id) + '/assign'), { method:'DELETE', headers:{ Authorization:'Bearer ' + token } })
             .then(async res => { const d = await res.json().catch(() => null); if (!res.ok || !d || d.ok !== true) throw new Error((d && d.error) || ('HTTP ' + res.status)); });
           setStatus('srcStatus', '已解除分配并停用（历史数据保留）', 'good');
           await loadSources();
@@ -2468,7 +2507,7 @@ $('regSubmit').addEventListener('click', async () => {
   if (p1 !== p2) return setStatus('loginStatus', '两次密码不一致', 'bad');
   try {
     // 注册是公开接口，不能用需要 token 的 api()
-    const res = await fetch(apiUrl('/api/auth/register'), {
+    const res = await fetchWithNetworkPolicy(apiUrl('/api/auth/register'), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ username, password: p1 }),
     });
@@ -3000,7 +3039,7 @@ async function endAssist() {
   if (!assistToken) return setStatus('asStatus','当前没有协助会话（或本页刷新后已丢失 token）','warn');
   try {
     // 关键：用协助 token 结束，而不是超管自己的 token——避免误撤销超管登录会话
-    const res = await fetch(apiUrl('/api/super/impersonation/end'), {
+    const res = await fetchWithNetworkPolicy(apiUrl('/api/super/impersonation/end'), {
       method:'POST', headers:{ Authorization:'Bearer ' + assistToken, 'content-type':'application/json' }, body:'{}',
     });
     const data = await res.json().catch(() => null);
@@ -3025,7 +3064,7 @@ $('btGo').addEventListener('click', async () => {
   setStatus('btStatus', '发送中…', '');
   const t0 = performance.now();
   try {
-    const res = await fetch(apiUrl('/api/auth/bootstrap'), {
+    const res = await fetchWithNetworkPolicy(apiUrl('/api/auth/bootstrap'), {
       method: 'POST',
       headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + token },
       body: JSON.stringify({ username, password }),
@@ -3082,7 +3121,7 @@ $('nsCreate').addEventListener('click', async () => {
   const remark = $('nsRemark').value.trim();
   if (!name || !url) { setStatus('srcStatus', '名称和订阅链接都要填', 'bad'); return; }
   try {
-    const res = await fetch(apiUrl('/api/user/sources'), {
+    const res = await fetchWithNetworkPolicy(apiUrl('/api/user/sources'), {
       method:'POST', headers:{ Authorization:'Bearer ' + token, 'content-type':'application/json' },
       body: JSON.stringify({ name, url, tier, priority, remark }),
     });
@@ -3199,7 +3238,7 @@ $('uCfApply').addEventListener('click', () => loadUserCards().catch(e => setStat
 $('uCfExport').addEventListener('click', async () => {
   try {
     const st = $('uCfStatus').value;
-    const res = await fetch(apiUrl('/api/user/app-cards/export' + (st ? '?status=' + encodeURIComponent(st) : '')), { headers: { Authorization: 'Bearer ' + token } });
+    const res = await fetchWithNetworkPolicy(apiUrl('/api/user/app-cards/export' + (st ? '?status=' + encodeURIComponent(st) : '')), { headers: { Authorization: 'Bearer ' + token } });
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'app-cards.csv'; a.click();
@@ -5636,7 +5675,7 @@ var qrcode = function() {
   }
   async function loadGroups() {
     try {
-      const res = await fetch(apiUrl('/api/convert/groups?guest_key=' + encodeURIComponent(guestKey())));
+      const res = await fetchWithNetworkPolicy(apiUrl('/api/convert/groups?guest_key=' + encodeURIComponent(guestKey())));
       const d = await res.json();
       const dl = $$('cvGroups'); if (!dl || !d.ok) return;
       dl.replaceChildren();
@@ -5646,7 +5685,7 @@ var qrcode = function() {
   loadGroups();
   (async () => {
     try {
-      const r = await fetch(apiUrl('/api/announcements?scope=web')).then(x => x.json());
+      const r = await fetchWithNetworkPolicy(apiUrl('/api/announcements?scope=web')).then(x => x.json());
       const box = $$('webAnn');
       if (!r.ok || !r.data.length) return;
       box.replaceChildren();
@@ -5692,7 +5731,7 @@ var qrcode = function() {
     };
     const btn = $$('cvGo'); btn.disabled = true; setStatus('正在抓取并转换…', '');
     try {
-      const res = await fetch(apiUrl('/api/convert'), {
+      const res = await fetchWithNetworkPolicy(apiUrl('/api/convert'), {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-key': guestKey() },
         body: JSON.stringify({ sources, nodes, targets, filename: $$('cvName').value.trim(), group: ($$('cvGroup')?.value || '').trim(), filters }),
       });
@@ -5705,7 +5744,7 @@ var qrcode = function() {
       loadGroups();
   (async () => {
     try {
-      const r = await fetch(apiUrl('/api/announcements?scope=web')).then(x => x.json());
+      const r = await fetchWithNetworkPolicy(apiUrl('/api/announcements?scope=web')).then(x => x.json());
       const box = $$('webAnn');
       if (!r.ok || !r.data.length) return;
       box.replaceChildren();
@@ -5760,8 +5799,8 @@ var qrcode = function() {
     const box = $$('cvMine');
     try {
       const [gr, lr] = await Promise.all([
-        fetch(apiUrl('/api/convert/groups?guest_key=' + encodeURIComponent(gk))).then(r => r.json()),
-        fetch(apiUrl('/api/convert/links?guest_key=' + encodeURIComponent(gk))).then(r => r.json()),
+        fetchWithNetworkPolicy(apiUrl('/api/convert/groups?guest_key=' + encodeURIComponent(gk))).then(r => r.json()),
+        fetchWithNetworkPolicy(apiUrl('/api/convert/links?guest_key=' + encodeURIComponent(gk))).then(r => r.json()),
       ]);
       const links = (lr.data || []);
       if (!links.length) { box.textContent = '还没有生成过链接。'; return; }
@@ -5778,7 +5817,7 @@ var qrcode = function() {
         rn.addEventListener('click', async () => {
           const to = prompt('新分组名', name); if (!to || to === name) return;
           try {
-            await fetch(apiUrl('/api/convert/groups/rename'), {
+            await fetchWithNetworkPolicy(apiUrl('/api/convert/groups/rename'), {
               method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-key': gk },
               body: JSON.stringify({ from: name, to }),
             });
@@ -5795,7 +5834,7 @@ var qrcode = function() {
             const kill = document.createElement('button'); kill.className = 'danger smallbtn'; kill.textContent = '失效';
             kill.addEventListener('click', async () => {
               try {
-                await fetch(apiUrl('/api/convert/links/' + encodeURIComponent(l.id) + '/revoke'), {
+                await fetchWithNetworkPolicy(apiUrl('/api/convert/links/' + encodeURIComponent(l.id) + '/revoke'), {
                   method: 'POST', headers: { 'content-type': 'application/json', 'x-guest-key': gk }, body: '{}',
                 });
                 await loadMine();
