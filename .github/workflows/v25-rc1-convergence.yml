@@ -11,6 +11,8 @@ on:
   pull_request:
     paths:
       - "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/**"
+      - "releases/v2.5.0-rc1/**"
+      - "docs/release/**"
       - "scripts/rc1_cron_no_source_regression.py"
       - ".github/workflows/v25-rc1-convergence.yml"
 permissions:
