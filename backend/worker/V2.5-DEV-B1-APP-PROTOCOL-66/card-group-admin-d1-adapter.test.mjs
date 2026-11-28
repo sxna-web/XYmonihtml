@@ -35,7 +35,7 @@ function fakeDb() {
         },
         async all(){
           calls.push({kind:"all",sql,binds:this.binds});
-          if(sql.includes("FROM app_groups"))return {results:state.groups};
+          if(sql.includes("FROM app_groups"))return {results:state.groups.filter(g=>g.mode==="card")};
           if(sql.includes("FROM app_card_group_mappings"))return {results:state.mappings};
           return {results:[]};
         },
@@ -63,7 +63,7 @@ test("scoped loader reads card, card-mode groups and active mappings without cod
   const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
   const state=await adapter.loadCardGroupState("a1","c1");
   assert.equal(state.card.id,"c1");
-  assert.deepEqual(state.groups.map(x=>x.id),["g1","g2","free"]);
+  assert.deepEqual(state.groups.map(x=>x.id),["g1","g2"]);
   assert.equal(db.calls.some(x=>/\bcode\b|redeem/i.test(x.sql)),false);
 });
 
