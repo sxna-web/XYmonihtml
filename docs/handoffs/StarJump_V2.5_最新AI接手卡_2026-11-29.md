@@ -134,3 +134,11 @@
 - 再次 18/18 Python tests PASS；ZIP SHA/完整性 PASS。
 - `bash gradlew --no-daemon :app:compileOssReleaseKotlin` 被环境网络阻断：Gradle 8.10.2 wrapper 下载时 `UnknownHostException: services.gradle.org`，未进入编译阶段；ANDROID_HOME/ANDROID_SDK_ROOT 为空。
 - GitHub main 的目标 ZIP 路径仍为 404，新 workflow 未运行。先让用户上传 ZIP，再跑 Actions。不得声称 APK build 成功。
+
+
+## 2026-11-29｜6.00.50 上传与构建状态补充（覆盖本卡旧状态）
+
+- 用户已上传 ZIP 至 `app/versions/6.00.50/StarJump-6.00.50-source.zip`；Git blob SHA `176f88023962f27c759157f456cb85e0b295b563`，ZIP 2,355,724 bytes，SHA-256 `1a031e2dc18115e2448b42873d9ace957dc256a2daeb050468fbb9ec3bcbe018`。
+- Actions run `46184869195` / job `141102408156` / head `84546b5042ae2fafd84b8574f662ba21e0f60c04` 正在构建。
+- 最近状态：源码校验、工具链准备、LibCore AAR build/verify、Gradle assets 初始化 success；ARM64 APK assemble in_progress；验证与上传 pending；无 Artifact。
+- 早期“ZIP 尚未上传”的旧描述仅为历史，不再是当前事实。下一步继续轮询该 run；成功后下载并核验 APK，不成功则按真实日志定位。
