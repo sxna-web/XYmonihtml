@@ -17,6 +17,8 @@ function actionFor(path, method) {
     if (p.length === 4 && method === "DELETE") return "delete_history";
   }
   if (p[2] === "app-cards") {
+    // Protocol66 card-group replacement is a configuration association, not historical deletion.
+    if (p.length === 5 && p[4] === "groups" && method === "PUT") return "associate";
     if (p.length === 3 && method === "POST") return "generate";
     if (p.length === 4 && method === "DELETE") return "disable";
     if (p.length === 5 && p[4] === "disable" && method === "POST") return "disable";
