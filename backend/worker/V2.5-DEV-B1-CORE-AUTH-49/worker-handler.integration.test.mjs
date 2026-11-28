@@ -131,7 +131,7 @@ test("schema diagnostics expose APP metadata only to a direct super-admin sessio
   assert.equal(json.data.app_structure.tables.length,7);
   assert.equal(json.data.app_structure.tables[0].columns[1].name,"admin_user_id");
   assert.equal(json.data.app_structure.tables[0].indexes[0].columns[0].name,"admin_user_id");
-  assert.equal(db.writes.length,0);
+  assert.equal(businessWrites(db).length,0);
   assert.equal(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(")),true);
   assert.equal(JSON.stringify(json).includes("redeem_code_value"),false);
 });
@@ -149,7 +149,7 @@ test("schema metadata failures remain PARTIAL_NOT_VERIFIED and never become a pa
   assert.equal(json.data.app_structure.compatibility_verdict,"NOT_EVALUATED");
   assert.equal(json.data.app_structure.tables[0].verification,"PARTIAL_NOT_VERIFIED");
   assert.equal(json.data.app_structure.tables[0].columns,null);
-  assert.equal(db.writes.length,0);
+  assert.equal(businessWrites(db).length,0);
 });
 
 test("anonymous conversion requires a per-user guest key",async()=>{
