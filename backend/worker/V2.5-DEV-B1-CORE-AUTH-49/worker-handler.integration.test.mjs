@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
@@ -32,7 +32,8 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
               if (sql.includes("FROM app_cards WHERE code = ?")) return {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"};
               if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
-              if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {free_group_enabled:1};
+              if (sql.includes("FROM admin_app_perms WHERE admin_user_id = ?")) return {links_enabled:1,max_links:3,free_group_enabled:1};
+              if (sql.includes("COUNT(*) AS n FROM app_links WHERE admin_user_id = ?")) return {n:0};
               if (sql.includes("FROM app_entitlements WHERE id = ?")) return {id:args[0],admin_user_id:"u1",device_id:"old-device-123456"};
               if (sql.includes("FROM app_links WHERE id = ?")) return {id:args[0],admin_user_id:"u1",title:"Support",url:"https://example.test"};
               if (sql.includes("FROM subscription_sources s JOIN source_ownership")) return {id:"src1"};
@@ -49,6 +50,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               writes.push({sql,args});
               if (failCapacityAssertion && sql.includes("COUNT(*) FROM app_cards")) throw new Error("assert-failed");
               if (failCardDeleteAssertion && sql.includes("activated_at IS NULL AND used_at IS NULL AND status <> 'used'")) throw new Error("assert-failed");
+              if (failAppLinkCapacityAssertion && sql.includes("COUNT(*) FROM app_links WHERE admin_user_id = ?")) throw new Error("assert-failed");
               return {meta:{changes:1}};
             },
           };
@@ -278,4 +280,22 @@ test("APP card soft-delete rejects a concurrent activation before writing",async
   const {res,json}=await call(db,{path:"/api/user/app-cards/card-1",method:"DELETE",body:{}});
   assert.equal(res.status,409);assert.equal(json.code,"CARD_STATE_CHANGED");
   assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("UPDATE app_cards")).length,0);
+});
+
+
+test("APP link creation batches quota assertion, insert and audit",async()=>{
+  const db=mockDb({activations:activeTrial});
+  const {res,json}=await call(db,{path:"/api/user/app-links",method:"POST",body:{title:"Support",url:"https://example.test"}});
+  assert.equal(res.status,201);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.includes("INSERT INTO app_links")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("COUNT(*) FROM app_links WHERE admin_user_id = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("APP link creation returns conflict when concurrent request consumes the last slot",async()=>{
+  const db=mockDb({activations:activeTrial,failAppLinkCapacityAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/app-links",method:"POST",body:{title:"Support",url:"https://example.test"}});
+  assert.equal(res.status,409);assert.equal(json.code,"LINKS_LIMIT_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_links")).length,0);
 });
