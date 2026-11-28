@@ -34,7 +34,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
       if(state.card.status!=="normal" && state.card.status!=="used" ||
         state.card.manual_disabled || state.card.is_expired) return {ok:false,code:"CARD_NOT_WRITABLE"};
       if(failAtomic)return {ok:false,code:"DB_BATCH_ABORTED"};
-      if(committedRequests.has(input.requestId))return committedRequests.get(input.requestId);
+      if(committedRequests.has(input.idempotencyKey))return committedRequests.get(input.requestId);
       const selected=state.groups.filter(g=>input.groupIds.includes(g.id));
       if(selected.length!==input.groupIds.length ||
         selected.some(g=>g.admin_user_id!==input.adminId||g.mode!=="card"||!g.enabled)) {
@@ -52,7 +52,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
       try { events.push(["audit",audit]); }
       catch { state.mappings=before; return {ok:false,code:"AUDIT_FAILED"}; }
       const committed={ok:true,mappings:next};
-      committedRequests.set(input.requestId,committed);
+      committedRequests.set(input.idempotencyKey,committed);
       return committed;
     },
     setAtomicFailure(v){failAtomic=v;},
@@ -62,7 +62,7 @@ function fixture({canRead=true,canWrite=true,cardStatus="normal",manualDisabled=
   return {storage,service:createCardGroupAdminService({storage})};
 }
 
-const scope={adminId:"admin1",actorId:"admin1",requestId:"req-123",cardId:"card1"};
+const scope={adminId:"admin1",actorId:"admin1",idempotencyKey:"idem-key-12345678",requestId:"trace-req-123",cardId:"card1"};
 
 test("GET returns only card groups and never returns redeem code",async()=>{
   const {service}=fixture();
@@ -159,7 +159,7 @@ test("successful replace delegates atomic mapping plus audit to adapter",async()
 test("adapter receives the active mapping snapshot for compare-and-swap",async()=>{
   const {service,storage}=fixture();
   storage.state.mappings=[{id:"map-g1",card_id:"card1",admin_user_id:"admin1",group_id:"g1",status:"active"}];
-  await service.replace({...scope,requestId:"req-cas",groupIds:["g2"]});
+  await service.replace({...scope,idempotencyKey:"idem-cas-12345678",groupIds:["g2"]});
   const atomic=storage.events.find(e=>e[0]==="atomic");
   assert.deepEqual(atomic[1].expectedGroupIds,["g1"]);
 });
@@ -196,7 +196,7 @@ test("repeated request id is idempotent and emits one audit",async()=>{
 test("empty replace explicitly clears all card mappings",async()=>{
   const {service,storage}=fixture();
   await service.replace({...scope,groupIds:["g1"]});
-  const r=await service.replace({...scope,requestId:"req-124",groupIds:[]});
+  const r=await service.replace({...scope,idempotencyKey:"idem-clear-12345678",groupIds:[]});
   assert.equal(r.ok,true,JSON.stringify(r));
   assert.deepEqual(r.groups,[]);
   assert.equal(storage.state.mappings.length,0);
@@ -220,7 +220,7 @@ test("handler PUT uses explicit groupIds replace contract",async()=>{
     resolveSession:async()=>({effectiveId:"admin1",actorId:"admin1",requestId:"req-123"}),
   });
   const response=await handler(new Request("https://example.test/api/user/app-cards/card1/groups",{
-    method:"PUT",headers:{"content-type":"application/json"},
+    method:"PUT",headers:{"content-type":"application/json","idempotency-key":"idem-handler-12345678"},
     body:JSON.stringify({groupIds:["g1"]}),
   }));
   const body=await response.json();
@@ -252,7 +252,7 @@ test("handler blocks delegated read-only scope before service write",async()=>{
     resolveSession:async()=>({effectiveId:"admin1",actorId:"super1",scope:"read",scopeId:"scope-1",requestId:"req-delegated"}),
   });
   const response=await handler(new Request("https://example.test/api/user/app-cards/card1/groups",{
-    method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({groupIds:["g1"]}),
+    method:"PUT",headers:{"content-type":"application/json","idempotency-key":"idem-delegated-12345678"},body:JSON.stringify({groupIds:["g1"]}),
   }));
   const body=await response.json();
   assert.equal(response.status,403);
