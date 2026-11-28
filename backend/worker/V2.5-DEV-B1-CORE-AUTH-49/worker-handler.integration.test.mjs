@@ -7,7 +7,7 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const sessionRow={
@@ -38,6 +38,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
             },
             async run() {
               writes.push({sql,args});
+              if (failCapacityAssertion && sql.includes("COUNT(*) FROM app_cards")) throw new Error("assert-failed");
               return {meta:{changes:1}};
             },
           };
@@ -193,4 +194,22 @@ test("APP group source removal checks group ownership in the final SQL and scope
   assert.ok(del);
   assert.match(del.sql,/EXISTS \(SELECT 1 FROM app_groups WHERE id = \? AND admin_user_id = \?\)/);
   assert.ok(db.writes.some(x=>x.sql.includes("FROM admin_user_scopes") && x.sql.includes("revoked_at IS NULL")));
+});
+
+
+test("APP card generation rechecks total and unactivated stock limits inside its batch",async()=>{
+  const db=mockDb({activations:activeTrial});
+  const {res}=await call(db,{path:"/api/user/app-cards",method:"POST",body:{count:2,days:30}});
+  assert.equal(res.status,201);
+  const capacityChecks=db.writes.filter(x=>x.sql.includes("COUNT(*) FROM app_cards"));
+  assert.equal(capacityChecks.length,2);
+  assert.ok(businessWrites(db).some(x=>x.sql.startsWith("INSERT INTO app_cards")));
+});
+
+test("APP card generation fails closed when the in-batch capacity assertion detects a concurrent fill",async()=>{
+  const db=mockDb({activations:activeTrial,failCapacityAssertion:true});
+  const {res,json}=await call(db,{path:"/api/user/app-cards",method:"POST",body:{count:2,days:30}});
+  assert.equal(res.status,409);
+  assert.equal(json.code,"APP_CARD_CAPACITY_CHANGED");
+  assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("INSERT INTO app_cards")).length,0);
 });
