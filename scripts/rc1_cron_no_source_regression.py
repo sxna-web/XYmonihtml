@@ -88,6 +88,21 @@ def main() -> None:
     if "ORDER BY committed_at DESC, created_at DESC" not in lifecycle_window:
         raise AssertionError("Node lifecycle must order successful sync history by committed_at")
 
+    # Source ownership must be revalidated inside the same write batch and in
+    # the final mutation SQL, not only by a prior SELECT.
+    owner_helper = source.split("function sourceOwnerFence", 1)[1].split("async function loadSubscriptionNode", 1)[0]
+    user_sources = source.split("async function userSourcesRoute", 1)[1].split("async function userConvertGroupsRoute", 1)[0]
+    if "assertStmt(db" not in owner_helper or "source_ownership" not in owner_helper:
+        raise AssertionError("User source mutations need an in-batch ownership assertion")
+    if user_sources.count("${ownerFence.sql}") < 3 or user_sources.count("sourceOwnerFence(db, ctx, id)") < 3:
+        raise AssertionError("Source enabled/update/archive SQL must all carry the final owner predicate")
+    if "owner_user_id: own.user_id" not in user_sources:
+        raise AssertionError("Manual source sync must carry the verified owner into the sync fence")
+    if "so.user_id AS owner_user_id" not in block:
+        raise AssertionError("Cron source selection must carry the source owner into the sync fence")
+    if "so.user_id = ?" not in source.split("const FENCE_SQL", 1)[1].split("function fenceBinds", 1)[0]:
+        raise AssertionError("Sync stage/commit fence must revalidate source ownership")
+
     node_check(source)
     node_check(bundle)
 
