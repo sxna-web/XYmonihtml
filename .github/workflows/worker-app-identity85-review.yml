@@ -1,0 +1,25 @@
+name: Worker APP Identity 85 Offline Review
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-85/**"
+      - ".github/workflows/worker-app-identity85-review.yml"
+  pull_request:
+    paths:
+      - "backend/worker/V2.5-DEV-B1-APP-IDENTITY-85/**"
+      - ".github/workflows/worker-app-identity85-review.yml"
+permissions:
+  contents: read
+jobs:
+  offline-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run synthetic and manifest tests
+        working-directory: backend/worker/V2.5-DEV-B1-APP-IDENTITY-85
+        run: python -m unittest -v test_scoped_alias_model test_manifest_validator
