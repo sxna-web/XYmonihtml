@@ -5891,8 +5891,9 @@ export default {
       if (!env.DB) return withCors(fail("D1 binding DB 未配置", 500));
       try {
         return withCors(await convertRoute(req, env, url, null));
-      } catch (e) {
-        return withCors(fail(String(e?.message || "转换链接读取失败").slice(0, 200), 500));
+      } catch {
+        // 订阅短链是公开接口；数据库/内部异常不得原样返回给客户端。
+        return withCors(fail("订阅服务处理失败，请稍后重试", 500, { code: "INTERNAL_ERROR" }));
       }
     }
 
@@ -6109,12 +6110,9 @@ export default {
       }
       // 诊断模式（仅在 staging 设置 DIAGNOSTICS=1）下返回错误类型与短消息，便于定位；不含堆栈与凭据
       if (String(env.DIAGNOSTICS || "") === "1") {
-        return withCors(json({
-          ok: false,
-          error: "服务器处理失败（诊断模式）",
-          code: String(e?.name || "Error"),
-          detail: String(e?.message || "").slice(0, 300),
-        }, 500));
+        // 诊断开关只改变服务端日志策略；响应体仍保持通用，避免配置误开时泄露 D1/内部错误细节。
+        try { console.error("[worker] request failed", ctxWithReq.requestId, String(e?.name || "Error")); } catch { /* ignore */ }
+        return withCors(fail("服务器处理失败，请检查 Worker 日志", 500, { code: "INTERNAL_ERROR" }));
       }
       // 不向客户端泄露堆栈
       return withCors(fail("服务器处理失败，请检查 Worker 日志", 500));
