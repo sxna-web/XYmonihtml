@@ -96,6 +96,9 @@ export function createCardGroupAdminService({ storage }) {
           typeof requestId !== "string" || !requestId.trim() || requestId.length > 80 || typeof isSuperAdmin !== "boolean") {
         return fail("INVALID_CARD_SCOPE", 400);
       }
+      if (isSuperAdmin && actorId !== adminId) {
+        return fail("INVALID_SUPER_ADMIN_CONTEXT", 403);
+      }
       if (actorId !== adminId && (!["operate", "manage"].includes(scope) ||
           !ID_RE.test(scopeId || ""))) {
         return fail("SCOPE_INSUFFICIENT", 403);
