@@ -4933,7 +4933,7 @@ async function appFreeGroupRoute(req, env, url) {
 async function appLinksForDevice(req, env, url) {
   const db = env.DB;
   const deviceId = s(url.searchParams.get("device_id"), 80);
-  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))].slice(0, 100);
+  const tokens = [...new Set(url.searchParams.getAll("token").map(value => s(value, 200)).filter(Boolean))];
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(deviceId)) return fail("设备标识无效", 400);
   if (tokens.length > 100) return fail("授权令牌数量过多", 400, { code: "TOO_MANY_ENTITLEMENT_TOKENS" });
   if (!tokens.length) return fail("授权令牌无效", 403, { code: "BAD_TOKEN" });
