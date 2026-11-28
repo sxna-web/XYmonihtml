@@ -5084,6 +5084,26 @@ async function superAppGroupsRoute(req, env, url, ctx) {
 }
 
 /** 管理员管理自己的分组（注册用户也能用） */
+async function cardGroupMappingHistory(db, adminId, groupId) {
+  try {
+    const table = await db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    ).bind("app_card_group_mappings").first();
+    if (!table) return { ready: false, hasHistory: false, hasActive: false };
+    const result = await db.prepare(
+      "SELECT status FROM app_card_group_mappings WHERE admin_user_id = ? AND group_id = ?",
+    ).bind(adminId, groupId).all();
+    const rows = result?.results || [];
+    return {
+      ready: true,
+      hasHistory: rows.length > 0,
+      hasActive: rows.some(row => row.status === "active"),
+    };
+  } catch {
+    return { unavailable: true };
+  }
+}
+
 async function userAppGroupsRoute(req, env, url, ctx) {
   const db = env.DB;
   const seg = url.pathname.split("/").filter(Boolean);   // api,user,app-groups,<id>,...
@@ -5117,6 +5137,11 @@ async function userAppGroupsRoute(req, env, url, ctx) {
     const name = body.name === undefined ? row.name : s(body.name, 40);
     const mode = body.mode === undefined ? row.mode : s(body.mode, 20);
     if (!APP_GROUP_MODES.has(mode)) return fail("mode 不合法", 400);
+    if (row.mode === "card" && mode !== "card") {
+      const mappings = await cardGroupMappingHistory(db, ctx.effectiveId, id);
+      if (mappings.unavailable) return fail("无法确认卡密分组关联状态，请稍后重试", 503, { code: "APP_GROUP_MAPPING_CHECK_UNAVAILABLE" });
+      if (mappings.hasActive) return fail("该分组仍分配给有效卡密，请先调整卡密分组配置后再修改类型", 409, { code: "APP_GROUP_HAS_ACTIVE_CARD_MAPPINGS" });
+    }
     const updated = await userBatch(db, ctx, [
       db.prepare("UPDATE app_groups SET name=?, mode=? WHERE id=? AND admin_user_id=?")
         .bind(name, mode, id, ctx.effectiveId),
@@ -5128,6 +5153,9 @@ async function userAppGroupsRoute(req, env, url, ctx) {
   if (seg.length === 4 && req.method === "DELETE") {
     const row = await own(id);
     if (!row) return fail("分组不存在", 404);
+    const mappings = await cardGroupMappingHistory(db, ctx.effectiveId, id);
+    if (mappings.unavailable) return fail("无法确认卡密分组关联状态，请稍后重试", 503, { code: "APP_GROUP_MAPPING_CHECK_UNAVAILABLE" });
+    if (mappings.hasHistory) return fail("该分组曾关联卡密，当前版本暂不允许物理删除；待 APP 增量同步与清理确认机制完成后再开放删除", 409, { code: "APP_GROUP_HAS_CARD_MAPPING_HISTORY" });
     const cutoff = ctx.appAuthorization?.formalCutoff || null;
     const ownershipGuard = cutoff
       ? assertStmt(db, "EXISTS (SELECT 1 FROM app_groups WHERE id = ? AND admin_user_id = ? AND datetime(created_at) <= datetime(?))", [id, ctx.effectiveId, cutoff])
