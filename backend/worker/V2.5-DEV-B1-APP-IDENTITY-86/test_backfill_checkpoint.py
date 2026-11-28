@@ -111,10 +111,13 @@ class CheckpointTests(unittest.TestCase):
         b.set_catch_up_watermark(lease,101,("0012","b"))
         b.begin_catch_up(lease,101)
         with self.assertRaises(CursorConflict):
-            b.advance_catch_up(lease,101,expected_cursor=("0009","z"),next_cursor=("0013","a"),
-                writer_epoch=7,active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2"))
-        b.advance_catch_up(lease,101,expected_cursor=("0009","z"),next_cursor=("0012","b"),
-            writer_epoch=7,active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2"))
+            b.commit_catch_up_page(lease,101,expected_cursor=("0009","z"),next_cursor=("0013","a"),
+                checksum=checksum("b"),row_count=2,writer_epoch=7,
+                active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2"))
+        b.commit_catch_up_page(lease,101,expected_cursor=("0009","z"),next_cursor=("0012","b"),
+            checksum=checksum("c"),row_count=2,writer_epoch=7,
+            active_key_set_epoch="keys-epoch-3",key_versions=("K1","K2"))
+        self.assertEqual(b.checkpoint.alias_receipt_count,5)
         self.assertEqual(b.complete(lease,101),"COMPLETE")
 
     def test_watermark_cannot_move_backwards(self):
