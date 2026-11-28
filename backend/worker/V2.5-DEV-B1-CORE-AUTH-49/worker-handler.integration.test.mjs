@@ -743,3 +743,51 @@ test("module Worker fetch entry reports missing D1 binding through the real Resp
   assert.match(body.error,/D1 binding DB 未配置/);
   assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
 });
+
+
+test("module Worker fetch entry rejects an invalid session before user API dispatch",async()=>{
+  const db=mockDb();
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Basic invalid",Origin:"https://admin.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,401);
+  assert.equal(body.ok,false);
+  assert.equal(body.code,"INVALID_SESSION");
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.equal(db.reads.length,0);
+  assert.equal(businessWrites(db).length,0);
+});
+
+test("module Worker fetch entry rejects a disallowed Origin before session and database access",async()=>{
+  const db=mockDb();
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"GET",headers:{Authorization:"Bearer test-session",Origin:"https://attacker.test"},
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.match(body.error,/Origin 不允许/);
+  assert.equal(response.headers.get("access-control-allow-origin"),null);
+  assert.equal(db.reads.length,0);
+  assert.equal(businessWrites(db).length,0);
+});
+
+test("module Worker fetch entry blocks APP VIP denial before business route writes",async()=>{
+  const db=mockDb();
+  const request=new Request("https://worker.test/api/user/app-groups",{
+    method:"POST",
+    headers:{Authorization:"Bearer test-session","Content-Type":"application/json",Origin:"https://admin.test"},
+    body:JSON.stringify({name:"Denied group",mode:"assigned"}),
+  });
+  const response=await worker.fetch(request,{DB:db,SESSION_PEPPER:"test-pepper-test-pepper-test-pepper",ADMIN_ORIGIN:"https://admin.test"});
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.ok,false);
+  assert.equal(body.code,"VIP_REQUIRED");
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.equal(businessWrites(db).length,0);
+  assert.equal(db.writes.some(x=>x.sql.includes("INSERT INTO app_groups")),false);
+});
