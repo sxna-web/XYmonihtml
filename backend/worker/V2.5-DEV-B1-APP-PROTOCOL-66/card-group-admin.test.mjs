@@ -227,3 +227,35 @@ test("handler PUT uses explicit groupIds replace contract",async()=>{
   assert.equal(response.status,200);
   assert.deepEqual(body.groups.map(g=>g.id),["g1"]);
 });
+
+test("delegated admin cannot replace mappings without operate/manage scope",async()=>{
+  const {service,storage}=fixture();
+  const r=await service.replace({...scope,actorId:"super1",groupIds:["g1"]});
+  assert.equal(r.code,"SCOPE_INSUFFICIENT");
+  assert.equal(r.status,403);
+  assert.equal(storage.events.some(e=>e[0]==="atomic"),false);
+});
+
+test("delegated operate scope is passed to final adapter guard",async()=>{
+  const {service,storage}=fixture();
+  const r=await service.replace({...scope,actorId:"super1",scope:"operate",scopeId:"scope-1",groupIds:["g1"]});
+  assert.equal(r.ok,true);
+  const atomic=storage.events.find(e=>e[0]==="atomic");
+  assert.equal(atomic[1].scope,"operate");
+  assert.equal(atomic[1].scopeId,"scope-1");
+});
+
+test("handler blocks delegated read-only scope before service write",async()=>{
+  const {service,storage}=fixture();
+  const handler=createCardGroupAdminHandler({
+    service,
+    resolveSession:async()=>({effectiveId:"admin1",actorId:"super1",scope:"read",scopeId:"scope-1",requestId:"req-delegated"}),
+  });
+  const response=await handler(new Request("https://example.test/api/user/app-cards/card1/groups",{
+    method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({groupIds:["g1"]}),
+  }));
+  const body=await response.json();
+  assert.equal(response.status,403);
+  assert.equal(body.code,"SCOPE_INSUFFICIENT");
+  assert.equal(storage.events.some(e=>e[0]==="atomic"),false);
+});
