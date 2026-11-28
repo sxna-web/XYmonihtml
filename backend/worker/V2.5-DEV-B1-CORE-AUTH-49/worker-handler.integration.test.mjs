@@ -49,14 +49,27 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
 function businessWrites(db) {
   return db.writes.filter(x => /^(INSERT INTO app_groups|UPDATE app_groups|DELETE FROM app_groups|INSERT OR IGNORE INTO app_group_sources|DELETE FROM app_group_sources|INSERT OR IGNORE INTO app_group_members|DELETE FROM app_group_members|INSERT INTO app_links|DELETE FROM app_links|INSERT INTO app_cards|UPDATE app_cards)/i.test(x.sql.trim()));
 }
-async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"}}={}) {
+async function call(db,{path="/api/user/app-groups",method="POST",role="user",body={name:"Test group",mode:"assigned"},
+  authorization="Bearer test-session",sessionPepper="test-pepper-test-pepper-test-pepper"}={}) {
   const req=new Request("https://worker.test"+path,{
-    method,headers:{"Authorization":"Bearer test-session","Content-Type":"application/json"},
+    method,headers:{"Authorization":authorization,"Content-Type":"application/json"},
     ...(method==="GET"||method==="DELETE"?{}:{body:JSON.stringify(body)}),
   });
-  const res=await worker.fetch(req,{DB:db,SESSION_PEPPER:"test-pepper"});
+  const res=await worker.fetch(req,{DB:db,SESSION_PEPPER:sessionPepper});
   return {res,json:await res.json()};
 }
+
+test("malformed Authorization cannot downgrade to anonymous",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{authorization:"Basic invalid"});
+  assert.equal(res.status,401);assert.equal(json.code,"INVALID_SESSION");assert.equal(businessWrites(db).length,0);
+});
+
+test("short SESSION_PEPPER fails closed before session lookup",async()=>{
+  const db=mockDb();
+  const {res,json}=await call(db,{sessionPepper:"too-short"});
+  assert.equal(res.status,503);assert.equal(json.code,"SECRET_NOT_CONFIGURED");assert.equal(businessWrites(db).length,0);
+});
 
 test("Worker handler rejects L1 group creation before business write",async()=>{
   const db=mockDb();
