@@ -120,6 +120,22 @@ def main() -> None:
     app_links = source.split("async function addAppLink", 1)[1].split("/* 超管 */", 1)[0]
     if "await userBatch(db, ctx" not in app_links or "auditStmt(db, ctx" not in app_links:
         raise AssertionError("APP link creation must share its assist-scope guard and audit batch")
+    super_groups = source.split("async function superAppGroupsRoute", 1)[1].split("/** 管理员管理自己的分组", 1)[0]
+    if ".run()" in super_groups:
+        raise AssertionError("Super APP group writes must not bypass atomic D1 batches")
+    if super_groups.count("await db.batch([") < 7:
+        raise AssertionError("Super APP group create/update/delete/source/member writes must be batched")
+    if super_groups.count("auditStmt(db, ctx") < 7:
+        raise AssertionError("Super APP group mutations must be audited in their business batch")
+    if "assertStmt(db, \"EXISTS (SELECT 1 FROM app_users WHERE id = ?)\", [adminId])" not in super_groups:
+        raise AssertionError("Super APP group creation must verify target admin existence in the same batch")
+    if "DELETE FROM app_group_sources WHERE group_id = ? AND EXISTS" not in super_groups or "DELETE FROM app_group_members WHERE group_id = ? AND EXISTS" not in super_groups:
+        raise AssertionError("Super APP group deletion must clean child associations before deleting the parent")
+    if "app_group.super_source_add" not in super_groups or "app_group.super_source_remove" not in super_groups:
+        raise AssertionError("Super APP source association mutations must have audit events")
+    if "app_group.super_member_add" not in super_groups or "app_group.super_member_remove" not in super_groups:
+        raise AssertionError("Super APP member mutations must have audit events")
+
     app_cards = source.split("async function userAppCardsRoute", 1)[1].split("/* ────────────────────────────── 节点生命周期", 1)[0]
     if app_cards.count("assertStmt(db,") < 2 or "APP_CARD_CAPACITY_CHANGED" not in app_cards:
         raise AssertionError("APP card total/stock capacity must be asserted inside the redemption batch")
