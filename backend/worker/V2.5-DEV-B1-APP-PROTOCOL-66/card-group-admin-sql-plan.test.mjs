@@ -106,7 +106,7 @@ test("invalid scope, duplicate IDs and malformed digest fail closed",()=>{
   }));
   assert.throws(()=>buildCardGroupReplaceStatements(db,{
     adminId:"admin1",actorId:"admin1",idempotencyKey:"idem-invalid-12345678",requestId:"trace-invalid",cardId:"card1",
-    groupIds:[],expectedGroupIds:[],payloadSha256:"not-a-hash",
+    groupIds:[],expectedGroupIds:[],mappingIds:[],payloadSha256:"not-a-hash",
   }));
 });
 
@@ -125,10 +125,12 @@ test("replace SQL plan binds delegated actor and scope for final batch guard", (
     adminId: "admin1",
     actorId: "super1",
     scopeId: "scope-1",
-    requestId: "req-scope",
+    idempotencyKey: "idem-scope-12345678",
+    requestId: "trace-scope",
     cardId: "card1",
     groupIds: ["g1"],
     expectedGroupIds: [],
+    mappingIds: ["map-id-1"],
     payloadSha256: "a".repeat(64),
   });
   assert.match(statements[0].sql, /admin_user_scopes/);
