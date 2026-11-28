@@ -2151,7 +2151,17 @@ $('dbUpgrade').addEventListener('click', async () => {
     ];
     if (coreMissing.length) lines.push('核心表缺失：\\n' + coreMissing.join('\\n'));
     if (workerMissing.length) lines.push('其他引用表缺失：\\n' + workerMissing.join('\\n'));
-    lines.push('检查范围仅为表名，不代表字段、索引、约束或数据完整性已验证。');
+    const appStructure = d.app_structure || {};
+    const appTables = Array.isArray(appStructure.tables) ? appStructure.tables : [];
+    lines.push('APP 结构观察：' + appTables.length + ' 张关联表；状态：' + (appStructure.verification || 'NOT_VERIFIED') + '。');
+    for (const t of appTables) {
+      const colCount = Array.isArray(t.columns) ? t.columns.length : '未核验';
+      const indexCount = Array.isArray(t.indexes) ? t.indexes.length : '未核验';
+      const fkCount = Array.isArray(t.foreign_keys) ? t.foreign_keys.length : '未核验';
+      lines.push((t.name || '未知表') + '：' + (t.present ? '存在' : '缺失') + '；列 ' + colCount + '；索引 ' + indexCount + '；外键 ' + fkCount + '；' + (t.verification || 'NOT_VERIFIED'));
+    }
+    lines.push('结构信息仅为 APP 关联表的只读观察，未与已批准的生产基线比较，不构成兼容性通过结论。');
+    lines.push('检查不读取业务行、卡密、令牌或订阅内容。');
     lines.push('RC1 暂不执行自动建表或迁移。');
     alert(lines.join('\\n\\n'));
   } catch (e) { alert('只读检查失败：' + e.message); }
