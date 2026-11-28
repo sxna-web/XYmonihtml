@@ -58,3 +58,37 @@ test("handler errors propagate to the Worker boundary rather than being disguise
   assert.equal(h.calls.cors,0);
   assert.equal(h.calls.fail,0);
 });
+
+
+import { readFileSync } from "node:fs";
+const workerSource = readFileSync(new URL("../V2.5-DEV-B1-CORE-AUTH-49/Worker.js", import.meta.url), "utf8");
+
+test("real Worker APP-card route remains behind session, scope and APP authorization gates",()=>{
+  const userGate = workerSource.indexOf("if (isUserApi(url.pathname)) {");
+  const scopeGate = workerSource.indexOf("const scopeDenied = requireScope(ctxWithReq, needScope);", userGate);
+  const appGate = workerSource.indexOf("const appAuthorization = await authorizeAppManagementRequest({", scopeGate);
+  const appDenied = workerSource.indexOf("if (appAuthorization && !appAuthorization.allowed)", appGate);
+  const appContext = workerSource.indexOf("if (appAuthorization) ctxWithReq.appAuthorization = appAuthorization;", appDenied);
+  const legacyCardFallback = workerSource.indexOf('if (url.pathname.startsWith("/api/user/app-cards"))', appContext);
+  assert.ok(userGate >= 0 && scopeGate > userGate && appGate > scopeGate && appDenied > appGate && appContext > appDenied && legacyCardFallback > appContext,
+    "APP card-group dispatch insertion point must remain after all existing gates and before legacy card route");
+  assert.match(workerSource.slice(legacyCardFallback, legacyCardFallback + 240), /userAppCardsRoute\(req, env, url, ctxWithReq\)/);
+});
+
+test("real Worker outer exception boundary converts handler throws to CORS-wrapped failure responses",()=>{
+  const boundary = workerSource.lastIndexOf("    } catch (e) {");
+  const tail = workerSource.slice(boundary, boundary + 1800);
+  assert.ok(boundary >= 0, "Worker request dispatcher catch boundary must exist");
+  assert.match(tail, /GUEST_KEY_REQUIRED/);
+  assert.match(tail, /ASSERTION_FAILED/);
+  assert.match(tail, /return withCors\(fail\("服务器处理失败，请检查 Worker 日志", 500\)\)/);
+  assert.match(tail, /return withCors\(json\(/);
+});
+
+test("real Worker dispatcher wraps each route response at the route boundary",()=>{
+  const userGate = workerSource.indexOf("if (isUserApi(url.pathname)) {");
+  const appRoute = workerSource.indexOf('if (url.pathname.startsWith("/api/user/app-cards"))', userGate);
+  const fallback = workerSource.slice(appRoute, appRoute + 240);
+  assert.match(fallback, /return withCors\(await userAppCardsRoute/);
+  assert.match(workerSource.slice(userGate, appRoute), /authorizeAppManagementRequest/);
+});
