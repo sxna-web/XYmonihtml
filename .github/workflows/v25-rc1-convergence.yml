@@ -4,6 +4,7 @@ on:
     branches:
       - release/v2.5.0-rc1-converge
     paths:
+      - "docs/backend/**"
       - "backend/worker/V2.5-DEV-B1-CORE-AUTH-49/**"
       - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/**"
       - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/**"
