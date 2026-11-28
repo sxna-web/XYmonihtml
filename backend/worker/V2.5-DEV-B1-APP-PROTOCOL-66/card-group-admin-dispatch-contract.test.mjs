@@ -92,3 +92,40 @@ test("real Worker dispatcher wraps each route response at the route boundary",()
   assert.match(fallback, /return withCors\(await userAppCardsRoute/);
   assert.match(workerSource.slice(userGate, appRoute), /authorizeAppManagementRequest/);
 });
+
+
+import { createCardGroupAdminHandler } from "./card-group-admin-handler.mjs";
+
+test("dispatcher composes the real Protocol66 handler with the already-resolved Worker context",async()=>{
+  const h=harness();
+  h.request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{method:"GET"});
+  let serviceArgs=null;
+  const service={
+    get:async args=>{serviceArgs=args;return {ok:true,cardId:"card-1",groupIds:["group-1"]};},
+    replace:async()=>{throw new Error("GET must not call replace");},
+  };
+  const adapter=(request,resolveSession)=>{
+    const actualHandler=createCardGroupAdminHandler({service,resolveSession});
+    return actualHandler(request);
+  };
+  const response=await dispatchCardGroupAdminContract({...h,handler:adapter,appAuthorization:{allowed:true}});
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get("access-control-allow-origin"),"https://admin.test");
+  assert.deepEqual(await response.json(),{ok:true,cardId:"card-1",groupIds:["group-1"]});
+  assert.deepEqual(serviceArgs,{adminId:"admin-1",cardId:"card-1"});
+  assert.equal(h.calls.cors,1);
+  assert.equal(h.calls.fail,0);
+});
+
+test("real Protocol66 handler failures propagate through dispatcher for Worker outer error mapping",async()=>{
+  const h=harness();
+  h.request=new Request("https://worker.test/api/user/app-cards/card-1/groups",{method:"GET"});
+  const service={get:async()=>{throw new Error("protocol66 service failure");},replace:async()=>({ok:true})};
+  const adapter=(request,resolveSession)=>createCardGroupAdminHandler({service,resolveSession})(request);
+  await assert.rejects(
+    dispatchCardGroupAdminContract({...h,handler:adapter,appAuthorization:{allowed:true}}),
+    /protocol66 service failure/,
+  );
+  assert.equal(h.calls.cors,0);
+  assert.equal(h.calls.fail,0);
+});
