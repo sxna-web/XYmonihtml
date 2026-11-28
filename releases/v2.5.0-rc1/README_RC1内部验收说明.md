@@ -72,12 +72,13 @@
 - 本候选没有连接、读取或修改任何线上 D1/Secrets。
 - 需要在部署前由用户在 Cloudflare 确认当前 `DB` binding、现有 schema、备份和回滚版本。不能把仓库 DDL 当作生产 schema 证明。
 
-### 1.1 HTML API 地址默认值（重要）
+### 1.1 HTML API 地址配置与防误发（第一百零二批更新）
 
-- 当前候选 HTML 登录框源码默认值仍为 `https://starjump-api-staging.synahcooo.workers.dev`。
-- 页面会优先使用浏览器 `localStorage` 中已有的 `sj-api` 覆盖源码默认值，因此实际目标还可能是此前保存的地址。
-- 生产 Worker 主机名标识在源码中为 `blackstarjump-api-dawn-1242`，但仓库材料不足以安全确认完整生产 HTTPS 根 URL。
-- 因此该 HTML **不能直接作为正式生产页面交付**；正式候选必须先核实用户实际生产 Worker 根 URL，并在交付前清除 staging 默认/陈旧地址风险。不得猜测或自行拼接生产 URL。
+- 候选 HTML 登录页 API 地址默认留空，不再内置 Staging URL，也不猜测生产 Worker 完整 HTTPS 根地址。
+- 页面加载时会清除旧版本遗留在 `localStorage.sj-api` 中、主机名包含 `starjump-api-staging` 的已知 Staging 地址；其他已保存地址仍保留，用户可自行核实后修改。
+- API 地址为空时，所有 API 请求会在客户端明确停止，并提示先填写已核实的 Worker 根地址；用户手动填写后仍按原行为保存。
+- 源码中已知生产 Worker 主机名标识为 `blackstarjump-api-dawn-1242`，但仓库证据仍不足以确认完整生产 HTTPS 根 URL。不得自行拼接或猜测。
+- 因此该 HTML **仍不能直接作为正式生产页面交付**；正式发布前必须由用户确认准确生产 Worker 根地址，并在最终交付候选中配置及复核。
 
 ### 2. Secrets 兼容
 
@@ -105,3 +106,11 @@
 ## 本候选允许的用途
 
 仅供代码审查、GitHub Actions 离线测试和内部验收。未完成以上阻断项并经明确授权前，不得上传 Cloudflare 或执行数据库迁移。
+
+
+## 第一百零二批发布一致性核查补充
+
+- HTML API 默认配置已改为留空；加载旧版页面时会清除已知 Staging 主机名的持久化地址，空地址不会发起 API 请求。
+- RC1 workflow 在同一次 GitHub Actions checkout/commit 中构建 Worker bundle，并将该 Worker bundle、仓库内 HTML 与本 README 一起上传为同一个候选 artifact；三者由同一 workflow run/commit 绑定，不把工作区临时 Worker.js 误认为已提交源文件。
+- 发布 artifact 是 CI 生成物，必须从同一最终成功 Run 下载；不能把旧 Run 的 Worker.js 与新 HEAD 的 HTML 拼成发布包。
+- 当前仍未获得准确生产 Worker 根 URL、真实 D1 schema-only 快照，也未完成 APP 6.00.48 源码/API 调用审计。上述事项仍阻止正式生产批准。
