@@ -9,6 +9,8 @@ on:
       - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/**"
       - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/**"
       - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/**"
+      - "backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/**"
       - "releases/v2.5.0-rc1/**"
       - "scripts/rc1_cron_no_source_regression.py"
       - "tools/database_migrations/**"
@@ -56,6 +58,7 @@ jobs:
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-60/group-composition.test.mjs
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-64/app-v2-read-handler.test.mjs
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-65/composed-group-service.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin.test.mjs
 
       - name: Upload RC1 candidate files
         uses: actions/upload-artifact@v4
