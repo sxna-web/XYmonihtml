@@ -1589,3 +1589,15 @@ APP v2 D1 兼容验证准备与 6.00.48 源码只读审计（不接生产、不�
 - 测试 head `20555872b2aa126fd6e7832191232a7b4b6e7b97`：Push `46115692564` 与 PR `46115696474` SUCCESS；Protocol 66 adapter 13/13、service 17/17、SQL plan 7/7、Python SQLite 46 tests。
 - 没有真实 D1 schema、migration、正式 route、HTML UI、APK 多 entitlement 闭环；未触碰生产 D1/Secrets/部署/合并。
 - **第七十六批唯一接手卡：**正式 route 前边界加固：delegated actor/effective owner、VIP/trial/read-only/fail-closed、batch result shape、损坏幂等记录、duplicate mapping、group disable/delete race、requestId 传递；整理真实 D1 schema manifest 只读诊断字段清单。不注册 route、不创建 migration。
+
+
+## 第七十六批连续性更新（2026-11-28）
+
+- 批次：`V2.5-DEV-B1-APP-SCOPE-76`；报告：`docs/backend/StarJump_V2.5_APP卡密分组委托管理员权限与D1最终CAS边界加固报告_第七十六批_V2.5-DEV-B1-APP-SCOPE-76_2026-11-28.md`。
+- 完成 delegated identity 分层：actorId 审计真实操作者，adminId/effectiveId 为目标 VIP owner；GET delegated 需 read/operate/manage，PUT 需 operate/manage；scopeId 从 session 传递，body 不可指定 owner。
+- 候选 D1 final assertion 重新验证 admin_user_scopes 的 actor/effective/scopeId、revoked_at、expires_at 与 operate/manage，防止预检后撤权仍写入。真实 D1 未验证。
+- CAS snapshot 取安全映射投影 group.id；SQL plan 重建，去除意外重复与转义损坏。
+- 最终 head `d795b0e87166b6f2440987f771421adf84b2d608`：Push `46116688615`、PR `46116692609` SUCCESS；Protocol66 service 21/21、adapter 14/14、SQL plan 8/8；Python SQLite 46，Batch49 auth 12，Worker integration 62，Protocol60 19、64 23、65 26。
+- Artifact `15252361198`（134,139 bytes，expires 2026-12-12T06:27:43Z）。PR #2 继续 Draft/Open/Unmerged。
+- 仍无真实 D1 schema/migration、正式 route、生产 VIP resolver、HTML UI、APK 多 entitlement 端到端；未操作生产 D1/Secrets/部署/合并。
+- **第七十七批唯一接手卡：**设计真实 D1 schema manifest 只读诊断：table_info、index_list/index_info、foreign_key_list、sqlite_master triggers/index SQL；检查历史重复/孤儿/owner 冲突只输出脱敏计数；产出 staging/production 只读 SQL 与人工执行说明，不执行 DDL/DML，不注册 route。
