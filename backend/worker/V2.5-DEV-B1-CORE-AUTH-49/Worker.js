@@ -3732,14 +3732,25 @@ async function userAppCardsRoute(req, env, url, ctx) {
     if (card.activated_at || card.used_at || card.status === 'used') {
       return fail("已激活/已使用的卡密不能删除，只能停用", 409, { code: "CARD_IN_USE" });
     }
-    await userBatch(db, ctx, [
-      db.prepare(`UPDATE app_cards SET status='inactive', manual_disabled=1, inactive_reason='user_deleted',
-                         inactive_at=CURRENT_TIMESTAMP WHERE id = ? AND admin_user_id = ?`).bind(id, ctx.effectiveId),
-      auditStmt(db, ctx, {
-        action: "app_card.delete", targetType: "app_card", targetId: id,
-        before: { status: card.status }, after: { status: 'inactive', reason: 'user_deleted' },
-      }),
-    ]);
+    try {
+      await userBatch(db, ctx, [
+        assertStmt(db,
+          "EXISTS (SELECT 1 FROM app_cards WHERE id = ? AND admin_user_id = ? AND activated_at IS NULL AND used_at IS NULL AND status <> 'used')",
+          [id, ctx.effectiveId]),
+        db.prepare(`UPDATE app_cards SET status='inactive', manual_disabled=1, inactive_reason='user_deleted',
+                           inactive_at=CURRENT_TIMESTAMP WHERE id = ? AND admin_user_id = ?
+                             AND activated_at IS NULL AND used_at IS NULL AND status <> 'used'`).bind(id, ctx.effectiveId),
+        auditStmt(db, ctx, {
+          action: "app_card.delete", targetType: "app_card", targetId: id,
+          before: { status: card.status }, after: { status: 'inactive', reason: 'user_deleted' },
+        }),
+      ]);
+    } catch (e) {
+      if (/assert-failed|malformed JSON/i.test(String(e?.message || ""))) {
+        return fail("卡密状态刚刚发生变化，已阻止删除，请刷新后重试", 409, { code: "CARD_STATE_CHANGED" });
+      }
+      throw e;
+    }
     return json({ ok: true, data: { id, deleted: true } });
   }
 
@@ -4001,21 +4012,24 @@ async function appRedeemRoute(req, env, url, ctx) {
     // Validate the APP token secret before consuming the card or creating the entitlement.
     const token = await entToken(env, id, deviceId);
     await userBatch(db, ctx, [
-      assertStmt(db, "EXISTS (SELECT 1 FROM app_cards WHERE id = ? AND status='normal' AND manual_disabled=0 AND activated_at IS NULL AND used_at IS NULL)", [card.id]),
+      assertStmt(db,
+        "EXISTS (SELECT 1 FROM app_cards WHERE id = ? AND admin_user_id = ? AND days = ? AND status='normal' AND manual_disabled=0 AND activated_at IS NULL AND used_at IS NULL AND datetime(expires_at) > datetime('now'))",
+        [card.id, card.admin_user_id, days]),
       db.prepare(
         `UPDATE app_cards SET status='used', activated_at=CURRENT_TIMESTAMP, used_at=CURRENT_TIMESTAMP
-          WHERE id = ? AND status='normal' AND activated_at IS NULL AND used_at IS NULL`,
-      ).bind(card.id),
+          WHERE id = ? AND admin_user_id = ? AND days = ? AND status='normal' AND manual_disabled=0
+            AND activated_at IS NULL AND used_at IS NULL AND datetime(expires_at) > datetime('now')`,
+      ).bind(card.id, card.admin_user_id, days),
       db.prepare(
         `INSERT INTO app_entitlements(id, admin_user_id, device_id, card_id, starts_at, expires_at, purge_at, status)
          VALUES(?,?,?,?, CURRENT_TIMESTAMP, datetime('now', ?), datetime('now', ?), 'active')`,
       ).bind(id, card.admin_user_id, deviceId, card.id, `+${days} days`, `+${days + 1} days`),
       // 激活过一次 → 永久保留该管理员的免费分组资格（卡密过期也不收回）
       db.prepare("INSERT OR IGNORE INTO app_free_grants(device_id, admin_user_id) VALUES(?,?)").bind(deviceId, card.admin_user_id),
+      db.prepare(
+        "INSERT INTO app_card_events(card_id, admin_user_id, action, detail, device_id) VALUES(?,?,?,?,?)",
+      ).bind(card.id, card.admin_user_id, "activate", `${days} 天`, deviceId),
     ]);
-    await db.prepare(
-      "INSERT INTO app_card_events(card_id, admin_user_id, action, detail, device_id) VALUES(?,?,?,?,?)",
-    ).bind(card.id, card.admin_user_id, "activate", `${days} 天`, deviceId).run().catch(() => {});
     const ent = await db.prepare(
       "SELECT id, expires_at, purge_at, status FROM app_entitlements WHERE id = ?",
     ).bind(id).first();
