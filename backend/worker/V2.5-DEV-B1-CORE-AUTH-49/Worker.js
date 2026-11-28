@@ -1370,6 +1370,21 @@ async function loadAnyNode(db, ctx, nodeId) {
   return null;
 }
 
+/** Same-batch final ownership assertion for node-scoped user metadata and group membership writes. */
+function nodeOwnerAssertStmt(db, ctx, nodeId, kind = "subscription") {
+  if (kind === "manual") {
+    return assertStmt(db,
+      "EXISTS (SELECT 1 FROM user_manual_nodes WHERE id = ? AND user_id = ?)",
+      [nodeId, ctx.effectiveId]);
+  }
+  if (ctx.isSuper && ctx.actorId === ctx.effectiveId) {
+    return assertStmt(db, "EXISTS (SELECT 1 FROM node_records WHERE id = ?)", [nodeId]);
+  }
+  return assertStmt(db,
+    "EXISTS (SELECT 1 FROM node_records n JOIN source_ownership so ON so.source_id = n.source_id WHERE n.id = ? AND so.user_id = ?)",
+    [nodeId, ctx.effectiveId]);
+}
+
 function overrideMap(rows) {
   const out = {};
   for (const r of rows || []) out[r.field_name] = r.override_value;
@@ -1937,6 +1952,7 @@ async function userOverridesRoute(req, env, url, ctx) {
       ), "subscription");
 
       await userBatch(db, ctx, [
+        nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
         db.prepare(
           `INSERT INTO node_overrides(user_id, node_id, field_name, override_value, updated_by, reason)
            VALUES(?,?,?,?,?,?)
@@ -1958,6 +1974,7 @@ async function userOverridesRoute(req, env, url, ctx) {
       ).bind(ctx.effectiveId, nodeId, field).first();
       if (!existing) return fail("该字段没有覆盖记录", 404);
       await userBatch(db, ctx, [
+        nodeOwnerAssertStmt(db, ctx, nodeId, "subscription"),
         db.prepare("DELETE FROM node_overrides WHERE user_id = ? AND node_id = ? AND field_name = ?")
           .bind(ctx.effectiveId, nodeId, field),
         auditStmt(db, ctx, {
@@ -2139,6 +2156,7 @@ async function userMetadataRoute(req, env, url, ctx) {
   if (!Number.isInteger(sortOrder) || Math.abs(sortOrder) > 1_000_000) return fail("sort_order 不合法", 400);
 
   await userBatch(db, ctx, [
+    nodeOwnerAssertStmt(db, ctx, nodeId, found.kind),
     db.prepare(
       `INSERT INTO node_user_metadata(user_id, node_kind, node_id, remark, favorite, sort_order)
        VALUES(?,?,?,?,?,?)
