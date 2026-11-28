@@ -48,14 +48,18 @@ export function buildCardGroupReadStatements(db, { adminId, cardId }) {
  */
 export function buildCardGroupReplaceStatements(db, input) {
   const {
-    adminId, actorId, scopeId = null, requestId, cardId, groupIds,
-    expectedGroupIds, payloadSha256, beforeJson = "[]",
+    adminId, actorId, scopeId = null, idempotencyKey, requestId, cardId, groupIds,
+    expectedGroupIds, payloadSha256, beforeJson = "[]", mappingIds,
   } = input || {};
   if (!db || typeof db.prepare !== "function" ||
       !ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
       !ID_RE.test(cardId || "") ||
       (actorId !== adminId && !ID_RE.test(scopeId || "")) ||
+      typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey) ||
       typeof requestId !== "string" || !requestId.trim() || requestId.length > 80 ||
+      !Array.isArray(mappingIds) || mappingIds.length !== groupIds.length ||
+      mappingIds.some(id => !ID_RE.test(id || "")) ||
+      new Set(mappingIds).size !== mappingIds.length ||
       !HASH_RE.test(payloadSha256 || "") ||
       !Array.isArray(groupIds) || !Array.isArray(expectedGroupIds) ||
       groupIds.length > 100 || expectedGroupIds.length > 100 ||
@@ -108,7 +112,7 @@ export function buildCardGroupReplaceStatements(db, input) {
       (admin_user_id, request_id, payload_sha256, response_json, created_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(admin_user_id, request_id) DO NOTHING`)
-      .bind(adminId, requestId, payloadSha256, afterJson),
+      .bind(adminId, idempotencyKey, payloadSha256, afterJson),
     db.prepare(`SELECT CASE WHEN changes() = 1 THEN 1
       ELSE json_extract('duplicate-request', '$') END`),
     db.prepare(desired.length
@@ -129,7 +133,7 @@ export function buildCardGroupReplaceStatements(db, input) {
         admin_user_id = excluded.admin_user_id,
         status = 'active', updated_at = CURRENT_TIMESTAMP, removed_at = NULL
       WHERE app_card_group_mappings.admin_user_id = excluded.admin_user_id`)
-      .bind(`cgm_${cardId}_${groupId}`, cardId, adminId, groupId)),
+      .bind(mappingIds[desired.indexOf(groupId)], cardId, adminId, groupId)),
     db.prepare(`INSERT INTO admin_audit_events
       (actor_user_id, effective_user_id, action, target_type, target_id,
        request_id, before_json, after_json, result, reason, detail)
