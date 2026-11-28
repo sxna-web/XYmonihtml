@@ -61,6 +61,7 @@ jobs:
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin.test.mjs
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-sql-plan.test.mjs
           node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-d1-adapter.test.mjs
+          node --test backend/worker/V2.5-DEV-B1-APP-PROTOCOL-66/card-group-admin-dispatch-contract.test.mjs
 
       - name: Upload RC1 candidate files
         uses: actions/upload-artifact@v4
