@@ -80,7 +80,7 @@ def main() -> None:
     if len(required_tables | referenced_tables) != 40:
         raise AssertionError("Read-only schema-status endpoint must cover all 40 inventory tables")
     sql_refs = set(re.findall(r"\b(?:FROM|JOIN|UPDATE|INTO|DELETE\s+FROM)\s+[\"'`]?([A-Za-z_][A-Za-z0-9_]*)", source, re.IGNORECASE))
-    unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master", "to"}  # "UPDATE to ..." may occur in comments
+    unclassified = sql_refs - known_tables - {"SET", "eff", "sqlite_master", "to", "app_card_group_mappings"}  # Protocol66 candidate table is separately schema-gated and absent from the base snapshot
     if unclassified:
         raise AssertionError("Worker SQL table references missing from schema inventory: " + ", ".join(sorted(unclassified)))
     committed_status = "UPDATE sync_tasks SET status='committed'" in source and "WHERE id = ? AND status = 'staged'" in source
@@ -155,6 +155,8 @@ def main() -> None:
         raise AssertionError("Protocol66 card-group route must fail closed until both mapping tables exist")
     if "createCardGroupAdminHandler" not in source or "createCardGroupD1Adapter" not in source:
         raise AssertionError("Protocol66 handler and D1 adapter must be wired into the authenticated Worker")
+    if "cardGroupMappingHistory" not in source or "APP_GROUP_HAS_CARD_MAPPING_HISTORY" not in source or "APP_GROUP_HAS_ACTIVE_CARD_MAPPINGS" not in source:
+        raise AssertionError("Existing group delete/type-change paths must protect mapped card groups until APP tombstone cleanup is implemented")
     if 'url.pathname.startsWith("/api/user/app-cards")' not in source or "userAppCardGroupsRoute(req, env, url, ctxWithReq)" not in source:
         raise AssertionError("Protocol66 route must be dispatched inside the authenticated user API gate")
 
