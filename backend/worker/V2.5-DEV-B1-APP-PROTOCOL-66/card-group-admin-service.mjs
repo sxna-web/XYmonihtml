@@ -77,6 +77,7 @@ export function createCardGroupAdminService({ storage }) {
         id: state.card.id,
         status: state.card.status,
         manual_disabled: state.card.manual_disabled === 1 || state.card.manual_disabled === true,
+        is_expired: state.card.is_expired === true,
       },
       groups: [...groupById.values()].map(safeGroup),
       mappings: mapped,
