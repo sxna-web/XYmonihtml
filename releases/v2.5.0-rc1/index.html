@@ -2600,6 +2600,8 @@ $('uCfExport').addEventListener('click', async () => {
         res = await fetch(url, { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store', redirect: 'error', signal: controller.signal });
       } catch (error) {
         if (attempt === 2) throw new Error(error.name === 'AbortError' ? '导出等待超时，请检查网络后重试。' : (navigator.onLine === false ? '当前设备处于离线状态，请恢复网络后重试。' : '导出连接失败，请检查网络后重试。'));
+        await new Promise(resolve => setTimeout(resolve, 400));
+        continue;
       } finally { clearTimeout(timeout); }
       if (res && [502, 503, 504].includes(res.status) && attempt === 1) {
         await new Promise(resolve => setTimeout(resolve, 400));
