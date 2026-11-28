@@ -30,11 +30,14 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               if (sql.includes("SELECT * FROM admin_user_scopes WHERE id = ?")) return {id:args[0],target_user_id:"u1",scope:"manage",revoked_at:null};
               if (sql.includes("FROM admin_user_scopes")) return actingAs ? {scope} : null;
               if (sql.includes("SELECT COUNT(*) AS n FROM convert_links WHERE group_name = ?")) return {n:2};
+              if (sql.includes("SELECT id, group_name FROM convert_links WHERE id = ?")) return {id:args[0],group_name:"Old"};
+              if (sql.includes("SELECT id, group_name, revoked_at FROM convert_links WHERE id = ?")) return {id:args[0],group_name:"Old",revoked_at:null};
               if (sql.includes("FROM app_groups WHERE id = ? AND admin_user_id = ?")) return resource;
               if (sql.includes("FROM node_groups WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"group",sort_order:0,remark:""};
               if (sql.includes("FROM user_manual_nodes WHERE id = ? AND user_id = ?")) return {id:args[0],user_id:args[1],name:"Manual",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1,remark:""};
               if (sql.includes("FROM node_records WHERE id = ?")) return {id:args[0],source_id:"src1",name:"Node",protocol:"vless",server:"example.test",port:443,tier:"free",enabled:1};
               if (sql.includes("FROM source_ownership WHERE source_id = ? AND user_id = ?")) return {ok:1};
+              if (sql.includes("SELECT id, role, status, display_name FROM app_users WHERE id = ?")) return {id:args[0],role:"user",status:"active",display_name:"Tester"};
               if (sql.includes("FROM app_users WHERE id = ?")) return {id:args[0]};
               if (sql.includes("FROM app_cards WHERE code = ?")) return {id:"card-1",admin_user_id:"u1",days:30,status:"normal",manual_disabled:0,activated_at:null,used_at:null,expires_at:"2099-01-01 00:00:00"};
               if (sql.includes("FROM app_cards WHERE id = ? AND admin_user_id = ?")) return {id:args[0],status:"normal",activated_at:null,used_at:null};
@@ -480,5 +483,39 @@ test("super conversion group rename batches final existence check, update and au
   const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET group_name")));
   assert.ok(batch);
   assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE group_name = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+
+test("super user status/password update rechecks snapshot and batches update, session revocation and audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/users/u1",method:"PUT",body:{status:"disabled",password:"new-secure-password"}});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE app_users SET status=")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM app_users WHERE id = ? AND role = ? AND status = ?")));
+  assert.ok(batch.some(sql=>sql.startsWith("UPDATE user_sessions SET revoked_at")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+  const update=batch.find(sql=>sql.startsWith("UPDATE app_users SET status="));
+  assert.match(update,/WHERE id=? AND role=? AND status=?/);
+});
+
+test("super convert-link regroup uses compare-and-swap and atomic audit",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/convert-links/link123/group",method:"PATCH",body:{group:"New"}});
+  assert.equal(res.status,200);assert.equal(json.data.group,"New");
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET group_name = ? WHERE id = ? AND group_name = ?")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE id = ? AND group_name = ?")));
+  assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
+});
+
+test("super convert-link revoke rechecks active state in the same batch",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/convert-links/link123/revoke",method:"POST"});
+  assert.equal(res.status,200);assert.equal(json.data.revoked,true);
+  const batch=db.batches.find(items=>items.some(sql=>sql.startsWith("UPDATE convert_links SET revoked_at")));
+  assert.ok(batch);
+  assert.ok(batch.some(sql=>sql.includes("FROM convert_links WHERE id = ? AND revoked_at IS NULL")));
   assert.ok(batch.some(sql=>sql.includes("INSERT INTO admin_audit_events")));
 });
