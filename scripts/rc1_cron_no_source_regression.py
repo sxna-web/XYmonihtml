@@ -177,6 +177,8 @@ def main() -> None:
     user_nodes = source.split("async function userNodesRoute", 1)[1].split("function pickNode", 1)[0]
     if "nodeOwnerAssertStmt(db, ctx, id, \"subscription\")" not in user_nodes or "nodeOwnerAssertStmt(db, ctx, id, \"manual\")" not in user_nodes:
         raise AssertionError("Node enabled toggles must recheck subscription/manual node ownership inside the batch")
+    if "changed[1]?.meta?.changes" not in user_nodes:
+        raise AssertionError("Node enabled toggles must check final mutation results before reporting success")
     if "nodeOwnerAssertStmt(db, ctx, nodeId, kind)" not in groups or "GROUP_MEMBER_STATE_CHANGED" not in groups:
         raise AssertionError("Node-group member add must recheck both group and node ownership inside the batch")
 
