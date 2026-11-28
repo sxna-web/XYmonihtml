@@ -1,0 +1,1 @@
+{"manifest_version":"1.1","interface":"identity_adapter","status":"DESIGN_ONLY_NO_SQL","policy":{"owner_source":"authenticated_server_context","audit_contract":"BLOCKED_BY_U80_01_TO_U80_08","nonce_representation":"UNRESOLVED","secret_values_in_manifest":false,"production_sql_permitted":false},"statements":[]}
