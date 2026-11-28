@@ -4176,17 +4176,44 @@ async function verifyEntToken(env, entitlementId, deviceId, token) {
   return timingSafeEqual(String(token), expect);
 }
 
-async function checkAppRedeemRateLimit(db, req, deviceId, env) {
+async function appRedeemRateLimitBuckets(req, deviceId, env) {
   // Cloudflare's CF-Connecting-IP is edge supplied; never trust arbitrary X-Forwarded-For here.
   const ip = s(req.headers.get("CF-Connecting-IP") || "unknown", 60);
   const pepper = requiredSecret(env, "SESSION_PEPPER", 32);
-  const ipHash = await sha256Hex(`app-redeem-ip|${ip}|${pepper}`);
-  const deviceHash = await sha256Hex(`app-redeem-device|${deviceId}|${pepper}`);
-  const limits = [
-    [`app:redeem:ip:${ipHash}`, 10],
-    [`app:redeem:device:${deviceHash}`, 5],
+  const ipHash = await sha256Hex(`app-redeem-ip|failed-v2|${ip}|${pepper}`);
+  const deviceHash = await sha256Hex(`app-redeem-device|failed-v2|${deviceId}|${pepper}`);
+  return [
+    [`app:redeem:failed:v2:ip:${ipHash}`, 10],
+    [`app:redeem:failed:v2:device:${deviceHash}`, 5],
   ];
+}
+
+// Read-only preflight. Successful activations and same-device network replays
+// never consume the failed-attempt budget.
+async function checkAppRedeemRateLimit(db, req, deviceId, env) {
   try {
+    const limits = await appRedeemRateLimitBuckets(req, deviceId, env);
+    for (const [bucket, limit] of limits) {
+      const row = await db.prepare(
+        `SELECT CASE WHEN datetime(updated_at) <= datetime('now', '-15 minutes')
+                     THEN 0 ELSE count END AS count
+           FROM rate_limits WHERE bucket = ?`,
+      ).bind(bucket).first();
+      if (row && Number(row.count) > limit) {
+        return { ok: false, scope: bucket.includes(":device:") ? "device" : "ip" };
+      }
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, unavailable: true };
+  }
+}
+
+// Only failed card-code/status attempts are counted. The fixed window starts
+// with the first failed attempt and is not extended by later failures.
+async function recordAppRedeemFailure(db, req, deviceId, env) {
+  try {
+    const limits = await appRedeemRateLimitBuckets(req, deviceId, env);
     for (const [bucket, limit] of limits) {
       await db.prepare(
         `INSERT INTO rate_limits(bucket, count, updated_at) VALUES(?, 1, CURRENT_TIMESTAMP)
@@ -4205,9 +4232,42 @@ async function checkAppRedeemRateLimit(db, req, deviceId, env) {
     }
     return { ok: true };
   } catch {
-    // Authentication throttling must fail closed when its backing store is unavailable.
     return { ok: false, unavailable: true };
   }
+}
+
+function appRedeemRateLimited() {
+  return new Response(JSON.stringify({ ok: false, message: "失败尝试次数过多，请 15 分钟后重试", code: "REDEEM_RATE_LIMITED" }), {
+    status: 429,
+    headers: { "content-type": "application/json; charset=utf-8", "retry-after": "900", "cache-control": "no-store" },
+  });
+}
+
+async function appRedeemFailedAttempt(db, req, deviceId, env, response) {
+  const result = await recordAppRedeemFailure(db, req, deviceId, env);
+  if (result.unavailable) return fail("激活服务暂不可用，请稍后重试", 503, { code: "REDEEM_THROTTLE_UNAVAILABLE" });
+  if (!result.ok) return appRedeemRateLimited();
+  return response;
+}
+
+async function appRedeemSuccess(db, env, entitlement, deviceId, adminUserId, days) {
+  const token = await entToken(env, entitlement.id, deviceId);
+  return json({
+    ok: true,
+    data: {
+      entitlement: {
+        id: entitlement.id,
+        expires_at: entitlement.expires_at,
+        purge_at: entitlement.purge_at,
+        status: entitlement.status,
+      },
+      admin_user_id: adminUserId,
+      token,
+      days,
+      local_retention_hours: ENT_LOCAL_RETENTION_HOURS,
+      note: "到期后停止更新，本地节点保留 24 小时；新卡密属于新授权",
+    },
+  }, 201);
 }
 
 async function appRedeemRoute(req, env, url, ctx) {
