@@ -40,12 +40,23 @@ test("replace plan final assertion includes active VIP, card state, owner/mode a
   assert.ok(plan.length>=7);
   const assertion=db.calls[0];
   assert.match(assertion.sql,/admin_vip_activations/);
+  assert.match(assertion.sql,/kind IN \\('formal','trial'\\)/);
   assert.match(assertion.sql,/status IN \('normal','used'\)/);
   assert.match(assertion.sql,/manual_disabled/);
   assert.match(assertion.sql,/expires_at/);
   assert.match(assertion.sql,/mode = 'card'/);
   assert.match(assertion.sql,/group_id = \?/);
-  assert.deepEqual(assertion.binds.slice(0,5),["admin1","card1","admin1","admin1","card1"]);
+  assert.deepEqual(assertion.binds.slice(0,6),[0,"admin1","card1","admin1","admin1","card1"]);
+});
+
+test("direct super-admin bypass is server-bound in the final atomic assertion",()=>{
+  const db=dbCapture();
+  buildCardGroupReplaceStatements(db,{
+    adminId:"admin1",actorId:"admin1",isSuperAdmin:true,idempotencyKey:"idem-super-12345678",requestId:"trace-super",cardId:"card1",
+    groupIds:[],expectedGroupIds:[],mappingIds:[],payloadSha256:"e".repeat(64),
+  });
+  assert.equal(db.calls[0].binds[0],1);
+  assert.match(db.calls[0].sql,/\? = 1 OR EXISTS/);
 });
 
 test("replace plan uses soft removal, upsert restore and audit in one batch",()=>{
