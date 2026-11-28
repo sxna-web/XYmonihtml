@@ -90,3 +90,11 @@
 - `CONVERT_KEY` 仍有历史兼容回退 `starjump-convert`。这关系到历史转换密文可解密性，不能在本次部署时随意更换或删除；正式上线前必须另行完成历史密文版本与迁移方案。不得把本批描述成完成密钥轮换。
 - APP 6.00.47 已知源码审计未证明其会调用本 Worker 的 status/token 接口；本批仍不能声称 APP 客户端已联调。部署前须确认当前已安装 APK 对相关 API 的实际使用情况。
 - 本包是管理后台/Worker 第一阶段修复候选，不代表 APP entitlement、卡密多管理员组合、分组撤销 24 小时清理 ACK 等完整业务已上线。
+
+
+### 发布冒烟检查记录
+
+- GitHub Actions Run：[`46091686129`](https://github.com/sxna-web/XYmonihtml/actions/runs/46091686129)
+- Job：`release-smoke` — SUCCESS
+- 检查：Worker ES module 语法、HTML 内联 JavaScript 语法、Cron 无来源时仍执行维护、APP status Token gate、历史转换密钥兼容行为断言。
+- 该结果仅为静态/语法冒烟检查，不等同于 Cloudflare D1 集成、线上 Secrets 核验、APK 联调或生产部署验收。
