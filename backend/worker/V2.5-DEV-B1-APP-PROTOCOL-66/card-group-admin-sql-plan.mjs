@@ -26,7 +26,7 @@ export const CARD_GROUP_READ_SQL = Object.freeze({
     ORDER BY created_at ASC, id ASC`,
   idempotency: `SELECT payload_sha256, response_json
     FROM app_card_group_admin_requests
-    WHERE admin_user_id = ? AND request_id = ?
+    WHERE admin_user_id = ? AND idempotency_key = ?
     LIMIT 1`,
 });
 
@@ -109,9 +109,9 @@ export function buildCardGroupReplaceStatements(db, input) {
       actorId, adminId, scopeId || "", actorId, adminId,
     ),
     db.prepare(`INSERT INTO app_card_group_admin_requests
-      (admin_user_id, request_id, payload_sha256, response_json, created_at)
+      (admin_user_id, idempotency_key, payload_sha256, response_json, created_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(admin_user_id, request_id) DO NOTHING`)
+      ON CONFLICT(admin_user_id, idempotency_key) DO NOTHING`)
       .bind(adminId, idempotencyKey, payloadSha256, afterJson),
     db.prepare(`SELECT CASE WHEN changes() = 1 THEN 1
       ELSE json_extract('duplicate-request', '$') END`),
