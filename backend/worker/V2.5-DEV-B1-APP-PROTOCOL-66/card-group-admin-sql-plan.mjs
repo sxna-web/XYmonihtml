@@ -48,12 +48,12 @@ export function buildCardGroupReadStatements(db, { adminId, cardId }) {
  */
 export function buildCardGroupReplaceStatements(db, input) {
   const {
-    adminId, actorId, scopeId = null, idempotencyKey, requestId, cardId, groupIds,
+    adminId, actorId, scopeId = null, isSuperAdmin = false, idempotencyKey, requestId, cardId, groupIds,
     expectedGroupIds, payloadSha256, beforeJson = "[]", mappingIds,
   } = input || {};
   if (!db || typeof db.prepare !== "function" ||
       !ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
-      !ID_RE.test(cardId || "") ||
+      !ID_RE.test(cardId || "") || typeof isSuperAdmin !== "boolean" ||
       (actorId !== adminId && !ID_RE.test(scopeId || "")) ||
       typeof idempotencyKey !== "string" || !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey) ||
       typeof requestId !== "string" || !requestId.trim() || requestId.length > 80 ||
@@ -81,9 +81,10 @@ export function buildCardGroupReplaceStatements(db, input) {
   const desiredBinds = desired.length ? [adminId, ...desired] : [];
 
   const assertSql = `SELECT CASE WHEN
-      EXISTS (SELECT 1 FROM admin_vip_activations v
-        WHERE v.user_id = ? AND datetime(v.starts_at) <= datetime('now')
-          AND datetime(v.ends_at) > datetime('now'))
+      (? = 1 OR EXISTS (SELECT 1 FROM admin_vip_activations v
+        WHERE v.user_id = ? AND v.kind IN ('formal','trial')
+          AND datetime(v.starts_at) <= datetime('now')
+          AND datetime(v.ends_at) > datetime('now')))
       AND EXISTS (SELECT 1 FROM app_cards c
         WHERE c.id = ? AND c.admin_user_id = ?
           AND c.status IN ('normal','used')
@@ -103,7 +104,7 @@ export function buildCardGroupReplaceStatements(db, input) {
   const afterJson = JSON.stringify({ groupIds: desired });
   const batch = [
     db.prepare(assertSql).bind(
-      adminId, cardId, adminId, adminId, cardId,
+      adminId, cardId, adminId, isSuperAdmin ? 1 : 0, adminId, adminId, cardId,
       ...expected.flatMap(id => [adminId, cardId, id]),
       ...desiredBinds,
       actorId, adminId, scopeId || "", actorId, adminId,
