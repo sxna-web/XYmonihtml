@@ -252,6 +252,20 @@ def main() -> None:
         suffix = ".mjs" if item["type"] == "module" else ".js"
         node_check("".join(item["chunks"]), suffix)
 
+    # Unstable-network policy: retry only idempotent reads; never automatically
+    # replay business writes whose outcome may be ambiguous after a timeout.
+    api_block = html.split("async function api(path, options={})", 1)[1].split("\\nfunction fmtBytes", 1)[0]
+    for required in ("safeRead = method === 'GET' || method === 'HEAD'", "maxAttempts = safeRead ? 2 : 1",
+                     "setTimeout(() => controller.abort(), 20000)", "signal: controller.signal",
+                     "navigator.onLine === false", "不要连续重复提交", "Retry-After"):
+        if required not in api_block:
+            raise AssertionError("Admin API network policy missing: " + required)
+    export_block = html.split("$('uCfExport').addEventListener", 1)[1].split("$('uReload').addEventListener", 1)[0]
+    if "attempt <= 2" not in export_block or "setTimeout(() => controller.abort(), 20000)" not in export_block:
+        raise AssertionError("APP card export must have bounded network retry and timeout handling")
+    if "await api(" not in html:
+        raise AssertionError("Admin HTML must retain the shared API wrapper")
+
     if "localStorage.getItem('sj-api') || 'https://" in html:
         raise AssertionError("Release HTML still has a hard-coded API fallback bypassing the API input")
     if 'value="https://starjump-api-staging' in html:
