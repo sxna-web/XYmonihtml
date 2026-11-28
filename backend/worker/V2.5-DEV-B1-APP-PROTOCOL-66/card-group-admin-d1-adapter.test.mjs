@@ -21,6 +21,7 @@ function fakeDb() {
     request:null,
   };
   let batchFailure=null;
+  let mutateOnBatchFailure=null;
   const db={
     calls,state,
     prepare(sql){
@@ -43,7 +44,7 @@ function fakeDb() {
     },
     async batch(stmts){
       calls.push({kind:"batch",stmts});
-      if(batchFailure)throw batchFailure;
+      if(batchFailure){if(mutateOnBatchFailure)mutateOnBatchFailure(state);throw batchFailure;}
       const upserts=stmts.filter(s=>s.sql.startsWith("INSERT INTO app_card_group_mappings"));
       const ids=upserts.map(s=>s.binds[3]);
       state.mappings=ids.map(id=>({id:"map-"+id,card_id:"c1",admin_user_id:"a1",group_id:id,status:"active"}));
@@ -51,7 +52,7 @@ function fakeDb() {
       state.request={payload_sha256:request.binds[2],response_json:request.binds[3]};
       return [...stmts.map(()=>({success:true,results:[]})),{success:true,results:state.mappings}];
     },
-    setBatchFailure(error){batchFailure=error;},
+    setBatchFailure(error,mutate=null){batchFailure=error;mutateOnBatchFailure=mutate;},
   };
   return db;
 }
@@ -143,4 +144,46 @@ test("batch failure with no committed idempotency row maps to database abort",as
   const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
   const r=await adapter.replaceCardGroupsAtomically(base);
   assert.equal(r.code,"DB_BATCH_ABORTED");
+});
+
+test("concurrent same request id and same digest is recovered as idempotent",async()=>{
+  const db=fakeDb();
+  const hash=await digest("c1",["g1"]);
+  db.setBatchFailure(new Error("unique request collision"),state=>{
+    state.request={payload_sha256:hash,response_json:'{"groupIds":["g1"]}'};
+  });
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically(base);
+  assert.equal(r.ok,true);
+  assert.equal(r.idempotent,true);
+});
+
+test("concurrent same request id with different digest is rejected",async()=>{
+  const db=fakeDb();
+  db.setBatchFailure(new Error("unique request collision"),state=>{
+    state.request={payload_sha256:"e".repeat(64),response_json:'{"groupIds":["g2"]}'};
+  });
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically(base);
+  assert.equal(r.code,"IDEMPOTENCY_CONFLICT");
+});
+
+test("mapping changes between read and failed batch are reported as CAS conflict",async()=>{
+  const db=fakeDb();
+  db.setBatchFailure(new Error("CAS assertion failed"),state=>{
+    state.mappings=[{id:"map-g2",card_id:"c1",admin_user_id:"a1",group_id:"g2",status:"active"}];
+  });
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically(base);
+  assert.equal(r.code,"CARD_MAPPING_CONFLICT");
+});
+
+test("card disabled during batch is reported as not writable",async()=>{
+  const db=fakeDb();
+  db.setBatchFailure(new Error("card state assertion failed"),state=>{
+    state.card.manual_disabled=1;
+  });
+  const adapter=createCardGroupD1Adapter({db,resolveAccess:async()=>({canRead:true,canWrite:true})});
+  const r=await adapter.replaceCardGroupsAtomically(base);
+  assert.equal(r.code,"CARD_NOT_WRITABLE");
 });
