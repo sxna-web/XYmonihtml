@@ -7,10 +7,11 @@ const activeTrial = [{kind:"trial",starts_at:"2020-01-01T00:00:00Z",ends_at:"209
 const expiredTrial = [{kind:"trial",starts_at:"2026-11-01T00:00:00Z",ends_at:"2026-11-02T00:00:00Z"}];
 const expiredFormal = [{kind:"formal",starts_at:"2026-10-01T00:00:00Z",ends_at:"2026-11-01T00:00:00Z"}];
 
-function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
+function mockDb({role="user", actingAs=null, scope="manage", activations=[], activationFailure=false, schemaFailure=false, failCapacityAssertion=false, failCardDeleteAssertion=false, failAppLinkCapacityAssertion=false, failDownloadQuotaAssertion=false, failNodeOwnerAssertion=false,
   resource={id:"g1",admin_user_id:"u1",name:"group",mode:"assigned",created_at:"2026-10-20 00:00:00"}}={}) {
   const writes=[];
   const batches=[];
+  const reads=[];
   const sessionRow={
     id:"session-1",user_id:role==="super_admin"?"root":"u1",acting_as_user_id:actingAs,
     scope_id:actingAs?"scope-1":null,expires_at:"2099-01-01 00:00:00",revoked_at:null,
@@ -19,6 +20,7 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
   return {
     writes,
     batches,
+    reads,
     prepare(sql) {
       return {
         bind(...args) {
@@ -59,10 +61,29 @@ function mockDb({role="user", actingAs=null, scope="manage", activations=[], act
               return null;
             },
             async all() {
+              reads.push({sql,args});
               if (sql.includes("FROM admin_vip_activations")) {
                 if (activationFailure) throw new Error("activation store unavailable");
                 return {results:activations};
               }
+              if (sql.includes("FROM sqlite_master WHERE type='table'")) {
+                return {results:args.map(name=>({name}))};
+              }
+              if (sql.startsWith("PRAGMA table_info(")) {
+                if (schemaFailure) throw new Error("schema metadata unavailable");
+                return {results:[
+                  {cid:0,name:"id",type:"TEXT",notnull:1,dflt_value:null,pk:1},
+                  {cid:1,name:"admin_user_id",type:"TEXT",notnull:1,dflt_value:null,pk:0},
+                ]};
+              }
+              if (sql.startsWith("PRAGMA index_list(")) {
+                return {results:[{seq:0,name:"idx_schema_admin",unique:0,origin:"c",partial:0}]};
+              }
+              if (sql.startsWith("PRAGMA index_info(")) {
+                return {results:[{seqno:0,cid:1,name:"admin_user_id"}]};
+              }
+              if (sql.startsWith("PRAGMA foreign_key_list(")) return {results:[]};
+              if (sql.includes("FROM sqlite_master") && sql.includes("type IN ('trigger','view')")) return {results:[]};
               return {results:[]};
             },
             async run() {
@@ -98,6 +119,38 @@ async function call(db,{path="/api/user/app-groups",method="POST",role="user",bo
   const res=await worker.fetch(req,{DB:db,SESSION_PEPPER:sessionPepper});
   return {res,json:await res.json()};
 }
+
+test("schema diagnostics expose APP metadata only to a direct super-admin session",async()=>{
+  const db=mockDb({role:"super_admin"});
+  const {res,json}=await call(db,{path:"/api/super/schema-status",method:"GET",role:"super_admin"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  assert.equal(json.data.verification,"TABLE_NAMES_ONLY");
+  assert.equal(json.data.app_structure.verification,"OBSERVED_SCHEMA_ONLY");
+  assert.equal(json.data.app_structure.baseline_comparison,"NOT_CONFIGURED");
+  assert.equal(json.data.app_structure.compatibility_verdict,"NOT_EVALUATED");
+  assert.equal(json.data.app_structure.tables.length,7);
+  assert.equal(json.data.app_structure.tables[0].columns[1].name,"admin_user_id");
+  assert.equal(json.data.app_structure.tables[0].indexes[0].columns[0].name,"admin_user_id");
+  assert.equal(db.writes.length,0);
+  assert.equal(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(")),true);
+  assert.equal(JSON.stringify(json).includes("redeem_code_value"),false);
+});
+test("schema diagnostics reject non-super-admin sessions before metadata reads",async()=>{
+  const db=mockDb({role:"user"});
+  const {res,json}=await call(db,{path:"/api/super/schema-status",method:"GET"});
+  assert.equal(res.status,403);assert.equal(json.ok,false);
+  assert.equal(db.reads.some(x=>x.sql.startsWith("PRAGMA table_info(")),false);
+});
+test("schema metadata failures remain PARTIAL_NOT_VERIFIED and never become a pass",async()=>{
+  const db=mockDb({role:"super_admin",schemaFailure:true});
+  const {res,json}=await call(db,{path:"/api/super/schema-status",method:"GET",role:"super_admin"});
+  assert.equal(res.status,200);assert.equal(json.ok,true);
+  assert.equal(json.data.app_structure.verification,"PARTIAL_NOT_VERIFIED");
+  assert.equal(json.data.app_structure.compatibility_verdict,"NOT_EVALUATED");
+  assert.equal(json.data.app_structure.tables[0].verification,"PARTIAL_NOT_VERIFIED");
+  assert.equal(json.data.app_structure.tables[0].columns,null);
+  assert.equal(db.writes.length,0);
+});
 
 test("anonymous conversion requires a per-user guest key",async()=>{
   const db=mockDb();
