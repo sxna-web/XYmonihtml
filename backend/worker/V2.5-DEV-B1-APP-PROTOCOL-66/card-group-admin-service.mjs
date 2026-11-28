@@ -89,11 +89,15 @@ export function createCardGroupAdminService({ storage }) {
       return loadState(adminId, cardId);
     },
 
-    async replace({ adminId, actorId, requestId, cardId, groupIds }) {
+    async replace({ adminId, actorId, scope = null, scopeId = null, requestId, cardId, groupIds }) {
       if (!ID_RE.test(adminId || "") || !ID_RE.test(actorId || "") ||
           !ID_RE.test(cardId || "") || typeof requestId !== "string" ||
           !requestId.trim() || requestId.length > 80) {
         return fail("INVALID_CARD_SCOPE", 400);
+      }
+      if (actorId !== adminId && (!["operate", "manage"].includes(scope) ||
+          !ID_RE.test(scopeId || ""))) {
+        return fail("SCOPE_INSUFFICIENT", 403);
       }
       if (!Array.isArray(groupIds) || groupIds.length > MAX_GROUPS_PER_CARD ||
           groupIds.some(id => !ID_RE.test(id || "")) ||
@@ -115,7 +119,7 @@ export function createCardGroupAdminService({ storage }) {
 
       // Adapter owns the final CAS/owner/state checks and same-batch audit.
       const result = await storage.replaceCardGroupsAtomically({
-        adminId, actorId, requestId, cardId, groupIds: [...groupIds],
+        adminId, actorId, scope, scopeId, requestId, cardId, groupIds: [...groupIds],
         expectedGroupIds: state.mappings.map(mapping => mapping.group_id),
       });
       if (!result || result.ok !== true || !Array.isArray(result.mappings)) {
