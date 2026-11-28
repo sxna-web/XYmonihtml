@@ -58,11 +58,16 @@ export function createCardGroupAdminHandler({ service, resolveSession }) {
         !/^[A-Za-z0-9_-]{1,128}$/.test(scopeId || ""))) {
       return reply(403, { ok: false, code: "SCOPE_INSUFFICIENT" });
     }
+    const idempotencyKey = request.headers.get("idempotency-key")?.trim() || "";
+    if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+      return reply(400, { ok: false, code: "IDEMPOTENCY_KEY_REQUIRED" });
+    }
     const result = await service.replace({
       adminId: session.effectiveId,
       actorId: session.actorId,
       scope: session.scope || null,
       scopeId,
+      idempotencyKey,
       requestId: session.requestId,
       cardId,
       groupIds: body.groupIds,
