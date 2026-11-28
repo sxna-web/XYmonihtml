@@ -164,6 +164,19 @@ def main() -> None:
     if ".run()" in user_downloads or "WHERE id = ? AND admin_user_id = ?" not in user_downloads or "download_link.delete" not in user_downloads:
         raise AssertionError("User download-link deletion must retain owner predicate and audit batch")
 
+    node_owner_guard = source.split("function nodeOwnerAssertStmt", 1)[1].split("function overrideMap", 1)[0]
+    if "FROM user_manual_nodes WHERE id = ? AND user_id = ?" not in node_owner_guard or "JOIN source_ownership so ON so.source_id = n.source_id" not in node_owner_guard:
+        raise AssertionError("Node owner guard must cover manual and subscription node ownership")
+    overrides = source.split("async function userOverridesRoute", 1)[1].split("function validateOverrideValue", 1)[0]
+    metadata = source.split("async function userMetadataRoute", 1)[1].split("/* ────────────────────────────── 总管理员", 1)[0]
+    groups = source.split("async function userGroupsRoute", 1)[1].split("async function userMetadataRoute", 1)[0]
+    if overrides.count("nodeOwnerAssertStmt(db, ctx, nodeId, \"subscription\")") < 2:
+        raise AssertionError("Node override set/remove must recheck source ownership inside the batch")
+    if "nodeOwnerAssertStmt(db, ctx, nodeId, found.kind)" not in metadata:
+        raise AssertionError("Node metadata must recheck manual/subscription ownership inside the batch")
+    if "nodeOwnerAssertStmt(db, ctx, nodeId, kind)" not in groups or "GROUP_MEMBER_STATE_CHANGED" not in groups:
+        raise AssertionError("Node-group member add must recheck both group and node ownership inside the batch")
+
     super_releases = source.split("async function superReleasesRoute", 1)[1].split("/* ────────────────────────────── APP 下载链接", 1)[0]
     if ".run()" in super_releases:
         raise AssertionError("Super release and announcement mutations must not bypass atomic batches")
