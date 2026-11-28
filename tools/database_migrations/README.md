@@ -56,3 +56,15 @@ The isolated verifier test suite is now part of the RC1 convergence workflow:
 ## Compatibility boundary
 
 SQLite test success does not establish Cloudflare D1 compatibility, transaction semantics, concurrency guarantees, SQL feature availability, or production schema compatibility. Before any D1 implementation, separately verify supported SQL syntax and transactional behavior against the actual D1 environment and schema, after explicit user approval. No D1 access or migration is included in this batch.
+
+
+## Sanitized schema manifest comparison (Batch 78)
+
+- Module: `schema_manifest.py`; tests: `tests/test_schema_manifest.py`.
+- This utility consumes JSON exported from the existing `schema_diff.schema_snapshot()` function. It never opens a database, connects to Cloudflare, invokes Wrangler, or reads business rows.
+- Build a manifest: `python tools/database_migrations/schema_manifest.py build --input snapshot.json --environment staging --output staging.manifest.json` (use `production` only for a separately captured production schema-only snapshot).
+- Compare: `python tools/database_migrations/schema_manifest.py compare --left staging.manifest.json --right production.manifest.json --output comparison.json`.
+- Scope is fixed to the seven APP/VIP tables in Batch 77. Missing tables are explicitly marked `ABSENT`; table presence mismatch is not treated as a safe-to-create recommendation.
+- Column defaults and sqlite_master/index/trigger SQL are represented by SHA-256 digests, not echoed. Column names/types/NOT NULL/PK, index uniqueness/origin/partial/key columns, foreign-key actions, and object identities are compared.
+- Output is a structural comparison only. A MATCH is not proof of semantic compatibility, data integrity, migration safety, D1 transaction semantics, or production readiness. Keep staging and production source snapshots and manifests separately labelled; do not overwrite an approved baseline without review.
+- New regression tests: 13. The whole unittest suite is run by the existing RC1 convergence workflow against local in-memory fixtures only.
