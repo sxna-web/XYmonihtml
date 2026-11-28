@@ -13,7 +13,7 @@
 - lease claim/renew/reclaim 使用递增 lease_epoch 与 fencing_token；过期/旧 token 拒绝写入。
 - Snapshot 页要求 start cursor 与 last_committed_cursor 精确衔接，end cursor 严格前进且不超过 high-water。
 - page identity 由 snapshot ID、起止游标和 SHA-256 checksum 确定；重复页同 checksum 幂等，不同回执冲突。
-- 页回执、模拟 alias receipt count 与 cursor 在同一个模型原子提交单元内更新。
+- Snapshot 页和 catch-up 页的回执、模拟 alias receipt count 与各自 cursor 在同一个模型原子提交单元内更新。
 - COMMIT_OUTCOME_UNKNOWN 阻断后续页；reconcile 只根据页回执判断 COMMITTED / NOT_COMMITTED。
 - Snapshot 达到 high-water 后才能进入 CATCH_UP；catch-up watermark/cursor 单调推进，只有追平 watermark 才能 COMPLETE。
 - writer_epoch、active_key_set_epoch、expected key versions 任一漂移均 fail closed。
