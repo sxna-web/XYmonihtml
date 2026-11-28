@@ -179,8 +179,9 @@ class BackfillLedger:
         cp = self.checkpoint
         self._assert_fence(lease, now)
         value = _cursor(watermark)
-        if len(value) != len(cp.snapshot_high_water) or value < cp.catch_up_watermark:
-            raise CursorConflict("catch-up watermark must be monotonic and same-shaped")
+        if (len(value) != len(cp.snapshot_high_water) or value < cp.catch_up_watermark or
+            value < cp.snapshot_high_water):
+            raise CursorConflict("catch-up watermark must be monotonic, same-shaped and not precede snapshot high-water")
         cp.catch_up_watermark = value
 
     def commit_snapshot_page(self, lease, now, *, start_cursor, end_cursor,
@@ -195,8 +196,6 @@ class BackfillLedger:
         start, end = _cursor(start_cursor), _cursor(end_cursor)
         if len(start) != len(cp.snapshot_high_water) or len(end) != len(cp.snapshot_high_water):
             raise CursorConflict("cursor shape differs from snapshot high-water")
-        if start != cp.last_committed_cursor or end <= start or end > cp.snapshot_high_water:
-            raise CursorConflict("page cursor must advance exactly from committed cursor and stay within high-water")
         if not isinstance(checksum, str) or len(checksum) != 64 or any(c not in "0123456789abcdef" for c in checksum):
             raise ValueError("page checksum must be lowercase SHA-256 hex")
         if not isinstance(row_count, int) or row_count < 0:
@@ -209,6 +208,8 @@ class BackfillLedger:
             if old != receipt:
                 raise PageConflict("same page identity has different receipt")
             return "IDEMPOTENT_REPLAY"
+        if start != cp.last_committed_cursor or end <= start or end > cp.snapshot_high_water:
+            raise CursorConflict("page cursor must advance exactly from committed cursor and stay within high-water")
         # The receipt, alias-write count and cursor represent one atomic commit unit.
         cp.receipts[pid] = receipt
         cp.alias_receipt_count += row_count
@@ -246,7 +247,7 @@ class BackfillLedger:
         if cp.last_committed_cursor != cp.snapshot_high_water:
             raise CursorConflict("snapshot high-water has not been reached")
         cp.state = State.CATCH_UP
-        cp.catch_up_cursor = cp.catch_up_watermark
+        cp.catch_up_cursor = cp.snapshot_high_water
         return cp.state.value
 
     def advance_catch_up(self, lease, now, *, expected_cursor, next_cursor,
