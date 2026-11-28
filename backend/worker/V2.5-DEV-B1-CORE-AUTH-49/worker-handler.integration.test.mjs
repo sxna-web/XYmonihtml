@@ -273,7 +273,7 @@ test("APP card redemption commits card, entitlement, free grant and activation e
 });
 
 test("APP card soft-delete rejects a concurrent activation before writing",async()=>{
-  const db=mockDb({failCardDeleteAssertion:true});
+  const db=mockDb({activations:activeTrial,failCardDeleteAssertion:true});
   const {res,json}=await call(db,{path:"/api/user/app-cards/card-1",method:"DELETE",body:{}});
   assert.equal(res.status,409);assert.equal(json.code,"CARD_STATE_CHANGED");
   assert.equal(businessWrites(db).filter(x=>x.sql.startsWith("UPDATE app_cards")).length,0);
