@@ -5605,7 +5605,6 @@ export default {
         LIMIT ?`,
     ).bind(MAX_SYNC_SOURCES).all();
     const sources = rows.results || [];
-    if (!sources.length) return;
     const cronCtx = {
       actorId: "scheduled", effectiveId: null, isSuper: false, legacy: false,
       requestId: `cron-${event?.cron || "manual"}-${Date.now()}`,
@@ -5614,10 +5613,13 @@ export default {
       await runVipCardMaintenance(db, cronCtx).catch(() => {});
       await runNodeLifecycle(db, cronCtx).catch(() => {});
       await runEntitlementMaintenance(db).catch(() => {});
-      const run = await runSync(db, sources, { actorUserId: null, triggerKind: "scheduled", ctx: cronCtx, env });
-      await db.prepare("INSERT INTO admin_audit(action, detail) VALUES('nodes.sync.scheduled', ?)")
-        .bind(JSON.stringify({ total: run.total, success: run.success, failed: run.failed, busy: run.busy }))
-        .run().catch(() => {});
+      // Lifecycle/entitlement maintenance must run even when no sync sources are assigned.
+      if (sources.length) {
+        const run = await runSync(db, sources, { actorUserId: null, triggerKind: "scheduled", ctx: cronCtx, env });
+        await db.prepare("INSERT INTO admin_audit(action, detail) VALUES('nodes.sync.scheduled', ?)")
+          .bind(JSON.stringify({ total: run.total, success: run.success, failed: run.failed, busy: run.busy }))
+          .run().catch(() => {});
+      }
     } catch {
       // 定时任务失败不能抛到平台层；失败详情在 sync_tasks 里
     }
