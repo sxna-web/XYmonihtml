@@ -78,7 +78,7 @@ def main() -> None:
     if sync_guard < 0 or sync_call < sync_guard or positions[-1] > sync_guard:
         raise AssertionError("Only runSync may be conditional on sources.length")
 
-    if re.search(r'^\\s*import\\b.*(?:worker-auth-adapter|authorization)\\.mjs', bundle, re.MULTILINE):
+    if re.search(r'^\s*import\b.*(?:worker-auth-adapter|authorization)\.mjs', bundle, re.MULTILINE):
         raise AssertionError("Bundled Worker still imports a local helper module")
 
     parser = InlineScripts()
@@ -92,6 +92,18 @@ def main() -> None:
     if "localStorage.getItem('sj-api') || 'https://" in html:
         raise AssertionError("Release HTML still has a hard-coded API fallback bypassing the API input")
 
+    dispatch = source.split('if (url.pathname === "/api/super/schema-status" || url.pathname === "/api/super/migrate")', 1)[1].split("if (url.pathname.startsWith", 1)[0]
+    for guard in ("ctx.legacy", "ctx.actorId !== ctx.effectiveId"):
+        if guard not in dispatch:
+            raise AssertionError("Database route missing super-session/owner guard: " + guard)
+    migrate = source.split("async function migrateRoute", 1)[1].split("/* ────────────────────────────── 站内提醒", 1)[0]
+    if "MIGRATION_REVIEW_REQUIRED" not in migrate or "MIGRATE_STATEMENTS" in source:
+        raise AssertionError("Unsafe legacy DDL path is not fully disabled")
+    if "migration_enabled: false" not in migrate or "verification: \"TABLE_NAMES_ONLY\"" not in migrate:
+        raise AssertionError("Schema status must disclose its table-name-only verification scope")
+    if "api('/api/super/migrate'" in html or "RC1 暂不执行自动建表" not in html:
+        raise AssertionError("HTML must remain read-only for database migration in RC1")
+
     redeem = source.split("async function appRedeemRoute", 1)[1].split("async function runEntitlementMaintenance", 1)[0]
     token_pos = redeem.find("const token = await entToken(env, id, deviceId)")
     write_pos = redeem.find("await userBatch(db, ctx")
@@ -103,7 +115,7 @@ def main() -> None:
     print("PASS: Cron maintenance runs without sync sources")
     print(f"PASS: {len(parser.items)} inline HTML scripts")
     print("PASS: all HTML API calls use the configured API base")
-    print("PASS: APP token secret validated before card redemption writes")
+    print("PASS: APP token secret validated before card redemption writes")\n    print("PASS: DB migration rejects legacy/assist sessions")\n    print("PASS: unsafe legacy DDL disabled; schema status is explicitly read-only")\n    print("PASS: HTML DB controls cannot trigger DDL")
 
 
 if __name__ == "__main__":
